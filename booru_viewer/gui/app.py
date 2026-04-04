@@ -269,21 +269,6 @@ class BooruApp(QMainWindow):
         self._fav_btn.clicked.connect(lambda: self._switch_view(1))
         nav.addWidget(self._fav_btn)
 
-        nav.addStretch()
-
-        self._page_label = QLabel("Page 1")
-        nav.addWidget(self._page_label)
-
-        prev_btn = QPushButton("Prev")
-        prev_btn.setFixedWidth(60)
-        prev_btn.clicked.connect(self._prev_page)
-        nav.addWidget(prev_btn)
-
-        next_btn = QPushButton("Next")
-        next_btn.setFixedWidth(60)
-        next_btn.clicked.connect(self._next_page)
-        nav.addWidget(next_btn)
-
         layout.addLayout(nav)
 
         # Main content
@@ -340,8 +325,8 @@ class BooruApp(QMainWindow):
         # Bottom page nav (centered)
         bottom_nav = QHBoxLayout()
         bottom_nav.addStretch()
-        self._bottom_page_label = QLabel("Page 1")
-        bottom_nav.addWidget(self._bottom_page_label)
+        self._page_label = QLabel("Page 1")
+        bottom_nav.addWidget(self._page_label)
         bottom_prev = QPushButton("Prev")
         bottom_prev.setFixedWidth(60)
         bottom_prev.clicked.connect(self._prev_page)
@@ -554,7 +539,6 @@ class BooruApp(QMainWindow):
             return
         self._loading = True
         self._page_label.setText(f"Page {self._current_page}")
-        self._bottom_page_label.setText(f"Page {self._current_page}")
         self._status.showMessage("Searching...")
 
         search_tags = self._build_search_tags()
