@@ -337,6 +337,22 @@ class BooruApp(QMainWindow):
         self._splitter.setSizes([600, 500])
         layout.addWidget(self._splitter, stretch=1)
 
+        # Bottom page nav (centered)
+        bottom_nav = QHBoxLayout()
+        bottom_nav.addStretch()
+        self._bottom_page_label = QLabel("Page 1")
+        bottom_nav.addWidget(self._bottom_page_label)
+        bottom_prev = QPushButton("Prev")
+        bottom_prev.setFixedWidth(60)
+        bottom_prev.clicked.connect(self._prev_page)
+        bottom_nav.addWidget(bottom_prev)
+        bottom_next = QPushButton("Next")
+        bottom_next.setFixedWidth(60)
+        bottom_next.clicked.connect(self._next_page)
+        bottom_nav.addWidget(bottom_next)
+        bottom_nav.addStretch()
+        layout.addLayout(bottom_nav)
+
         # Log panel
         self._log_text = QTextEdit()
         self._log_text.setReadOnly(True)
@@ -538,6 +554,7 @@ class BooruApp(QMainWindow):
             return
         self._loading = True
         self._page_label.setText(f"Page {self._current_page}")
+        self._bottom_page_label.setText(f"Page {self._current_page}")
         self._status.showMessage("Searching...")
 
         search_tags = self._build_search_tags()
