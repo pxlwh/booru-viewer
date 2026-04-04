@@ -1306,10 +1306,48 @@ class BooruApp(QMainWindow):
         super().closeEvent(event)
 
 
+def _apply_windows_dark_mode(app: QApplication) -> None:
+    """Detect Windows dark mode and apply Fusion dark palette if needed."""
+    try:
+        import winreg
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+        )
+        value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+        winreg.CloseKey(key)
+        if value == 0:
+            from PySide6.QtGui import QPalette, QColor
+            app.setStyle("Fusion")
+            palette = QPalette()
+            palette.setColor(QPalette.ColorRole.Window, QColor(30, 30, 30))
+            palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
+            palette.setColor(QPalette.ColorRole.Base, QColor(15, 15, 15))
+            palette.setColor(QPalette.ColorRole.AlternateBase, QColor(35, 35, 35))
+            palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(255, 255, 255))
+            palette.setColor(QPalette.ColorRole.ToolTipText, QColor(255, 255, 255))
+            palette.setColor(QPalette.ColorRole.Text, QColor(255, 255, 255))
+            palette.setColor(QPalette.ColorRole.Button, QColor(40, 40, 40))
+            palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
+            palette.setColor(QPalette.ColorRole.BrightText, QColor(255, 0, 0))
+            palette.setColor(QPalette.ColorRole.Link, QColor(42, 130, 218))
+            palette.setColor(QPalette.ColorRole.Highlight, QColor(42, 130, 218))
+            palette.setColor(QPalette.ColorRole.HighlightedText, QColor(0, 0, 0))
+            palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, QColor(127, 127, 127))
+            palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, QColor(127, 127, 127))
+            app.setPalette(palette)
+    except Exception:
+        pass
+
+
 def run() -> None:
     from ..core.config import data_dir
 
     app = QApplication(sys.argv)
+
+    # Apply dark mode on Windows 10+ if system is set to dark
+    if sys.platform == "win32":
+        _apply_windows_dark_mode(app)
 
     # Load user custom stylesheet if it exists
     custom_css = data_dir() / "custom.qss"
