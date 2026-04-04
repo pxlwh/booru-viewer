@@ -8,6 +8,10 @@ Local desktop application for browsing, searching, and favoriting images from bo
 
 <picture><img src="screenshots/windows.png" alt="Windows — Native Light Theme" width="700"></picture>
 
+**Windows — Native Dark Theme**
+
+<picture><img src="screenshots/windows-dark.png" alt="Windows — Native Dark Theme" width="700"></picture>
+
 **Linux — Styled via system Qt6 theme**
 
 <picture><img src="screenshots/linux.png" alt="Linux — System Qt6 theme" width="700"></picture>
