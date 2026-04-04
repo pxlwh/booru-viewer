@@ -1,0 +1,620 @@
+"""Settings dialog."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
+    QDialog,
+    QVBoxLayout,
+    QHBoxLayout,
+    QFormLayout,
+    QTabWidget,
+    QWidget,
+    QLabel,
+    QPushButton,
+    QSpinBox,
+    QComboBox,
+    QCheckBox,
+    QLineEdit,
+    QListWidget,
+    QMessageBox,
+    QGroupBox,
+    QProgressBar,
+)
+
+from ..core.db import Database
+from ..core.cache import cache_size_bytes, cache_file_count, clear_cache, evict_oldest
+from ..core.config import (
+    data_dir, cache_dir, thumbnails_dir, db_path, IS_WINDOWS,
+)
+
+
+class SettingsDialog(QDialog):
+    """Full settings panel with tabs."""
+
+    settings_changed = Signal()
+    favorites_imported = Signal()
+
+    def __init__(self, db: Database, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._db = db
+        self.setWindowTitle("Settings")
+        self.setMinimumSize(550, 450)
+
+        layout = QVBoxLayout(self)
+
+        self._tabs = QTabWidget()
+        layout.addWidget(self._tabs)
+
+        self._tabs.addTab(self._build_general_tab(), "General")
+        self._tabs.addTab(self._build_cache_tab(), "Cache")
+        self._tabs.addTab(self._build_blacklist_tab(), "Blacklist")
+        self._tabs.addTab(self._build_paths_tab(), "Paths")
+        self._tabs.addTab(self._build_theme_tab(), "Theme")
+
+        # Bottom buttons
+        btns = QHBoxLayout()
+        btns.addStretch()
+
+        save_btn = QPushButton("Save")
+        save_btn.clicked.connect(self._save_and_close)
+        btns.addWidget(save_btn)
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        btns.addWidget(cancel_btn)
+
+        layout.addLayout(btns)
+
+    # -- General tab --
+
+    def _build_general_tab(self) -> QWidget:
+        w = QWidget()
+        layout = QVBoxLayout(w)
+
+        form = QFormLayout()
+
+        # Page size
+        self._page_size = QSpinBox()
+        self._page_size.setRange(10, 100)
+        self._page_size.setValue(self._db.get_setting_int("page_size"))
+        form.addRow("Results per page:", self._page_size)
+
+        # Thumbnail size
+        self._thumb_size = QSpinBox()
+        self._thumb_size.setRange(100, 400)
+        self._thumb_size.setSingleStep(20)
+        self._thumb_size.setValue(self._db.get_setting_int("thumbnail_size"))
+        form.addRow("Thumbnail size (px):", self._thumb_size)
+
+        # Default rating
+        self._default_rating = QComboBox()
+        self._default_rating.addItems(["all", "general", "sensitive", "questionable", "explicit"])
+        current_rating = self._db.get_setting("default_rating")
+        idx = self._default_rating.findText(current_rating)
+        if idx >= 0:
+            self._default_rating.setCurrentIndex(idx)
+        form.addRow("Default rating filter:", self._default_rating)
+
+        # Default min score
+        self._default_score = QSpinBox()
+        self._default_score.setRange(0, 99999)
+        self._default_score.setValue(self._db.get_setting_int("default_score"))
+        form.addRow("Default minimum score:", self._default_score)
+
+        # Preload thumbnails
+        self._preload = QCheckBox("Load thumbnails automatically")
+        self._preload.setChecked(self._db.get_setting_bool("preload_thumbnails"))
+        form.addRow("", self._preload)
+
+        # File dialog platform (Linux only)
+        self._file_dialog_combo = None
+        if not IS_WINDOWS:
+            self._file_dialog_combo = QComboBox()
+            self._file_dialog_combo.addItems(["qt", "gtk"])
+            current = self._db.get_setting("file_dialog_platform")
+            idx = self._file_dialog_combo.findText(current)
+            if idx >= 0:
+                self._file_dialog_combo.setCurrentIndex(idx)
+            form.addRow("File dialog (restart required):", self._file_dialog_combo)
+
+        layout.addLayout(form)
+        layout.addStretch()
+        return w
+
+    # -- Cache tab --
+
+    def _build_cache_tab(self) -> QWidget:
+        w = QWidget()
+        layout = QVBoxLayout(w)
+
+        # Cache stats
+        stats_group = QGroupBox("Cache Statistics")
+        stats_layout = QFormLayout(stats_group)
+
+        images, thumbs = cache_file_count()
+        total_bytes = cache_size_bytes()
+        total_mb = total_bytes / (1024 * 1024)
+
+        self._cache_images_label = QLabel(f"{images}")
+        stats_layout.addRow("Cached images:", self._cache_images_label)
+
+        self._cache_thumbs_label = QLabel(f"{thumbs}")
+        stats_layout.addRow("Cached thumbnails:", self._cache_thumbs_label)
+
+        self._cache_size_label = QLabel(f"{total_mb:.1f} MB")
+        stats_layout.addRow("Total size:", self._cache_size_label)
+
+        self._fav_count_label = QLabel(f"{self._db.favorite_count()}")
+        stats_layout.addRow("Favorites:", self._fav_count_label)
+
+        layout.addWidget(stats_group)
+
+        # Cache limits
+        limits_group = QGroupBox("Cache Limits")
+        limits_layout = QFormLayout(limits_group)
+
+        self._max_cache = QSpinBox()
+        self._max_cache.setRange(100, 50000)
+        self._max_cache.setSuffix(" MB")
+        self._max_cache.setValue(self._db.get_setting_int("max_cache_mb"))
+        limits_layout.addRow("Max cache size:", self._max_cache)
+
+        self._auto_evict = QCheckBox("Auto-evict oldest when limit reached")
+        self._auto_evict.setChecked(self._db.get_setting_bool("auto_evict"))
+        limits_layout.addRow("", self._auto_evict)
+
+        layout.addWidget(limits_group)
+
+        # Cache actions
+        actions_group = QGroupBox("Actions")
+        actions_layout = QVBoxLayout(actions_group)
+
+        btn_row1 = QHBoxLayout()
+
+        clear_thumbs_btn = QPushButton("Clear Thumbnails")
+        clear_thumbs_btn.clicked.connect(self._clear_thumbnails)
+        btn_row1.addWidget(clear_thumbs_btn)
+
+        clear_cache_btn = QPushButton("Clear Image Cache")
+        clear_cache_btn.clicked.connect(self._clear_image_cache)
+        btn_row1.addWidget(clear_cache_btn)
+
+        actions_layout.addLayout(btn_row1)
+
+        btn_row2 = QHBoxLayout()
+
+        clear_all_btn = QPushButton("Clear Everything")
+        clear_all_btn.setStyleSheet(f"QPushButton {{ color: #ff4444; }}")
+        clear_all_btn.clicked.connect(self._clear_all)
+        btn_row2.addWidget(clear_all_btn)
+
+        evict_btn = QPushButton("Evict to Limit Now")
+        evict_btn.clicked.connect(self._evict_now)
+        btn_row2.addWidget(evict_btn)
+
+        actions_layout.addLayout(btn_row2)
+
+        layout.addWidget(actions_group)
+        layout.addStretch()
+        return w
+
+    # -- Blacklist tab --
+
+    def _build_blacklist_tab(self) -> QWidget:
+        w = QWidget()
+        layout = QVBoxLayout(w)
+
+        layout.addWidget(QLabel("Posts with these tags will be hidden from results:"))
+
+        self._bl_list = QListWidget()
+        self._refresh_blacklist()
+        layout.addWidget(self._bl_list)
+
+        add_row = QHBoxLayout()
+        self._bl_input = QLineEdit()
+        self._bl_input.setPlaceholderText("Tag to blacklist...")
+        self._bl_input.returnPressed.connect(self._bl_add)
+        add_row.addWidget(self._bl_input, stretch=1)
+
+        add_btn = QPushButton("Add")
+        add_btn.clicked.connect(self._bl_add)
+        add_row.addWidget(add_btn)
+
+        remove_btn = QPushButton("Remove")
+        remove_btn.clicked.connect(self._bl_remove)
+        add_row.addWidget(remove_btn)
+
+        layout.addLayout(add_row)
+
+        io_row = QHBoxLayout()
+
+        export_bl_btn = QPushButton("Export")
+        export_bl_btn.clicked.connect(self._bl_export)
+        io_row.addWidget(export_bl_btn)
+
+        import_bl_btn = QPushButton("Import")
+        import_bl_btn.clicked.connect(self._bl_import)
+        io_row.addWidget(import_bl_btn)
+
+        clear_bl_btn = QPushButton("Clear All")
+        clear_bl_btn.clicked.connect(self._bl_clear)
+        io_row.addWidget(clear_bl_btn)
+
+        layout.addLayout(io_row)
+        return w
+
+    # -- Paths tab --
+
+    def _build_paths_tab(self) -> QWidget:
+        w = QWidget()
+        layout = QVBoxLayout(w)
+
+        form = QFormLayout()
+
+        data = QLineEdit(str(data_dir()))
+        data.setReadOnly(True)
+        form.addRow("Data directory:", data)
+
+        cache = QLineEdit(str(cache_dir()))
+        cache.setReadOnly(True)
+        form.addRow("Image cache:", cache)
+
+        thumbs = QLineEdit(str(thumbnails_dir()))
+        thumbs.setReadOnly(True)
+        form.addRow("Thumbnails:", thumbs)
+
+        db = QLineEdit(str(db_path()))
+        db.setReadOnly(True)
+        form.addRow("Database:", db)
+
+        layout.addLayout(form)
+
+        open_btn = QPushButton("Open Data Folder")
+        open_btn.clicked.connect(self._open_data_folder)
+        layout.addWidget(open_btn)
+
+        layout.addStretch()
+
+        # Export / Import
+        exp_group = QGroupBox("Backup")
+        exp_layout = QHBoxLayout(exp_group)
+
+        export_btn = QPushButton("Export Favorites")
+        export_btn.clicked.connect(self._export_favorites)
+        exp_layout.addWidget(export_btn)
+
+        import_btn = QPushButton("Import Favorites")
+        import_btn.clicked.connect(self._import_favorites)
+        exp_layout.addWidget(import_btn)
+
+        layout.addWidget(exp_group)
+
+        return w
+
+    # -- Theme tab --
+
+    def _build_theme_tab(self) -> QWidget:
+        w = QWidget()
+        layout = QVBoxLayout(w)
+
+        layout.addWidget(QLabel(
+            "Customize the app's appearance with a Qt stylesheet (QSS).\n"
+            "Place a custom.qss file in your data directory.\n"
+            "Restart the app after editing."
+        ))
+
+        css_path = data_dir() / "custom.qss"
+        path_label = QLineEdit(str(css_path))
+        path_label.setReadOnly(True)
+        layout.addWidget(path_label)
+
+        btn_row = QHBoxLayout()
+
+        edit_btn = QPushButton("Edit custom.qss")
+        edit_btn.clicked.connect(self._edit_custom_css)
+        btn_row.addWidget(edit_btn)
+
+        create_btn = QPushButton("Create from Template")
+        create_btn.clicked.connect(self._create_css_template)
+        btn_row.addWidget(create_btn)
+
+        guide_btn = QPushButton("View Guide")
+        guide_btn.clicked.connect(self._view_css_guide)
+        btn_row.addWidget(guide_btn)
+
+        layout.addLayout(btn_row)
+
+        delete_btn = QPushButton("Delete custom.qss (Reset to Default)")
+        delete_btn.clicked.connect(self._delete_custom_css)
+        layout.addWidget(delete_btn)
+
+        layout.addStretch()
+        return w
+
+    def _edit_custom_css(self) -> None:
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+        css_path = data_dir() / "custom.qss"
+        if not css_path.exists():
+            css_path.write_text("/* booru-viewer custom stylesheet */\n\n")
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(css_path)))
+
+    def _create_css_template(self) -> None:
+        css_path = data_dir() / "custom.qss"
+        if css_path.exists():
+            reply = QMessageBox.question(
+                self, "Confirm", "Overwrite existing custom.qss with template?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+        template = (
+            "/* booru-viewer custom stylesheet */\n"
+            "/* Edit and restart the app to apply changes */\n\n"
+            "/* -- Accent color -- */\n"
+            "/* QWidget { color: #00ff00; } */\n\n"
+            "/* -- Background -- */\n"
+            "/* QWidget { background-color: #000000; } */\n\n"
+            "/* -- Font -- */\n"
+            "/* QWidget { font-family: monospace; font-size: 13px; } */\n\n"
+            "/* -- Buttons -- */\n"
+            "/* QPushButton { padding: 6px 16px; border-radius: 4px; } */\n"
+            "/* QPushButton:hover { border-color: #00ff00; } */\n\n"
+            "/* -- Inputs -- */\n"
+            "/* QLineEdit { padding: 6px 10px; border-radius: 4px; } */\n"
+            "/* QLineEdit:focus { border-color: #00ff00; } */\n\n"
+            "/* -- Scrollbar -- */\n"
+            "/* QScrollBar:vertical { width: 10px; } */\n\n"
+            "/* -- Video seek bar -- */\n"
+            "/* QSlider::groove:horizontal { background: #333; height: 6px; } */\n"
+            "/* QSlider::handle:horizontal { background: #00ff00; width: 14px; } */\n"
+        )
+        css_path.write_text(template)
+        QMessageBox.information(self, "Done", f"Template created at:\n{css_path}")
+
+    def _view_css_guide(self) -> None:
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+        dest = data_dir() / "custom_css_guide.txt"
+        # Copy guide to appdata if not already there
+        if not dest.exists():
+            import sys
+            # Try source tree, then PyInstaller bundle
+            for candidate in [
+                Path(__file__).parent / "custom_css_guide.txt",
+                Path(getattr(sys, '_MEIPASS', __file__)) / "booru_viewer" / "gui" / "custom_css_guide.txt",
+            ]:
+                if candidate.is_file():
+                    dest.write_text(candidate.read_text())
+                    break
+        if dest.exists():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(dest)))
+        else:
+            # Fallback: show in dialog
+            from PySide6.QtWidgets import QTextEdit, QDialog, QVBoxLayout
+            dlg = QDialog(self)
+            dlg.setWindowTitle("Custom CSS Guide")
+            dlg.resize(600, 500)
+            layout = QVBoxLayout(dlg)
+            text = QTextEdit()
+            text.setReadOnly(True)
+            text.setPlainText(
+                "booru-viewer Custom Stylesheet Guide\n"
+                "=====================================\n\n"
+                "Place a file named 'custom.qss' in your data directory.\n"
+                f"Path: {data_dir() / 'custom.qss'}\n\n"
+                "WIDGET REFERENCE\n"
+                "----------------\n"
+                "QMainWindow, QPushButton, QLineEdit, QComboBox, QScrollBar,\n"
+                "QLabel, QStatusBar, QTabWidget, QTabBar, QListWidget,\n"
+                "QMenu, QMenuBar, QToolTip, QDialog, QSplitter, QProgressBar,\n"
+                "QSpinBox, QCheckBox, QSlider\n\n"
+                "STATES: :hover, :pressed, :focus, :selected, :disabled\n\n"
+                "PROPERTIES: color, background-color, border, border-radius,\n"
+                "padding, margin, font-family, font-size\n\n"
+                "EXAMPLE\n"
+                "-------\n"
+                "QPushButton {\n"
+                "    background: #333; color: white;\n"
+                "    border: 1px solid #555; border-radius: 4px;\n"
+                "    padding: 6px 16px;\n"
+                "}\n"
+                "QPushButton:hover { background: #555; }\n\n"
+                "Restart the app after editing custom.qss."
+            )
+            layout.addWidget(text)
+            dlg.exec()
+
+    def _delete_custom_css(self) -> None:
+        css_path = data_dir() / "custom.qss"
+        if css_path.exists():
+            css_path.unlink()
+            QMessageBox.information(self, "Done", "Deleted. Restart to use default theme.")
+        else:
+            QMessageBox.information(self, "Info", "No custom.qss found.")
+
+    # -- Actions --
+
+    def _refresh_stats(self) -> None:
+        images, thumbs = cache_file_count()
+        total_bytes = cache_size_bytes()
+        total_mb = total_bytes / (1024 * 1024)
+        self._cache_images_label.setText(f"{images}")
+        self._cache_thumbs_label.setText(f"{thumbs}")
+        self._cache_size_label.setText(f"{total_mb:.1f} MB")
+
+    def _clear_thumbnails(self) -> None:
+        count = clear_cache(clear_images=False, clear_thumbnails=True)
+        QMessageBox.information(self, "Done", f"Deleted {count} thumbnails.")
+        self._refresh_stats()
+
+    def _clear_image_cache(self) -> None:
+        reply = QMessageBox.question(
+            self, "Confirm",
+            "Delete all cached images? (Favorites stay in the database but cached files are removed.)",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            count = clear_cache(clear_images=True, clear_thumbnails=False)
+            QMessageBox.information(self, "Done", f"Deleted {count} cached images.")
+            self._refresh_stats()
+
+    def _clear_all(self) -> None:
+        reply = QMessageBox.question(
+            self, "Confirm",
+            "Delete ALL cached images and thumbnails?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            count = clear_cache(clear_images=True, clear_thumbnails=True)
+            QMessageBox.information(self, "Done", f"Deleted {count} files.")
+            self._refresh_stats()
+
+    def _evict_now(self) -> None:
+        max_bytes = self._max_cache.value() * 1024 * 1024
+        # Protect favorited file paths
+        protected = set()
+        for fav in self._db.get_favorites(limit=999999):
+            if fav.cached_path:
+                protected.add(fav.cached_path)
+        count = evict_oldest(max_bytes, protected)
+        QMessageBox.information(self, "Done", f"Evicted {count} files.")
+        self._refresh_stats()
+
+    def _refresh_blacklist(self) -> None:
+        self._bl_list.clear()
+        for tag in self._db.get_blacklisted_tags():
+            self._bl_list.addItem(tag)
+
+    def _bl_add(self) -> None:
+        tag = self._bl_input.text().strip()
+        if tag:
+            self._db.add_blacklisted_tag(tag)
+            self._bl_input.clear()
+            self._refresh_blacklist()
+
+    def _bl_remove(self) -> None:
+        item = self._bl_list.currentItem()
+        if item:
+            self._db.remove_blacklisted_tag(item.text())
+            self._refresh_blacklist()
+
+    def _bl_export(self) -> None:
+        from .dialogs import save_file
+        path = save_file(self, "Export Blacklist", "blacklist.txt", "Text (*.txt)")
+        if not path:
+            return
+        tags = self._db.get_blacklisted_tags()
+        with open(path, "w") as f:
+            f.write("\n".join(tags))
+        QMessageBox.information(self, "Done", f"Exported {len(tags)} tags.")
+
+    def _bl_import(self) -> None:
+        from .dialogs import open_file
+        path = open_file(self, "Import Blacklist", "Text (*.txt)")
+        if not path:
+            return
+        try:
+            with open(path) as f:
+                tags = [line.strip() for line in f if line.strip()]
+            count = 0
+            for tag in tags:
+                self._db.add_blacklisted_tag(tag)
+                count += 1
+            self._refresh_blacklist()
+            QMessageBox.information(self, "Done", f"Imported {count} tags.")
+        except Exception as e:
+            QMessageBox.warning(self, "Error", str(e))
+
+    def _bl_clear(self) -> None:
+        reply = QMessageBox.question(
+            self, "Confirm", "Remove all blacklisted tags?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            for tag in self._db.get_blacklisted_tags():
+                self._db.remove_blacklisted_tag(tag)
+            self._refresh_blacklist()
+
+    def _open_data_folder(self) -> None:
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(data_dir())))
+
+    def _export_favorites(self) -> None:
+        from .dialogs import save_file
+        import json
+        path = save_file(self, "Export Favorites", "favorites.json", "JSON (*.json)")
+        if not path:
+            return
+        favs = self._db.get_favorites(limit=999999)
+        data = [
+            {
+                "post_id": f.post_id,
+                "site_id": f.site_id,
+                "file_url": f.file_url,
+                "preview_url": f.preview_url,
+                "tags": f.tags,
+                "rating": f.rating,
+                "score": f.score,
+                "source": f.source,
+                "folder": f.folder,
+                "favorited_at": f.favorited_at,
+            }
+            for f in favs
+        ]
+        with open(path, "w") as fp:
+            json.dump(data, fp, indent=2)
+        QMessageBox.information(self, "Done", f"Exported {len(data)} favorites.")
+
+    def _import_favorites(self) -> None:
+        from .dialogs import open_file
+        import json
+        path = open_file(self, "Import Favorites", "JSON (*.json)")
+        if not path:
+            return
+        try:
+            with open(path) as fp:
+                data = json.load(fp)
+            count = 0
+            for item in data:
+                try:
+                    folder = item.get("folder")
+                    self._db.add_favorite(
+                        site_id=item["site_id"],
+                        post_id=item["post_id"],
+                        file_url=item["file_url"],
+                        preview_url=item.get("preview_url"),
+                        tags=item.get("tags", ""),
+                        rating=item.get("rating"),
+                        score=item.get("score"),
+                        source=item.get("source"),
+                        folder=folder,
+                    )
+                    if folder:
+                        self._db.add_folder(folder)
+                    count += 1
+                except Exception:
+                    pass
+            QMessageBox.information(self, "Done", f"Imported {count} favorites.")
+            self.favorites_imported.emit()
+        except Exception as e:
+            QMessageBox.warning(self, "Error", str(e))
+
+    # -- Save --
+
+    def _save_and_close(self) -> None:
+        self._db.set_setting("page_size", str(self._page_size.value()))
+        self._db.set_setting("thumbnail_size", str(self._thumb_size.value()))
+        self._db.set_setting("default_rating", self._default_rating.currentText())
+        self._db.set_setting("default_score", str(self._default_score.value()))
+        self._db.set_setting("preload_thumbnails", "1" if self._preload.isChecked() else "0")
+        self._db.set_setting("max_cache_mb", str(self._max_cache.value()))
+        self._db.set_setting("auto_evict", "1" if self._auto_evict.isChecked() else "0")
+        if self._file_dialog_combo is not None:
+            self._db.set_setting("file_dialog_platform", self._file_dialog_combo.currentText())
+        self.settings_changed.emit()
+        self.accept()

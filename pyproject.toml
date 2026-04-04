@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "booru-viewer"
+version = "0.1.0"
+description = "Local booru image browser with Qt6 GUI and Textual TUI"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx[http2]>=0.27",
+    "Pillow>=10.0",
+]
+
+[project.optional-dependencies]
+gui = ["PySide6>=6.6"]
+tui = ["textual>=0.50"]
+all = ["booru-viewer[gui,tui]"]
+
+[project.scripts]
+booru-gui = "booru_viewer.main_gui:main"
+booru-tui = "booru_viewer.main_tui:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["booru_viewer"]
+
+[tool.hatch.build.targets.sdist]
+include = ["booru_viewer"]
