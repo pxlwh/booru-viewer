@@ -297,8 +297,6 @@ class BooruApp(QMainWindow):
         self._grid.post_activated.connect(self._on_post_activated)
         self._grid.context_requested.connect(self._on_context_menu)
         self._grid.multi_context_requested.connect(self._on_multi_context_menu)
-        self._grid.reached_bottom.connect(self._scroll_next_page)
-        self._grid.reached_top.connect(self._scroll_prev_page)
         self._stack.addWidget(self._grid)
 
         self._favorites_view = FavoritesView(self._db)
@@ -359,8 +357,8 @@ class BooruApp(QMainWindow):
         self._status.showMessage("Ready")
 
         # Global shortcuts for preview navigation
-        QShortcut(QKeySequence("Ctrl+Left"), self, lambda: self._navigate_preview(-1))
-        QShortcut(QKeySequence("Ctrl+Right"), self, lambda: self._navigate_preview(1))
+        QShortcut(QKeySequence("Left"), self, lambda: self._navigate_preview(-1))
+        QShortcut(QKeySequence("Right"), self, lambda: self._navigate_preview(1))
 
     def _setup_menu(self) -> None:
         menu = self.menuBar()
