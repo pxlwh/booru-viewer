@@ -54,8 +54,7 @@ For WebM video playback, install **VP9 Video Extensions** from the Microsoft Sto
 | `Ctrl+Click` / `Shift+Click` | Multi-select |
 | Scroll wheel | Zoom in preview |
 | Middle click | Reset view |
-| `+`/`-`/`0` | Zoom in / out / fit |
-| `Ctrl+Left`/`Right` | Previous / next post in preview |
+| Left / Right | Previous / next post |
 | `Ctrl+P` | Privacy screen |
 | `F11` | Fullscreen |
 | Right click | Context menu |
