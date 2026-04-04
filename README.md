@@ -4,9 +4,9 @@ Local desktop application for browsing, searching, and favoriting images from bo
 
 ## Screenshots
 
-<picture><img src="screenshots/windows.png" alt="Windows"></picture>
+<picture><img src="screenshots/windows.png" alt="Windows" width="700"></picture>
 
-<picture><img src="screenshots/linux.png" alt="Linux"></picture>
+<picture><img src="screenshots/linux.png" alt="Linux" width="700"></picture>
 
 ## Features
 
