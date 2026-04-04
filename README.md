@@ -2,6 +2,12 @@
 
 Local desktop application for browsing, searching, and favoriting images from booru-style imageboards.
 
+## Screenshots
+
+![Windows](screenshots/windows.png)
+
+![Linux](screenshots/linux.png)
+
 ## Features
 
 - Supports Danbooru, Gelbooru, Moebooru, and e621
