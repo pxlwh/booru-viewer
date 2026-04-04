@@ -2,89 +2,86 @@
 
 Local desktop application for browsing, searching, and favoriting images from booru-style imageboards.
 
-Dual interface — **Qt6 GUI** and **Textual TUI**. Green-on-black theme.
-
 ## Features
 
-- Tag-based search across multiple booru sites (Danbooru, Gelbooru, Moebooru)
+- Supports Danbooru, Gelbooru, Moebooru, and e621
 - Auto-detect site API type — just paste the URL
-- Thumbnail grid with full image preview (zoom/pan)
-- Favorites system with local download cache and offline browsing
-- Tag autocomplete
-- Per-site API key support
+- Tag search with autocomplete and history
+- Thumbnail grid with image/video preview (zoom, pan, GIF animation)
+- Favorites with folder organization
+- Save to library, drag-and-drop, multi-select bulk operations
+- Custom CSS theming (native OS look by default)
+- Cross-platform: Linux and Windows
 
 ## Install
 
 ```sh
-pip install -e ".[all]"
-```
-
-Or install only what you need:
-
-```sh
-pip install -e ".[gui]"   # Qt6 GUI only
-pip install -e ".[tui]"   # Textual TUI only
+pip install -e .
 ```
 
 ### Dependencies
 
-- **GUI**: PySide6 (Qt6)
-- **TUI**: Textual
-- **Core**: httpx, Pillow, SQLite (stdlib)
+- Python 3.11+
+- PySide6 (Qt6)
+- httpx
+- Pillow
 
 ## Usage
 
 ```sh
-# Qt6 GUI
-booru-gui
-
-# Terminal TUI
-booru-tui
+booru-viewer
 ```
 
-### TUI Keybinds
+Or run directly:
+
+```sh
+python -m booru_viewer.main_gui
+```
+
+### Windows
+
+Download `booru-viewer.exe` from [Releases](https://git.pax.moe/pax/booru-viewer/releases).
+
+For WebM video playback, install **VP9 Video Extensions** from the Microsoft Store.
+
+### Keybinds
 
 | Key | Action |
 |-----|--------|
-| `/` | Focus search |
-| `Enter` | Preview selected |
-| `f` | Toggle favorite |
-| `j`/`k` | Navigate down/up |
-| `n`/`p` | Next/previous page |
-| `1`/`2`/`3` | Browse / Favorites / Sites |
-| `Escape` | Close preview |
-| `q` | Quit |
-
-### GUI Keybinds
-
-| Key | Action |
-|-----|--------|
-| `F` | Toggle favorite on selected |
-| `Ctrl+S` | Manage sites |
-| `Ctrl+Q` | Quit |
+| Click / Arrow keys | Select and preview |
+| `h`/`j`/`k`/`l` | Grid navigation |
+| `Ctrl+A` | Select all |
+| `Ctrl+Click` / `Shift+Click` | Multi-select |
 | Scroll wheel | Zoom in preview |
-| Right click | Close preview |
-| `0` | Fit to view |
-| `+`/`-` | Zoom in/out |
+| Middle click | Reset view |
+| `+`/`-`/`0` | Zoom in / out / fit |
+| `Ctrl+Left`/`Right` | Previous / next post in preview |
+| `Ctrl+P` | Privacy screen |
+| `F11` | Fullscreen |
+| Right click | Context menu |
 
 ## Adding Sites
 
-Open the site manager (GUI: `Ctrl+S`, or in the Sites tab). Enter a URL and click Auto-Detect — the app probes for Danbooru, Gelbooru, and Moebooru APIs automatically.
+File > Manage Sites. Enter a URL, click Auto-Detect, and save.
 
-Or via Python:
+API credentials are optional — needed for Gelbooru and rate-limited sites.
 
-```python
-from booru_viewer.core.db import Database
-db = Database()
-db.add_site("Danbooru", "https://danbooru.donmai.us", "danbooru")
-db.add_site("Gelbooru", "https://gelbooru.com", "gelbooru")
-```
+## Theming
 
-## Data
+The app uses your OS native theme by default. To customize, create `custom.qss` in your data directory:
 
-- Database: `~/.local/share/booru-viewer/booru.db`
-- Image cache: `~/.local/share/booru-viewer/cache/`
-- Thumbnails: `~/.local/share/booru-viewer/thumbnails/`
+- **Linux**: `~/.local/share/booru-viewer/custom.qss`
+- **Windows**: `%APPDATA%\booru-viewer\custom.qss`
+
+A green-on-black theme template is available in Settings > Theme > Create from Template.
+
+## Data Locations
+
+| | Linux | Windows |
+|--|-------|---------|
+| Database | `~/.local/share/booru-viewer/booru.db` | `%APPDATA%\booru-viewer\booru.db` |
+| Cache | `~/.local/share/booru-viewer/cache/` | `%APPDATA%\booru-viewer\cache\` |
+| Library | `~/.local/share/booru-viewer/saved/` | `%APPDATA%\booru-viewer\saved\` |
 
 ## License
 
