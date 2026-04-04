@@ -285,6 +285,7 @@ class BooruApp(QMainWindow):
         self._stack.addWidget(self._grid)
 
         self._favorites_view = FavoritesView(self._db)
+        self._favorites_view.favorite_selected.connect(self._on_favorite_selected)
         self._favorites_view.favorite_activated.connect(self._on_favorite_activated)
         self._stack.addWidget(self._favorites_view)
 
@@ -445,6 +446,9 @@ class BooruApp(QMainWindow):
         self._fav_btn.setChecked(index == 1)
         if index == 1:
             self._favorites_view.refresh()
+            self._favorites_view._grid.setFocus()
+        else:
+            self._grid.setFocus()
 
     def _on_tag_clicked(self, tag: str) -> None:
         self._search_bar.set_text(tag)
@@ -527,6 +531,10 @@ class BooruApp(QMainWindow):
                 if rating in moebooru_map:
                     parts.append(f"rating:{moebooru_map[rating]}")
 
+        # Score filter
+        if self._min_score > 0:
+            parts.append(f"score:>={self._min_score}")
+
         # Append blacklisted tags as negatives
         for tag in self._db.get_blacklisted_tags():
             parts.append(f"-{tag}")
@@ -544,16 +552,12 @@ class BooruApp(QMainWindow):
         search_tags = self._build_search_tags()
         log.info(f"Search: tags='{search_tags}' rating={self._current_rating}")
         page = self._current_page
-        min_score = self._min_score
         limit = self._db.get_setting_int("page_size") or 40
 
         async def _search():
             client = self._make_client()
             try:
                 posts = await client.search(tags=search_tags, page=page, limit=limit)
-                # Client-side score filter
-                if min_score > 0:
-                    posts = [p for p in posts if p.score >= min_score]
                 self._signals.search_done.emit(posts)
             except Exception as e:
                 self._signals.search_error.emit(str(e))
@@ -698,6 +702,10 @@ class BooruApp(QMainWindow):
         if 0 <= idx < len(self._grid._thumbs):
             self._grid._thumbs[idx]._cached_path = path
 
+    def _on_favorite_selected(self, fav) -> None:
+        self._status.showMessage(f"Favorite #{fav.post_id}")
+        self._on_favorite_activated(fav)
+
     def _on_favorite_activated(self, fav) -> None:
         info = f"Favorite #{fav.post_id}"
 
@@ -757,11 +765,20 @@ class BooruApp(QMainWindow):
 
     def _navigate_preview(self, direction: int) -> None:
         """Navigate to prev/next post in the preview. direction: -1 or +1."""
-        idx = self._grid.selected_index + direction
-        log.info(f"Navigate: direction={direction} current={self._grid.selected_index} next={idx} total={len(self._posts)}")
-        if 0 <= idx < len(self._posts):
-            self._grid._select(idx)
-            self._on_post_activated(idx)
+        if self._stack.currentIndex() == 1:
+            # Favorites view
+            grid = self._favorites_view._grid
+            favs = self._favorites_view._favorites
+            idx = grid.selected_index + direction
+            if 0 <= idx < len(favs):
+                grid._select(idx)
+                self._on_favorite_activated(favs[idx])
+        else:
+            idx = self._grid.selected_index + direction
+            log.info(f"Navigate: direction={direction} current={self._grid.selected_index} next={idx} total={len(self._posts)}")
+            if 0 <= idx < len(self._posts):
+                self._grid._select(idx)
+                self._on_post_activated(idx)
 
     def _favorite_from_preview(self) -> None:
         idx = self._grid.selected_index
