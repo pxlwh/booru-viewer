@@ -1615,6 +1615,10 @@ class BooruApp(QMainWindow):
             if 0 <= idx < len(self._posts):
                 self._open_in_default(self._posts[idx])
                 return
+        elif key == Qt.Key.Key_Space:
+            if self._preview._stack.currentIndex() == 1 and self._preview.underMouse():
+                self._preview._video_player._toggle_play()
+                return
         super().keyPressEvent(event)
 
     # -- Bookmarks --
