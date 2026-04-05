@@ -53,15 +53,20 @@ def _ext_from_url(url: str) -> str:
 
 def _convert_ugoira_to_gif(zip_path: Path) -> Path:
     """Convert a Pixiv ugoira zip (numbered JPEG/PNG frames) to an animated GIF."""
+    import io
     gif_path = zip_path.with_suffix(".gif")
     if gif_path.exists():
         return gif_path
+    _IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
     with zipfile.ZipFile(zip_path, "r") as zf:
-        names = sorted(zf.namelist())
+        names = sorted(n for n in zf.namelist() if Path(n).suffix.lower() in _IMG_EXTS)
         frames = []
         for name in names:
-            data = zf.read(name)
-            frames.append(Image.open(__import__("io").BytesIO(data)).convert("RGBA"))
+            try:
+                data = zf.read(name)
+                frames.append(Image.open(io.BytesIO(data)).convert("RGBA"))
+            except Exception:
+                continue
     if not frames:
         raise ValueError("Zip contains no image frames")
     frames[0].save(
