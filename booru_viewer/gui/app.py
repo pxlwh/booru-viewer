@@ -814,10 +814,10 @@ class BooruApp(QMainWindow):
             if 0 <= idx < len(self._posts):
                 self._grid._select(idx)
                 self._on_post_activated(idx)
-            elif idx >= len(self._posts) and direction == 1 and len(self._posts) > 0:
+            elif idx >= len(self._posts) and direction > 0 and len(self._posts) > 0:
                 self._nav_page_turn = "first"
                 self._next_page()
-            elif idx < 0 and direction == -1 and self._current_page > 1:
+            elif idx < 0 and direction < 0 and self._current_page > 1:
                 self._nav_page_turn = "last"
                 self._prev_page()
 
