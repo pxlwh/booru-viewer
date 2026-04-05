@@ -164,6 +164,14 @@ class Database:
             self._conn.execute("ALTER TABLE favorites ADD COLUMN folder TEXT")
             self._conn.commit()
         self._conn.execute("CREATE INDEX IF NOT EXISTS idx_favorites_folder ON favorites(folder)")
+        # Add tag_categories to library_meta if missing
+        tables = {r[0] for r in self._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        if "library_meta" in tables:
+            cur = self._conn.execute("PRAGMA table_info(library_meta)")
+            cols = {row[1] for row in cur.fetchall()}
+            if "tag_categories" not in cols:
+                self._conn.execute("ALTER TABLE library_meta ADD COLUMN tag_categories TEXT DEFAULT ''")
+                self._conn.commit()
 
     def close(self) -> None:
         if self._conn:

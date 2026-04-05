@@ -1114,54 +1114,47 @@ class BooruApp(QMainWindow):
             if evicted:
                 log.info(f"Auto-evicted {evicted} cached files")
 
+    def _set_library_info(self, path: str) -> None:
+        """Update info panel with library metadata for the given file."""
+        stem = Path(path).stem
+        if not stem.isdigit():
+            return
+        meta = self._db.get_library_meta(int(stem))
+        if meta:
+            from ..core.api.base import Post
+            p = Post(
+                id=int(stem), file_url=meta.get("file_url", ""),
+                preview_url=None, tags=meta.get("tags", ""),
+                score=meta.get("score", 0), rating=meta.get("rating"),
+                source=meta.get("source"), tag_categories=meta.get("tag_categories", {}),
+            )
+            self._info_panel.set_post(p)
+            info = f"#{p.id}  score:{p.score}  [{p.rating}]  {Path(path).suffix.lstrip('.').upper()}"
+            self._status.showMessage(info)
+
     def _on_library_selected(self, path: str) -> None:
         self._set_preview_media(path, Path(path).name)
         self._update_fullscreen(path, Path(path).name)
-        # Show metadata in info panel
-        stem = Path(path).stem
-        if stem.isdigit() and self._info_panel.isVisible():
-            meta = self._db.get_library_meta(int(stem))
-            if meta:
-                from ..core.api.base import Post
-                p = Post(
-                    id=int(stem), file_url=meta.get("file_url", ""),
-                    preview_url=None, tags=meta.get("tags", ""),
-                    score=meta.get("score", 0), rating=meta.get("rating"),
-                    source=meta.get("source"), tag_categories=meta.get("tag_categories", {}),
-                )
-                self._info_panel.set_post(p)
+        self._set_library_info(path)
 
     def _on_library_activated(self, path: str) -> None:
         self._set_preview_media(path, Path(path).name)
         self._update_fullscreen(path, Path(path).name)
-        stem = Path(path).stem
-        if stem.isdigit() and self._info_panel.isVisible():
-            meta = self._db.get_library_meta(int(stem))
-            if meta:
-                from ..core.api.base import Post
-                p = Post(
-                    id=int(stem), file_url=meta.get("file_url", ""),
-                    preview_url=None, tags=meta.get("tags", ""),
-                    score=meta.get("score", 0), rating=meta.get("rating"),
-                    source=meta.get("source"), tag_categories=meta.get("tag_categories", {}),
-                )
-                self._info_panel.set_post(p)
+        self._set_library_info(path)
 
     def _on_bookmark_selected(self, fav) -> None:
         self._status.showMessage(f"Bookmark #{fav.post_id}")
         # Show bookmark tags in info panel
-        if self._info_panel.isVisible():
-            from ..core.api.base import Post
-            # Try library metadata for categories
-            meta = self._db.get_library_meta(fav.post_id)
-            cats = meta.get("tag_categories", {}) if meta else {}
-            p = Post(
-                id=fav.post_id, file_url=fav.file_url or "",
-                preview_url=fav.preview_url, tags=fav.tags or "",
-                score=fav.score or 0, rating=fav.rating,
-                source=fav.source, tag_categories=cats,
-            )
-            self._info_panel.set_post(p)
+        from ..core.api.base import Post
+        meta = self._db.get_library_meta(fav.post_id)
+        cats = meta.get("tag_categories", {}) if meta else {}
+        p = Post(
+            id=fav.post_id, file_url=fav.file_url or "",
+            preview_url=fav.preview_url, tags=fav.tags or "",
+            score=fav.score or 0, rating=fav.rating,
+            source=fav.source, tag_categories=cats,
+        )
+        self._info_panel.set_post(p)
         self._on_bookmark_activated(fav)
 
     def _on_bookmark_activated(self, fav) -> None:
@@ -2069,12 +2062,12 @@ class BooruApp(QMainWindow):
             self._run_async(_fav)
 
     def _on_bookmark_done(self, index: int, msg: str) -> None:
-        self._status.showMessage(msg)
+        self._status.showMessage(f"{len(self._posts)} results — {msg}")
         thumbs = self._grid._thumbs
         if 0 <= index < len(thumbs):
             if "Saved" in msg:
                 thumbs[index].set_saved_locally(True)
-            elif "Bookmarked" in msg:
+            if "Bookmarked" in msg:
                 thumbs[index].set_bookmarked(True)
         self._update_fullscreen_state()
 
