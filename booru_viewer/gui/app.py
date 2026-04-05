@@ -841,7 +841,8 @@ class BooruApp(QMainWindow):
         # Pause the main preview's video player
         self._preview._video_player.stop()
         from .preview import FullscreenPreview
-        self._fullscreen_window = FullscreenPreview(parent=self)
+        cols = self._grid._flow.columns
+        self._fullscreen_window = FullscreenPreview(grid_cols=cols, parent=self)
         self._fullscreen_window.navigate.connect(self._navigate_fullscreen)
         self._fullscreen_window.destroyed.connect(self._on_fullscreen_closed)
         self._fullscreen_window.set_media(path, self._preview._info_label.text())

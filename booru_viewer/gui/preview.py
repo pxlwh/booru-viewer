@@ -27,9 +27,10 @@ class FullscreenPreview(QMainWindow):
 
     navigate = Signal(int)  # -1 = prev, +1 = next
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, grid_cols: int = 3, parent=None) -> None:
         super().__init__(parent, Qt.WindowType.Window)
         self.setWindowTitle("booru-viewer — Fullscreen")
+        self._grid_cols = grid_cols
 
         self._stack = QStackedWidget()
         self.setCentralWidget(self._stack)
@@ -75,6 +76,12 @@ class FullscreenPreview(QMainWindow):
                 return True
             elif key in (Qt.Key.Key_Right, Qt.Key.Key_L):
                 self.navigate.emit(1)
+                return True
+            elif key in (Qt.Key.Key_Up, Qt.Key.Key_K):
+                self.navigate.emit(-self._grid_cols)
+                return True
+            elif key in (Qt.Key.Key_Down, Qt.Key.Key_J):
+                self.navigate.emit(self._grid_cols)
                 return True
             elif key == Qt.Key.Key_Space and self._stack.currentIndex() == 1:
                 self._video._toggle_play()
