@@ -62,7 +62,7 @@ class GelbooruClient(BooruClient):
                     id=item["id"],
                     file_url=file_url,
                     preview_url=item.get("preview_url"),
-                    tags=item.get("tags", ""),
+                    tags=self._decode_tags(item.get("tags", "")),
                     score=item.get("score", 0),
                     rating=item.get("rating"),
                     source=item.get("source"),
@@ -71,6 +71,11 @@ class GelbooruClient(BooruClient):
                 )
             )
         return posts
+
+    @staticmethod
+    def _decode_tags(tags: str) -> str:
+        from html import unescape
+        return unescape(tags)
 
     async def get_post(self, post_id: int) -> Post | None:
         params: dict = {
