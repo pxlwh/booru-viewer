@@ -28,7 +28,7 @@ QWidget {
     color: #ebdbb2;
     font-size: 13px;
     font-family: monospace;
-    selection-background-color: #fe8019;  /* also sets grid selection highlight */
+    selection-background-color: #fe8019;  /* grid selection border + hover highlight */
     selection-color: #282828;
 }
 ```
@@ -242,8 +242,9 @@ ThumbnailWidget {
 
 ## Notes
 
-- `selection-background-color` on `QWidget` controls the **grid thumbnail selection highlight**
+- `selection-background-color` on `QWidget` controls the **grid thumbnail selection border** and **hover highlight** (lighter version auto-derived)
 - Setting a custom QSS automatically switches to the Fusion Qt style for consistent rendering
 - Tag category colors (Artist, Character, etc.) in the info panel are set in code, not via QSS
 - Saved dot (green) and bookmark star (yellow) are QSS-controllable via `qproperty-savedColor` and `qproperty-bookmarkedColor` on `ThumbnailWidget`
 - Use `QLabel { background: transparent; }` to prevent labels from getting opaque backgrounds
+- Right-click on thumbnails selects visually but does not change the preview

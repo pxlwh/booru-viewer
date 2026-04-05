@@ -66,8 +66,8 @@ Supports custom styling via `custom.qss` — see [Theming](#theming).
 - Dedicated tab for browsing saved files on disk
 - Folder sidebar with configurable library directory
 - Sort by date, name, or size
-- FFmpeg-based video thumbnail generation
-- Missing file detection for removed or relocated media
+- Video thumbnail generation (ffmpeg if available, placeholder fallback)
+- Unreachable directory detection
 
 ### Search
 - Inline history dropdown inside the search bar
