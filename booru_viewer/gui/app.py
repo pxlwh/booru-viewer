@@ -659,6 +659,7 @@ class BooruApp(QMainWindow):
                     batch = await client.search(tags=search_tags, page=current_page, limit=limit)
                     filtered = _filter(batch)
                     collected.extend(filtered)
+                    log.debug(f"Backfill: page={current_page} batch={len(batch)} filtered={len(filtered)} total={len(collected)}/{limit}")
                     if len(collected) >= limit or len(batch) < limit:
                         break
                     current_page += 1
