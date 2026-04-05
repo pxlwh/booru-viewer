@@ -23,26 +23,52 @@ def _is_video(path: str) -> bool:
 
 
 class FullscreenPreview(QMainWindow):
-    """Fullscreen image viewer window with navigation."""
+    """Fullscreen media viewer with navigation — images, GIFs, and video."""
 
     navigate = Signal(int)  # -1 = prev, +1 = next
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent, Qt.WindowType.Window)
         self.setWindowTitle("booru-viewer — Fullscreen")
+
+        self._stack = QStackedWidget()
+        self.setCentralWidget(self._stack)
+
         self._viewer = ImageViewer()
         self._viewer.close_requested.connect(self.close)
-        self.setCentralWidget(self._viewer)
+        self._stack.addWidget(self._viewer)
+
+        self._video = VideoPlayer()
+        self._video.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        for child in self._video.findChildren(QWidget):
+            child.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._stack.addWidget(self._video)
+
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setFocus()
         self.showFullScreen()
 
     def set_media(self, path: str, info: str = "") -> None:
         ext = Path(path).suffix.lower()
-        if ext == ".gif":
+        if _is_video(path):
+            self._viewer.clear()
+            self._video.stop()
+            self._video.play_file(path, info)
+            self._stack.setCurrentIndex(1)
+        elif ext == ".gif":
+            self._video.stop()
             self._viewer.set_gif(path, info)
+            self._stack.setCurrentIndex(0)
         else:
+            self._video.stop()
             pix = QPixmap(path)
             if not pix.isNull():
                 self._viewer.set_image(pix, info)
+            self._stack.setCurrentIndex(0)
+
+    def closeEvent(self, event) -> None:
+        self._video.stop()
+        super().closeEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() in (Qt.Key.Key_Escape, Qt.Key.Key_Q):
@@ -51,6 +77,12 @@ class FullscreenPreview(QMainWindow):
             self.navigate.emit(-1)
         elif event.key() in (Qt.Key.Key_Right, Qt.Key.Key_L):
             self.navigate.emit(1)
+        elif event.key() == Qt.Key.Key_Space and self._stack.currentIndex() == 1:
+            self._video._toggle_play()
+        elif event.key() == Qt.Key.Key_Period and self._stack.currentIndex() == 1:
+            self._video._seek_relative(5000)
+        elif event.key() == Qt.Key.Key_Comma and self._stack.currentIndex() == 1:
+            self._video._seek_relative(-5000)
         else:
             super().keyPressEvent(event)
 
@@ -294,6 +326,10 @@ class VideoPlayer(QWidget):
     def _seek(self, pos: int) -> None:
         self._player.setPosition(pos)
 
+    def _seek_relative(self, ms: int) -> None:
+        pos = max(0, self._player.position() + ms)
+        self._player.setPosition(pos)
+
     def _set_volume(self, val: int) -> None:
         self._audio.setVolume(val / 100.0)
 
@@ -497,6 +533,14 @@ class ImagePreview(QWidget):
             self._image_viewer.keyPressEvent(event)
         elif event.key() == Qt.Key.Key_Space:
             self._video_player._toggle_play()
+        elif event.key() == Qt.Key.Key_Period:
+            self._video_player._seek_relative(5000)
+        elif event.key() == Qt.Key.Key_Comma:
+            self._video_player._seek_relative(-5000)
+        elif event.key() in (Qt.Key.Key_Left, Qt.Key.Key_H):
+            self.navigate.emit(-1)
+        elif event.key() in (Qt.Key.Key_Right, Qt.Key.Key_L):
+            self.navigate.emit(1)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)

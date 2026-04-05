@@ -703,8 +703,9 @@ class BooruApp(QMainWindow):
         idx = self._grid.selected_index
         if 0 <= idx < len(self._grid._thumbs):
             self._grid._thumbs[idx]._cached_path = path
-        # Update fullscreen if open
+        # Update fullscreen if open, and mute the main player
         if self._fullscreen_window and self._fullscreen_window.isVisible():
+            self._preview._video_player.stop()
             self._fullscreen_window.set_media(path, info)
 
     def _on_favorite_selected(self, fav) -> None:
@@ -802,15 +803,22 @@ class BooruApp(QMainWindow):
         path = self._preview._current_path
         if not path:
             return
+        # Pause the main preview's video player
+        self._preview._video_player.stop()
         from .preview import FullscreenPreview
         self._fullscreen_window = FullscreenPreview(parent=self)
         self._fullscreen_window.navigate.connect(self._navigate_fullscreen)
+        self._fullscreen_window.destroyed.connect(self._on_fullscreen_closed)
         self._fullscreen_window.set_media(path, self._preview._info_label.text())
+
+    def _on_fullscreen_closed(self) -> None:
+        self._fullscreen_window = None
 
     def _navigate_fullscreen(self, direction: int) -> None:
         self._navigate_preview(direction)
         # For synchronous loads (cached/favorites), update immediately
         if self._fullscreen_window and self._preview._current_path:
+            self._preview._video_player.stop()
             self._fullscreen_window.set_media(
                 self._preview._current_path,
                 self._preview._info_label.text(),
