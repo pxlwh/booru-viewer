@@ -23,27 +23,34 @@ def _is_video(path: str) -> bool:
 
 
 class FullscreenPreview(QMainWindow):
-    """Fullscreen image viewer window."""
+    """Fullscreen image viewer window with navigation."""
 
-    def __init__(self, pixmap: QPixmap, info: str = "", parent=None) -> None:
-        super().__init__(parent)
+    navigate = Signal(int)  # -1 = prev, +1 = next
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent, Qt.WindowType.Window)
         self.setWindowTitle("booru-viewer — Fullscreen")
-        self._preview = ImageViewer()
-        self._preview.set_image(pixmap, info)
-        self._preview.close_requested.connect(self.close)
-        self.setCentralWidget(self._preview)
-        if parent:
-            screen = parent.screen()
-        else:
-            from PySide6.QtWidgets import QApplication
-            screen = QApplication.primaryScreen()
-        if screen:
-            self.setGeometry(screen.geometry())
+        self._viewer = ImageViewer()
+        self._viewer.close_requested.connect(self.close)
+        self.setCentralWidget(self._viewer)
         self.showFullScreen()
 
+    def set_media(self, path: str, info: str = "") -> None:
+        ext = Path(path).suffix.lower()
+        if ext == ".gif":
+            self._viewer.set_gif(path, info)
+        else:
+            pix = QPixmap(path)
+            if not pix.isNull():
+                self._viewer.set_image(pix, info)
+
     def keyPressEvent(self, event: QKeyEvent) -> None:
-        if event.key() in (Qt.Key.Key_Escape, Qt.Key.Key_Q, Qt.Key.Key_F):
+        if event.key() in (Qt.Key.Key_Escape, Qt.Key.Key_Q):
             self.close()
+        elif event.key() in (Qt.Key.Key_Left, Qt.Key.Key_H):
+            self.navigate.emit(-1)
+        elif event.key() in (Qt.Key.Key_Right, Qt.Key.Key_L):
+            self.navigate.emit(1)
         else:
             super().keyPressEvent(event)
 
@@ -175,6 +182,8 @@ class ImageViewer(QWidget):
         elif event.key() == Qt.Key.Key_Minus:
             self._zoom = max(self._zoom / 1.2, 0.1)
             self.update()
+        else:
+            event.ignore()
 
     def resizeEvent(self, event) -> None:
         if self._pixmap:
@@ -337,6 +346,7 @@ class ImagePreview(QWidget):
     save_to_folder = Signal(str)
     favorite_requested = Signal()
     navigate = Signal(int)  # -1 = prev, +1 = next
+    fullscreen_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -443,6 +453,9 @@ class ImagePreview(QWidget):
         if self._stack.currentIndex() == 0:
             reset_action = menu.addAction("Reset View")
 
+        slideshow_action = None
+        if self._current_path:
+            slideshow_action = menu.addAction("Slideshow Mode")
         clear_action = menu.addAction("Clear Preview")
 
         action = menu.exec(self.mapToGlobal(pos))
@@ -468,6 +481,8 @@ class ImagePreview(QWidget):
         elif action == reset_action:
             self._image_viewer._fit_to_view()
             self._image_viewer.update()
+        elif action == slideshow_action:
+            self.fullscreen_requested.emit()
         elif action == clear_action:
             self.close_requested.emit()
 

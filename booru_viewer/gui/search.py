@@ -43,7 +43,7 @@ class SearchBar(QWidget):
 
         # Save search button
         self._save_btn = QPushButton("Save")
-        self._save_btn.setFixedWidth(40)
+        self._save_btn.setFixedWidth(50)
         self._save_btn.setToolTip("Save current search")
         self._save_btn.clicked.connect(self._save_current_search)
         layout.addWidget(self._save_btn)

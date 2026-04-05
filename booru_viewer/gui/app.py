@@ -301,7 +301,9 @@ class BooruApp(QMainWindow):
         self._preview.favorite_requested.connect(self._favorite_from_preview)
         self._preview.save_to_folder.connect(self._save_from_preview)
         self._preview.navigate.connect(self._navigate_preview)
+        self._preview.fullscreen_requested.connect(self._open_fullscreen_preview)
         self._preview.set_folders_callback(self._db.get_folders)
+        self._fullscreen_window = None
         self._preview.setMinimumWidth(300)
         right.addWidget(self._preview)
 
@@ -701,6 +703,9 @@ class BooruApp(QMainWindow):
         idx = self._grid.selected_index
         if 0 <= idx < len(self._grid._thumbs):
             self._grid._thumbs[idx]._cached_path = path
+        # Update fullscreen if open
+        if self._fullscreen_window and self._fullscreen_window.isVisible():
+            self._fullscreen_window.set_media(path, info)
 
     def _on_favorite_selected(self, fav) -> None:
         self._status.showMessage(f"Favorite #{fav.post_id}")
@@ -792,6 +797,24 @@ class BooruApp(QMainWindow):
             if folder and folder not in self._db.get_folders():
                 self._db.add_folder(folder)
             self._save_to_library(self._posts[idx], target)
+
+    def _open_fullscreen_preview(self) -> None:
+        path = self._preview._current_path
+        if not path:
+            return
+        from .preview import FullscreenPreview
+        self._fullscreen_window = FullscreenPreview(parent=self)
+        self._fullscreen_window.navigate.connect(self._navigate_fullscreen)
+        self._fullscreen_window.set_media(path, self._preview._info_label.text())
+
+    def _navigate_fullscreen(self, direction: int) -> None:
+        self._navigate_preview(direction)
+        # For synchronous loads (cached/favorites), update immediately
+        if self._fullscreen_window and self._preview._current_path:
+            self._fullscreen_window.set_media(
+                self._preview._current_path,
+                self._preview._info_label.text(),
+            )
 
     def _close_preview(self) -> None:
         self._preview.clear()
@@ -1320,22 +1343,63 @@ def _apply_windows_dark_mode(app: QApplication) -> None:
             from PySide6.QtGui import QPalette, QColor
             app.setStyle("Fusion")
             palette = QPalette()
-            palette.setColor(QPalette.ColorRole.Window, QColor(30, 30, 30))
+            palette.setColor(QPalette.ColorRole.Window, QColor(32, 32, 32))
             palette.setColor(QPalette.ColorRole.WindowText, QColor(255, 255, 255))
-            palette.setColor(QPalette.ColorRole.Base, QColor(15, 15, 15))
-            palette.setColor(QPalette.ColorRole.AlternateBase, QColor(35, 35, 35))
-            palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(255, 255, 255))
+            palette.setColor(QPalette.ColorRole.Base, QColor(25, 25, 25))
+            palette.setColor(QPalette.ColorRole.AlternateBase, QColor(38, 38, 38))
+            palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(50, 50, 50))
             palette.setColor(QPalette.ColorRole.ToolTipText, QColor(255, 255, 255))
             palette.setColor(QPalette.ColorRole.Text, QColor(255, 255, 255))
-            palette.setColor(QPalette.ColorRole.Button, QColor(40, 40, 40))
+            palette.setColor(QPalette.ColorRole.Button, QColor(51, 51, 51))
             palette.setColor(QPalette.ColorRole.ButtonText, QColor(255, 255, 255))
             palette.setColor(QPalette.ColorRole.BrightText, QColor(255, 0, 0))
-            palette.setColor(QPalette.ColorRole.Link, QColor(42, 130, 218))
-            palette.setColor(QPalette.ColorRole.Highlight, QColor(42, 130, 218))
-            palette.setColor(QPalette.ColorRole.HighlightedText, QColor(0, 0, 0))
+            palette.setColor(QPalette.ColorRole.Link, QColor(0, 120, 215))
+            palette.setColor(QPalette.ColorRole.Highlight, QColor(0, 120, 215))
+            palette.setColor(QPalette.ColorRole.HighlightedText, QColor(255, 255, 255))
+            palette.setColor(QPalette.ColorRole.Mid, QColor(51, 51, 51))
+            palette.setColor(QPalette.ColorRole.Dark, QColor(25, 25, 25))
+            palette.setColor(QPalette.ColorRole.Shadow, QColor(0, 0, 0))
+            palette.setColor(QPalette.ColorRole.Light, QColor(60, 60, 60))
+            palette.setColor(QPalette.ColorRole.Midlight, QColor(55, 55, 55))
             palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, QColor(127, 127, 127))
             palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, QColor(127, 127, 127))
             app.setPalette(palette)
+            # Flatten Fusion's 3D look
+            app.setStyleSheet(app.styleSheet() + """
+                QPushButton {
+                    border: 1px solid #555;
+                    border-radius: 2px;
+                    padding: 4px 12px;
+                }
+                QPushButton:hover { background-color: #444; }
+                QPushButton:pressed { background-color: #333; }
+                QComboBox {
+                    border: 1px solid #555;
+                    border-radius: 2px;
+                    padding: 3px 6px;
+                }
+                QSpinBox {
+                    border: 1px solid #555;
+                    border-radius: 2px;
+                }
+                QLineEdit {
+                    border: 1px solid #555;
+                    border-radius: 2px;
+                    padding: 3px;
+                }
+                QScrollBar:vertical {
+                    background: #252525;
+                    width: 12px;
+                }
+                QScrollBar::handle:vertical {
+                    background: #555;
+                    border-radius: 4px;
+                    min-height: 20px;
+                }
+                QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                    height: 0;
+                }
+            """)
     except Exception:
         pass
 
