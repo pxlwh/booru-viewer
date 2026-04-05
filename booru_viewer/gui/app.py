@@ -1427,10 +1427,21 @@ class BooruApp(QMainWindow):
             tag = action.text()
             self._db.add_blacklisted_tag(tag)
             self._db.set_setting("blacklist_enabled", "1")
+            # Clear preview if the previewed post has this tag
+            if self._preview._current_path and tag in post.tag_list:
+                from ..core.cache import cached_path_for
+                cp = str(cached_path_for(post.file_url))
+                if cp == self._preview._current_path:
+                    self._preview.clear()
             self._status.showMessage(f"Blacklisted: {tag}")
             self._do_search()
         elif action == bl_post_action:
             self._db.add_blacklisted_post(post.file_url)
+            # Clear preview if this is the previewed post
+            from ..core.cache import cached_path_for
+            cp = str(cached_path_for(post.file_url))
+            if cp == self._preview._current_path:
+                self._preview.clear()
             self._status.showMessage(f"Post #{post.id} blacklisted")
             self._do_search()
 
