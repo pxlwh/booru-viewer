@@ -35,8 +35,11 @@ Supports custom styling via `custom.qss` — see [Theming](#theming).
 - Auto-detect site API type — just paste the URL
 - Tag search with autocomplete, history dropdown, and saved searches
 - Rating and score filtering (server-side `score:>=N`)
-- Blacklisted tags (appended as negatives)
+- Blacklisted tags and posts (client-side filtering with backfill)
 - Thumbnail grid with keyboard navigation
+- **Infinite scroll** — optional, auto-loads more posts at bottom
+- **Page cache** — prev/next loads from memory, no duplicates
+- **Copy File to Clipboard** — Ctrl+C, works for images and videos
 
 ### Preview
 - Image viewer with zoom (scroll wheel), pan (drag), and reset (middle click)
@@ -48,10 +51,10 @@ Supports custom styling via `custom.qss` — see [Theming](#theming).
 - Right-click preview → "Slideshow Mode" for fullscreen viewing
 - Arrow keys / `h`/`j`/`k`/`l` navigate posts (including during video playback)
 - `,` / `.` seek 5 seconds in videos, `Space` toggles play/pause
-- Toolbar with Bookmark and Save/Unsave toggle buttons showing current state
-- `F11` toggles fullscreen/windowed, `Ctrl+H` hides all UI
+- Toolbar with Bookmark, Save/Unsave, Blacklist Tag, and Blacklist Post buttons
+- `F11` toggles fullscreen/windowed, `Ctrl+H` hides all UI, `Ctrl+P` privacy screen
 - Bidirectional sync — clicking posts in the main grid updates the slideshow
-- Page boundary navigation — past the last/first post loads next/prev page
+- Video position and player state synced between preview and slideshow
 
 ### Bookmarks & Library
 - Bookmark posts, organize into folders
@@ -149,6 +152,7 @@ Categories=Graphics;
 | `Ctrl+Click` / `Shift+Click` | Multi-select |
 | `Home` / `End` | Jump to first / last |
 | Scroll tilt left / right | Previous / next page |
+| `Ctrl+C` | Copy file to clipboard |
 | Right click | Context menu |
 
 ### Preview
