@@ -809,23 +809,34 @@ class BooruApp(QMainWindow):
                 self._prefetch_adjacent(index)
 
     def _prefetch_adjacent(self, index: int) -> None:
-        """Prefetch posts in all 4 directions (left, right, up, down)."""
-        cols = self._grid._flow.columns
-        offsets = [1, -1, cols, -cols]
-        async def _prefetch_batch():
-            for offset in offsets:
-                adj = index + offset
+        """Prefetch outward from clicked post, gradually covering the whole page."""
+        total = len(self._posts)
+        if total == 0:
+            return
+
+        # Build spiral order: distance 1, 2, 3... from index
+        order = []
+        for dist in range(1, total):
+            for adj in (index + dist, index - dist):
+                if 0 <= adj < total:
+                    order.append(adj)
+            if len(order) >= total - 1:
+                break
+
+        async def _prefetch_spiral():
+            for adj in order:
                 if 0 <= adj < len(self._posts) and self._posts[adj].file_url:
                     self._signals.prefetch_progress.emit(adj, 0.0)
                     try:
-                        def _progress(dl, total, idx=adj):
-                            if total > 0:
-                                self._signals.prefetch_progress.emit(idx, dl / total)
+                        def _progress(dl, total_bytes, idx=adj):
+                            if total_bytes > 0:
+                                self._signals.prefetch_progress.emit(idx, dl / total_bytes)
                         await download_image(self._posts[adj].file_url, progress_callback=_progress)
                     except Exception as e:
                         log.warning(f"Operation failed: {e}")
                     self._signals.prefetch_progress.emit(adj, -1)
-        self._run_async(_prefetch_batch)
+                    await asyncio.sleep(0.2)  # gentle pacing
+        self._run_async(_prefetch_spiral)
 
     def _on_download_progress(self, downloaded: int, total: int) -> None:
         if total > 0:

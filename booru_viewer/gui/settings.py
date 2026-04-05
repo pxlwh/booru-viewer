@@ -111,7 +111,7 @@ class SettingsDialog(QDialog):
         form.addRow("", self._preload)
 
         # Prefetch adjacent posts
-        self._prefetch = QCheckBox("Prefetch adjacent posts")
+        self._prefetch = QCheckBox("Prefetch whole page over time")
         self._prefetch.setChecked(self._db.get_setting_bool("prefetch_adjacent"))
         form.addRow("", self._prefetch)
 
