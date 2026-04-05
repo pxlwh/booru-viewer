@@ -1955,34 +1955,15 @@ class BooruApp(QMainWindow):
             return
         log.debug(f"Copying: {path}")
 
-        import shutil
-        _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
-        ext = Path(path).suffix.lower()
-
-        if shutil.which("wl-copy"):
-            import subprocess
-            try:
-                if ext in _IMAGE_EXTS:
-                    _MIMES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-                              ".png": "image/png", ".gif": "image/gif", ".webp": "image/webp"}
-                    with open(path, "rb") as f:
-                        subprocess.run(["wl-copy", "--type", _MIMES[ext]], stdin=f, timeout=10)
-                else:
-                    # Videos/other: copy as file URI for file manager paste
-                    uri = f"file://{Path(path).resolve()}\r\n"
-                    subprocess.run(["wl-copy", "--type", "text/uri-list"], input=uri.encode(), timeout=5)
-                self._status.showMessage(f"Copied to clipboard: {Path(path).name}")
-                return
-            except Exception as e:
-                log.warning(f"wl-copy failed: {e}")
-
-        # Qt fallback (images only)
+        from PySide6.QtCore import QMimeData, QUrl
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(Path(path).resolve()))])
+        # Also set image data for apps that prefer it
         pix = QPixmap(path)
         if not pix.isNull():
-            QApplication.clipboard().setPixmap(pix)
-            self._status.showMessage(f"Copied to clipboard: {Path(path).name}")
-        else:
-            self._status.showMessage("Nothing to copy")
+            mime.setImageData(pix.toImage())
+        QApplication.clipboard().setMimeData(mime)
+        self._status.showMessage(f"Copied to clipboard: {Path(path).name}")
 
     # -- Bookmarks --
 
