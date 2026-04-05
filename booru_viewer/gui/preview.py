@@ -66,7 +66,11 @@ class FullscreenPreview(QMainWindow):
 
     def eventFilter(self, obj, event):
         from PySide6.QtCore import QEvent
+        from PySide6.QtWidgets import QLineEdit, QTextEdit, QSpinBox, QComboBox
         if event.type() == QEvent.Type.KeyPress:
+            # Don't intercept keys when typing in text inputs
+            if isinstance(obj, (QLineEdit, QTextEdit, QSpinBox, QComboBox)):
+                return super().eventFilter(obj, event)
             key = event.key()
             if key in (Qt.Key.Key_Escape, Qt.Key.Key_Q):
                 self.close()
