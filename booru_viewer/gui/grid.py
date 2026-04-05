@@ -258,7 +258,12 @@ class FlowLayout(QWidget):
     def columns(self) -> int:
         if not self._items:
             return 1
-        w = self.width() or 800
+        # Use parent viewport width if inside a QScrollArea
+        parent = self.parentWidget()
+        if parent and hasattr(parent, 'viewport'):
+            w = parent.viewport().width()
+        else:
+            w = self.width() or 800
         return max(1, w // (THUMB_SIZE + THUMB_SPACING))
 
 
