@@ -245,7 +245,41 @@ class SettingsDialog(QDialog):
         io_row.addWidget(import_bl_btn)
 
         layout.addLayout(io_row)
+
+        # Blacklisted posts
+        layout.addWidget(QLabel("Blacklisted posts (by URL):"))
+        self._bl_post_list = QListWidget()
+        for url in sorted(self._db.get_blacklisted_posts()):
+            self._bl_post_list.addItem(url)
+        layout.addWidget(self._bl_post_list)
+
+        bl_post_row = QHBoxLayout()
+        remove_post_btn = QPushButton("Remove Selected")
+        remove_post_btn.clicked.connect(self._bl_remove_post)
+        bl_post_row.addWidget(remove_post_btn)
+
+        clear_posts_btn = QPushButton("Clear All")
+        clear_posts_btn.clicked.connect(self._bl_clear_posts)
+        bl_post_row.addWidget(clear_posts_btn)
+
+        layout.addLayout(bl_post_row)
         return w
+
+    def _bl_remove_post(self) -> None:
+        item = self._bl_post_list.currentItem()
+        if item:
+            self._db.remove_blacklisted_post(item.text())
+            self._bl_post_list.takeItem(self._bl_post_list.row(item))
+
+    def _bl_clear_posts(self) -> None:
+        reply = QMessageBox.question(
+            self, "Confirm", "Remove all blacklisted posts?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            for url in self._db.get_blacklisted_posts():
+                self._db.remove_blacklisted_post(url)
+            self._bl_post_list.clear()
 
     # -- Paths tab --
 
