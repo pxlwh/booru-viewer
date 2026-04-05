@@ -12,7 +12,6 @@ from PySide6.QtWidgets import (
     QCompleter,
     QMenu,
     QInputDialog,
-    QWidgetAction,
 )
 
 from ..core.db import Database
@@ -113,37 +112,17 @@ class SearchBar(QWidget):
             return
 
         menu = QMenu(self)
+        saved_actions = {}
+        hist_actions = {}
 
         # Saved searches
         saved = self._db.get_saved_searches()
         if saved:
             saved_header = menu.addAction("-- Saved Searches --")
             saved_header.setEnabled(False)
-            saved_actions = {}
             for sid, name, query in saved:
-                row = QWidget()
-                row_layout = QHBoxLayout(row)
-                row_layout.setContentsMargins(8, 2, 4, 2)
-                label = QPushButton(f"{name}  ({query})")
-                label.setFlat(True)
-                label.setStyleSheet("text-align: left; border: none; padding: 2px 4px;")
-                delete_btn = QPushButton("x")
-                delete_btn.setFixedWidth(20)
-                delete_btn.setFlat(True)
-                delete_btn.setToolTip("Remove saved search")
-                row_layout.addWidget(label, stretch=1)
-                row_layout.addWidget(delete_btn)
-
-                wa = QWidgetAction(menu)
-                wa.setDefaultWidget(row)
-                menu.addAction(wa)
-
-                label.clicked.connect(lambda checked, q=query, m=menu: (
-                    self._input.setText(q), self._do_search(), m.close()
-                ))
-                delete_btn.clicked.connect(lambda checked, s=sid, m=menu: (
-                    self._db.remove_saved_search(s), m.close(), self._show_history_menu()
-                ))
+                a = menu.addAction(f"  {name}  ({query})")
+                saved_actions[id(a)] = (sid, query)
             menu.addSeparator()
 
         # History
@@ -151,42 +130,19 @@ class SearchBar(QWidget):
         if history:
             hist_header = menu.addAction("-- Recent --")
             hist_header.setEnabled(False)
-            hist_actions = {}
-            hist_delete_actions = {}
             for query in history:
-                row = QWidget()
-                row_layout = QHBoxLayout(row)
-                row_layout.setContentsMargins(8, 2, 4, 2)
-                label = QPushButton(query)
-                label.setFlat(True)
-                label.setStyleSheet("text-align: left; border: none; padding: 2px 4px;")
-                delete_btn = QPushButton("x")
-                delete_btn.setFixedWidth(20)
-                delete_btn.setFlat(True)
-                delete_btn.setToolTip("Remove from history")
-                row_layout.addWidget(label, stretch=1)
-                row_layout.addWidget(delete_btn)
-
-                from PySide6.QtWidgets import QWidgetAction
-                wa = QWidgetAction(menu)
-                wa.setDefaultWidget(row)
-                menu.addAction(wa)
-                hist_actions[id(label)] = query
-                hist_delete_actions[id(delete_btn)] = query
-
-                label.clicked.connect(lambda checked, q=query, m=menu: (
-                    self._input.setText(q), self._do_search(), m.close()
-                ))
-                delete_btn.clicked.connect(lambda checked, q=query, m=menu: (
-                    self._db.remove_search_history(q), m.close(), self._show_history_menu()
-                ))
-
+                a = menu.addAction(f"  {query}")
+                hist_actions[id(a)] = query
             menu.addSeparator()
             clear_action = menu.addAction("Clear History")
         else:
-            hist_actions = {}
-            hist_delete_actions = {}
             clear_action = None
+
+        # Management actions
+        delete_saved = None
+        if saved:
+            delete_saved = menu.addAction("Manage Saved Searches...")
+            menu.addSeparator()
 
         if not saved and not history:
             empty = menu.addAction("No history yet")
@@ -198,6 +154,44 @@ class SearchBar(QWidget):
 
         if clear_action and action == clear_action:
             self._db.clear_search_history()
+        elif delete_saved and action == delete_saved:
+            self._delete_saved_search_dialog()
+        elif id(action) in hist_actions:
+            self._input.setText(hist_actions[id(action)])
+            self._do_search()
+        elif id(action) in saved_actions:
+            _, query = saved_actions[id(action)]
+            self._input.setText(query)
+            self._do_search()
+
+    def _delete_saved_search_dialog(self) -> None:
+        from PySide6.QtWidgets import QListWidget, QDialog, QVBoxLayout, QDialogButtonBox
+        saved = self._db.get_saved_searches()
+        if not saved:
+            return
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Delete Saved Searches")
+        dlg.setMinimumWidth(300)
+        layout = QVBoxLayout(dlg)
+        lst = QListWidget()
+        for sid, name, query in saved:
+            lst.addItem(f"{name}  ({query})")
+        layout.addWidget(lst)
+        btns = QDialogButtonBox()
+        delete_btn = btns.addButton("Delete Selected", QDialogButtonBox.ButtonRole.DestructiveRole)
+        btns.addButton(QDialogButtonBox.StandardButton.Close)
+        btns.rejected.connect(dlg.reject)
+        layout.addWidget(btns)
+
+        def _delete():
+            row = lst.currentRow()
+            if 0 <= row < len(saved):
+                self._db.remove_saved_search(saved[row][0])
+                lst.takeItem(row)
+                saved.pop(row)
+
+        delete_btn.clicked.connect(_delete)
+        dlg.exec()
 
     def _save_current_search(self) -> None:
         if not self._db:
