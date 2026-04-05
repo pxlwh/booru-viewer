@@ -1371,6 +1371,7 @@ class BooruApp(QMainWindow):
         if self._db.get_setting_bool("clear_cache_on_exit"):
             from ..core.cache import clear_cache
             clear_cache(clear_images=True, clear_thumbnails=True)
+            self._db.clear_search_history()
         self._db.close()
         super().closeEvent(event)
 

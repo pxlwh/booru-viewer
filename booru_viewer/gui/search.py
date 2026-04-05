@@ -121,8 +121,29 @@ class SearchBar(QWidget):
             saved_header.setEnabled(False)
             saved_actions = {}
             for sid, name, query in saved:
-                a = menu.addAction(f"  {name}  ({query})")
-                saved_actions[id(a)] = (sid, query)
+                row = QWidget()
+                row_layout = QHBoxLayout(row)
+                row_layout.setContentsMargins(8, 2, 4, 2)
+                label = QPushButton(f"{name}  ({query})")
+                label.setFlat(True)
+                label.setStyleSheet("text-align: left; border: none; padding: 2px 4px;")
+                delete_btn = QPushButton("x")
+                delete_btn.setFixedWidth(20)
+                delete_btn.setFlat(True)
+                delete_btn.setToolTip("Remove saved search")
+                row_layout.addWidget(label, stretch=1)
+                row_layout.addWidget(delete_btn)
+
+                wa = QWidgetAction(menu)
+                wa.setDefaultWidget(row)
+                menu.addAction(wa)
+
+                label.clicked.connect(lambda checked, q=query, m=menu: (
+                    self._input.setText(q), self._do_search(), m.close()
+                ))
+                delete_btn.clicked.connect(lambda checked, s=sid, m=menu: (
+                    self._db.remove_saved_search(s), m.close(), self._show_history_menu()
+                ))
             menu.addSeparator()
 
         # History
@@ -177,10 +198,6 @@ class SearchBar(QWidget):
 
         if clear_action and action == clear_action:
             self._db.clear_search_history()
-        elif saved and id(action) in saved_actions:
-            _, query = saved_actions[id(action)]
-            self._input.setText(query)
-            self._do_search()
 
     def _save_current_search(self) -> None:
         if not self._db:
