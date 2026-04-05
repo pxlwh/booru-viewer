@@ -82,7 +82,7 @@ Supports custom styling via `custom.qss` — see [Theming](#theming).
 
 ### Windows
 
-Download `booru-viewer.exe` from [Releases](https://git.pax.moe/pax/booru-viewer/releases). No installation required — just run it.
+Download `booru-viewer-setup.exe` from [Releases](https://git.pax.moe/pax/booru-viewer/releases) and run the installer. It installs to Program Files with Start Menu and optional desktop shortcuts. To update, just run the new installer over the old one — your data in `%APPDATA%\booru-viewer\` is preserved.
 
 For WebM video playback, install [VP9 Video Extensions](https://apps.microsoft.com/detail/9n4d0msmp0pt) from the Microsoft Store.
 
