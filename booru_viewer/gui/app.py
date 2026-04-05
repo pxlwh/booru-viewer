@@ -992,6 +992,8 @@ class BooruApp(QMainWindow):
             show = self._stack.currentIndex() != 2
             self._fullscreen_window._bookmark_btn.setVisible(show)
             self._fullscreen_window._save_btn.setVisible(show)
+            self._fullscreen_window._bl_tag_btn.setVisible(show)
+            self._fullscreen_window._bl_post_btn.setVisible(show)
             if show:
                 self._update_fullscreen_state()
 
@@ -1041,6 +1043,7 @@ class BooruApp(QMainWindow):
                         if saved:
                             break
                 self._fullscreen_window.update_state(bookmarked, saved)
+                self._fullscreen_window.set_post_tags(post.tag_categories, post.tag_list)
             else:
                 self._fullscreen_window.update_state(False, False)
 
@@ -1222,6 +1225,31 @@ class BooruApp(QMainWindow):
         else:
             self._save_from_preview("")
 
+    def _blacklist_tag_from_slideshow(self, tag: str) -> None:
+        self._db.add_blacklisted_tag(tag)
+        self._db.set_setting("blacklist_enabled", "1")
+        # Clear slideshow if previewed post has this tag
+        idx = self._grid.selected_index
+        if 0 <= idx < len(self._posts) and tag in self._posts[idx].tag_list:
+            self._preview.clear()
+            if self._fullscreen_window:
+                self._fullscreen_window._viewer.clear()
+                self._fullscreen_window._video.stop()
+        self._status.showMessage(f"Blacklisted: {tag}")
+        self._do_search()
+
+    def _blacklist_post_from_slideshow(self) -> None:
+        idx = self._grid.selected_index
+        if 0 <= idx < len(self._posts):
+            post = self._posts[idx]
+            self._db.add_blacklisted_post(post.file_url)
+            self._preview.clear()
+            if self._fullscreen_window:
+                self._fullscreen_window._viewer.clear()
+                self._fullscreen_window._video.stop()
+            self._status.showMessage(f"Post #{post.id} blacklisted")
+            self._do_search()
+
     def _open_fullscreen_preview(self) -> None:
         path = self._preview._current_path
         if not path:
@@ -1253,6 +1281,8 @@ class BooruApp(QMainWindow):
         if show_actions:
             self._fullscreen_window.bookmark_requested.connect(self._bookmark_from_preview)
             self._fullscreen_window.save_toggle_requested.connect(self._save_toggle_from_slideshow)
+            self._fullscreen_window.blacklist_tag_requested.connect(self._blacklist_tag_from_slideshow)
+            self._fullscreen_window.blacklist_post_requested.connect(self._blacklist_post_from_slideshow)
         self._fullscreen_window.closed.connect(self._on_fullscreen_closed)
         self._fullscreen_window.privacy_requested.connect(self._toggle_privacy)
         # Sync video player state from preview to slideshow
@@ -1363,6 +1393,7 @@ class BooruApp(QMainWindow):
         save_lib_new = save_lib_menu.addAction("+ New Folder...")
 
         unsave_lib = menu.addAction("Unsave from Library")
+        copy_clipboard = menu.addAction("Copy Image to Clipboard")
         copy_url = menu.addAction("Copy Image URL")
         copy_tags = menu.addAction("Copy Tags")
         menu.addSeparator()
@@ -1415,6 +1446,8 @@ class BooruApp(QMainWindow):
                     self._grid._thumbs[index].set_saved_locally(False)
             else:
                 self._status.showMessage(f"#{post.id} not in library")
+        elif action == copy_clipboard:
+            self._copy_preview_to_clipboard()
         elif action == copy_url:
             QApplication.clipboard().setText(post.file_url)
             self._status.showMessage("URL copied")
@@ -1848,7 +1881,15 @@ class BooruApp(QMainWindow):
             if self._preview._stack.currentIndex() == 1 and self._preview.underMouse():
                 self._preview._video_player._toggle_play()
                 return
+        elif key == Qt.Key.Key_C and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
+            self._copy_preview_to_clipboard()
+            return
         super().keyPressEvent(event)
+
+    def _copy_preview_to_clipboard(self) -> None:
+        if self._preview._image_viewer._pixmap and not self._preview._image_viewer._pixmap.isNull():
+            QApplication.clipboard().setPixmap(self._preview._image_viewer._pixmap)
+            self._status.showMessage("Image copied to clipboard")
 
     # -- Bookmarks --
 

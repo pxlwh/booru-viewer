@@ -28,6 +28,8 @@ class FullscreenPreview(QMainWindow):
     navigate = Signal(int)  # direction: -1/+1 for left/right, -cols/+cols for up/down
     bookmark_requested = Signal()
     save_toggle_requested = Signal()  # save or unsave depending on state
+    blacklist_tag_requested = Signal(str)  # tag name
+    blacklist_post_requested = Signal()
     privacy_requested = Signal()
     closed = Signal()
 
@@ -58,9 +60,23 @@ class FullscreenPreview(QMainWindow):
         toolbar.addWidget(self._save_btn)
         self._is_saved = False
 
+        self._bl_tag_btn = QPushButton("BL Tag")
+        self._bl_tag_btn.setFixedWidth(60)
+        self._bl_tag_btn.setToolTip("Blacklist a tag")
+        self._bl_tag_btn.clicked.connect(self._show_bl_tag_menu)
+        toolbar.addWidget(self._bl_tag_btn)
+
+        self._bl_post_btn = QPushButton("BL Post")
+        self._bl_post_btn.setFixedWidth(65)
+        self._bl_post_btn.setToolTip("Blacklist this post")
+        self._bl_post_btn.clicked.connect(self.blacklist_post_requested)
+        toolbar.addWidget(self._bl_post_btn)
+
         if not show_actions:
             self._bookmark_btn.hide()
             self._save_btn.hide()
+            self._bl_tag_btn.hide()
+            self._bl_post_btn.hide()
 
         toolbar.addStretch()
 
@@ -99,6 +115,27 @@ class FullscreenPreview(QMainWindow):
             self.setScreen(target_screen)
             self.setGeometry(target_screen.geometry())
         self.showFullScreen()
+
+    _current_tags: dict[str, list[str]] = {}
+    _current_tag_list: list[str] = []
+
+    def set_post_tags(self, tag_categories: dict[str, list[str]], tag_list: list[str]) -> None:
+        self._current_tags = tag_categories
+        self._current_tag_list = tag_list
+
+    def _show_bl_tag_menu(self) -> None:
+        menu = QMenu(self)
+        if self._current_tags:
+            for category, tags in self._current_tags.items():
+                cat_menu = menu.addMenu(category)
+                for tag in tags[:30]:
+                    cat_menu.addAction(tag)
+        else:
+            for tag in self._current_tag_list[:30]:
+                menu.addAction(tag)
+        action = menu.exec(self._bl_tag_btn.mapToGlobal(self._bl_tag_btn.rect().bottomLeft()))
+        if action:
+            self.blacklist_tag_requested.emit(action.text())
 
     def update_state(self, bookmarked: bool, saved: bool) -> None:
         self._bookmark_btn.setText("Unbookmark" if bookmarked else "Bookmark")
