@@ -327,7 +327,7 @@ class BooruApp(QMainWindow):
 
         self._library_btn = QPushButton("Library")
         self._library_btn.setCheckable(True)
-        self._library_btn.setFixedWidth(60)
+        self._library_btn.setFixedWidth(80)
         self._library_btn.clicked.connect(lambda: self._switch_view(2))
         nav.addWidget(self._library_btn)
 
@@ -1806,30 +1806,54 @@ def run() -> None:
     custom_css = data_dir() / "custom.qss"
     if custom_css.exists():
         try:
-            # Use Fusion style so QSS has full control over rendering
-            app.setStyle("Fusion")
-            css_text = custom_css.read_text()
-            app.setStyleSheet(css_text)
-            # Extract colors from QSS and apply to palette for Fusion
+            # Use Fusion style with arrow color fix
+            from PySide6.QtWidgets import QProxyStyle
+            from PySide6.QtGui import QPalette, QColor, QPainter as _P
+            from PySide6.QtCore import QPoint as _QP
+
             import re
-            from PySide6.QtGui import QPalette, QColor
+            css_text = custom_css.read_text()
+
+            # Extract text color for arrows
+            m = re.search(r'QWidget\s*\{[^}]*?(?:^|\s)color\s*:\s*(#[0-9a-fA-F]{3,8})', css_text, re.MULTILINE)
+            arrow_color = QColor(m.group(1)) if m else QColor(200, 200, 200)
+
+            class _DarkArrowStyle(QProxyStyle):
+                """Fusion proxy that draws visible arrows on dark themes."""
+                def drawPrimitive(self, element, option, painter, widget=None):
+                    if element in (self.PrimitiveElement.PE_IndicatorSpinUp,
+                                   self.PrimitiveElement.PE_IndicatorSpinDown,
+                                   self.PrimitiveElement.PE_IndicatorArrowDown,
+                                   self.PrimitiveElement.PE_IndicatorArrowUp):
+                        painter.save()
+                        painter.setRenderHint(_P.RenderHint.Antialiasing)
+                        painter.setPen(Qt.PenStyle.NoPen)
+                        painter.setBrush(arrow_color)
+                        r = option.rect
+                        cx, cy = r.center().x(), r.center().y()
+                        s = min(r.width(), r.height()) // 3
+                        from PySide6.QtGui import QPolygon
+                        if element in (self.PrimitiveElement.PE_IndicatorSpinUp,
+                                       self.PrimitiveElement.PE_IndicatorArrowUp):
+                            painter.drawPolygon(QPolygon([
+                                _QP(cx, cy - s), _QP(cx - s, cy + s), _QP(cx + s, cy + s)
+                            ]))
+                        else:
+                            painter.drawPolygon(QPolygon([
+                                _QP(cx - s, cy - s), _QP(cx + s, cy - s), _QP(cx, cy + s)
+                            ]))
+                        painter.restore()
+                        return
+                    super().drawPrimitive(element, option, painter, widget)
+
+            app.setStyle(_DarkArrowStyle("Fusion"))
+            app.setStyleSheet(css_text)
+
+            # Extract selection color for grid highlight
             pal = app.palette()
             m = re.search(r'selection-background-color\s*:\s*(#[0-9a-fA-F]{3,8})', css_text)
             if m:
                 pal.setColor(QPalette.ColorRole.Highlight, QColor(m.group(1)))
-            # Set text color for spinbox/combobox arrows
-            m = re.search(r'QWidget\s*\{[^}]*?(?:^|\s)color\s*:\s*(#[0-9a-fA-F]{3,8})', css_text, re.MULTILINE)
-            if m:
-                text_color = QColor(m.group(1))
-                pal.setColor(QPalette.ColorRole.ButtonText, text_color)
-                pal.setColor(QPalette.ColorRole.WindowText, text_color)
-                pal.setColor(QPalette.ColorRole.Text, text_color)
-            m = re.search(r'QWidget\s*\{[^}]*?background-color\s*:\s*(#[0-9a-fA-F]{3,8})', css_text, re.MULTILINE)
-            if m:
-                bg_color = QColor(m.group(1))
-                pal.setColor(QPalette.ColorRole.Window, bg_color)
-                pal.setColor(QPalette.ColorRole.Base, bg_color)
-                pal.setColor(QPalette.ColorRole.Button, bg_color.lighter(120))
             app.setPalette(pal)
         except Exception as e:
             log.warning(f"Operation failed: {e}")
