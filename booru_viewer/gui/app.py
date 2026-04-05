@@ -360,7 +360,7 @@ class BooruApp(QMainWindow):
         self._bookmarks_view.bookmark_activated.connect(self._on_bookmark_activated)
         self._stack.addWidget(self._bookmarks_view)
 
-        self._library_view = LibraryView()
+        self._library_view = LibraryView(db=self._db)
         self._library_view.file_selected.connect(self._on_library_selected)
         self._library_view.file_activated.connect(self._on_library_activated)
         self._stack.addWidget(self._library_view)
@@ -1780,6 +1780,12 @@ class BooruApp(QMainWindow):
                         if not lib_thumb.exists():
                             import shutil as _sh
                             _sh.copy2(thumb_src, lib_thumb)
+
+                # Store metadata for library search
+                self._db.save_library_meta(
+                    post_id=post.id, tags=post.tags, score=post.score,
+                    rating=post.rating, source=post.source, file_url=post.file_url,
+                )
 
                 where = folder or "Unsorted"
                 self._signals.bookmark_done.emit(

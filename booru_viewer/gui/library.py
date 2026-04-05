@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QPushButton,
     QLabel,
+    QLineEdit,
     QComboBox,
     QMenu,
     QMessageBox,
@@ -75,7 +76,11 @@ class LibraryView(QWidget):
         refresh_btn.clicked.connect(self.refresh)
         top.addWidget(refresh_btn)
 
-        top.addStretch(1)
+        self._search_input = QLineEdit()
+        self._search_input.setPlaceholderText("Search tags...")
+        self._search_input.returnPressed.connect(self.refresh)
+        top.addWidget(self._search_input, stretch=1)
+
         layout.addLayout(top)
 
         # --- Count label ---
@@ -106,6 +111,15 @@ class LibraryView(QWidget):
         self._refresh_folders()
         self._files = self._scan_files()
         self._sort_files()
+
+        # Filter by tag search if query entered
+        query = self._search_input.text().strip()
+        if query and self._db:
+            matching_ids = self._db.search_library_meta(query)
+            if matching_ids:
+                self._files = [f for f in self._files if f.stem.isdigit() and int(f.stem) in matching_ids]
+            else:
+                self._files = []
 
         if self._files:
             self._count_label.setText(f"{len(self._files)} files")

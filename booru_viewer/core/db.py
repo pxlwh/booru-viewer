@@ -59,6 +59,16 @@ CREATE TABLE IF NOT EXISTS blacklisted_posts (
     url  TEXT NOT NULL UNIQUE
 );
 
+CREATE TABLE IF NOT EXISTS library_meta (
+    post_id  INTEGER PRIMARY KEY,
+    tags     TEXT NOT NULL DEFAULT '',
+    score    INTEGER DEFAULT 0,
+    rating   TEXT,
+    source   TEXT,
+    file_url TEXT,
+    saved_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -438,6 +448,34 @@ class Database:
     def get_blacklisted_posts(self) -> set[str]:
         rows = self.conn.execute("SELECT url FROM blacklisted_posts").fetchall()
         return {r["url"] for r in rows}
+
+    # -- Library Metadata --
+
+    def save_library_meta(self, post_id: int, tags: str = "", score: int = 0,
+                          rating: str = None, source: str = None, file_url: str = None) -> None:
+        from datetime import datetime, timezone
+        self.conn.execute(
+            "INSERT OR REPLACE INTO library_meta (post_id, tags, score, rating, source, file_url, saved_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (post_id, tags, score, rating, source, file_url, datetime.now(timezone.utc).isoformat()),
+        )
+        self.conn.commit()
+
+    def get_library_meta(self, post_id: int) -> dict | None:
+        row = self.conn.execute("SELECT * FROM library_meta WHERE post_id = ?", (post_id,)).fetchone()
+        return dict(row) if row else None
+
+    def search_library_meta(self, query: str) -> set[int]:
+        """Search library metadata by tags. Returns matching post IDs."""
+        rows = self.conn.execute(
+            "SELECT post_id FROM library_meta WHERE tags LIKE ?",
+            (f"%{query}%",),
+        ).fetchall()
+        return {r["post_id"] for r in rows}
+
+    def remove_library_meta(self, post_id: int) -> None:
+        self.conn.execute("DELETE FROM library_meta WHERE post_id = ?", (post_id,))
+        self.conn.commit()
 
     # -- Settings --
 
