@@ -683,6 +683,7 @@ class BooruApp(QMainWindow):
         self._run_async(_search)
 
     def _on_search_done(self, posts: list) -> None:
+        self._page_label.setText(f"Page {self._current_page}")
         self._posts = posts
         # Cache page results and track shown IDs
         if not hasattr(self, '_shown_post_ids'):
