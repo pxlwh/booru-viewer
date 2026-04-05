@@ -227,6 +227,13 @@ class BooruApp(QMainWindow):
         self._async_thread = threading.Thread(target=self._async_loop.run_forever, daemon=True)
         self._async_thread.start()
 
+        # Reset shared HTTP clients from previous session
+        from ..core.cache import _get_shared_client
+        from ..core.api.base import BooruClient
+        BooruClient._shared_client = None
+        import booru_viewer.core.cache as _cache_mod
+        _cache_mod._shared_client = None
+
         self._setup_signals()
         self._setup_ui()
         self._setup_menu()
