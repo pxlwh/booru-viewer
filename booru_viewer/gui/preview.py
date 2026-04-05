@@ -27,8 +27,7 @@ class FullscreenPreview(QMainWindow):
 
     navigate = Signal(int)  # direction: -1/+1 for left/right, -cols/+cols for up/down
     favorite_requested = Signal()
-    save_requested = Signal()
-    unsave_requested = Signal()
+    save_toggle_requested = Signal()  # save or unsave depending on state
 
     def __init__(self, grid_cols: int = 3, parent=None) -> None:
         super().__init__(parent, Qt.WindowType.Window)
@@ -41,7 +40,8 @@ class FullscreenPreview(QMainWindow):
         main_layout.setSpacing(0)
 
         # Top toolbar
-        toolbar = QHBoxLayout()
+        self._toolbar = QWidget()
+        toolbar = QHBoxLayout(self._toolbar)
         toolbar.setContentsMargins(8, 4, 8, 4)
 
         self._fav_btn = QPushButton("Favorite")
@@ -50,21 +50,17 @@ class FullscreenPreview(QMainWindow):
         toolbar.addWidget(self._fav_btn)
 
         self._save_btn = QPushButton("Save")
-        self._save_btn.setFixedWidth(60)
-        self._save_btn.clicked.connect(self.save_requested)
+        self._save_btn.setFixedWidth(70)
+        self._save_btn.clicked.connect(self.save_toggle_requested)
         toolbar.addWidget(self._save_btn)
-
-        self._unsave_btn = QPushButton("Unsave")
-        self._unsave_btn.setFixedWidth(70)
-        self._unsave_btn.clicked.connect(self.unsave_requested)
-        toolbar.addWidget(self._unsave_btn)
+        self._is_saved = False
 
         toolbar.addStretch()
 
         self._info_label = QLabel()
         toolbar.addWidget(self._info_label)
 
-        main_layout.addLayout(toolbar)
+        main_layout.addWidget(self._toolbar)
 
         # Media stack
         self._stack = QStackedWidget()
@@ -86,8 +82,8 @@ class FullscreenPreview(QMainWindow):
     def update_state(self, favorited: bool, saved: bool) -> None:
         self._fav_btn.setText("Unfavorite" if favorited else "Favorite")
         self._fav_btn.setFixedWidth(90 if favorited else 80)
-        self._save_btn.setEnabled(not saved)
-        self._unsave_btn.setEnabled(saved)
+        self._is_saved = saved
+        self._save_btn.setText("Unsave" if saved else "Save")
 
     def set_media(self, path: str, info: str = "") -> None:
         self._info_label.setText(info)
@@ -116,7 +112,19 @@ class FullscreenPreview(QMainWindow):
             if isinstance(obj, (QLineEdit, QTextEdit, QSpinBox, QComboBox)):
                 return super().eventFilter(obj, event)
             key = event.key()
-            if key in (Qt.Key.Key_Escape, Qt.Key.Key_Q):
+            mods = event.modifiers()
+            if key == Qt.Key.Key_H and mods & Qt.KeyboardModifier.ControlModifier:
+                self._toolbar.setVisible(not self._toolbar.isVisible())
+                # Also hide video controls if showing video
+                if self._stack.currentIndex() == 1:
+                    for child in self._video.findChildren(QPushButton):
+                        child.setVisible(self._toolbar.isVisible())
+                    for child in self._video.findChildren(QSlider):
+                        child.setVisible(self._toolbar.isVisible())
+                    for child in self._video.findChildren(QLabel):
+                        child.setVisible(self._toolbar.isVisible())
+                return True
+            elif key in (Qt.Key.Key_Escape, Qt.Key.Key_Q):
                 self.close()
                 return True
             elif key in (Qt.Key.Key_Left, Qt.Key.Key_H):

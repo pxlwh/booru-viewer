@@ -923,6 +923,12 @@ class BooruApp(QMainWindow):
                 self._status.showMessage(f"#{post.id} not in library")
             self._update_fullscreen_state()
 
+    def _save_toggle_from_slideshow(self) -> None:
+        if self._fullscreen_window and self._fullscreen_window._is_saved:
+            self._unsave_from_preview()
+        else:
+            self._save_from_preview("")
+
     def _open_fullscreen_preview(self) -> None:
         path = self._preview._current_path
         if not path:
@@ -934,8 +940,7 @@ class BooruApp(QMainWindow):
         self._fullscreen_window = FullscreenPreview(grid_cols=cols, parent=self)
         self._fullscreen_window.navigate.connect(self._navigate_fullscreen)
         self._fullscreen_window.favorite_requested.connect(self._favorite_from_preview)
-        self._fullscreen_window.save_requested.connect(lambda: self._save_from_preview(""))
-        self._fullscreen_window.unsave_requested.connect(self._unsave_from_preview)
+        self._fullscreen_window.save_toggle_requested.connect(self._save_toggle_from_slideshow)
         self._fullscreen_window.destroyed.connect(self._on_fullscreen_closed)
         self._fullscreen_window.set_media(path, self._preview._info_label.text())
         self._update_fullscreen_state()
