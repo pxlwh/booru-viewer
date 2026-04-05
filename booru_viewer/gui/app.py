@@ -822,6 +822,18 @@ class BooruApp(QMainWindow):
         if self._db.get_setting_bool("prefetch_adjacent") and posts:
             self._prefetch_adjacent(0)
 
+        # Infinite scroll: if first page doesn't fill viewport, load more
+        if self._infinite_scroll and posts:
+            QTimer.singleShot(200, self._check_viewport_fill)
+
+    def _check_viewport_fill(self) -> None:
+        """If content doesn't fill the viewport, trigger infinite scroll."""
+        if not self._infinite_scroll or self._loading or getattr(self, '_infinite_exhausted', False):
+            return
+        sb = self._grid.verticalScrollBar()
+        if sb.maximum() == 0:
+            self._on_reached_bottom()
+
     def _on_search_append(self, posts: list) -> None:
         """Queue posts and add them one at a time as thumbnails arrive."""
         if not posts:
@@ -875,10 +887,11 @@ class BooruApp(QMainWindow):
             self._loading = False
             if self._db.get_setting_bool("prefetch_adjacent"):
                 self._prefetch_adjacent(idx)
-            # Check if still at bottom — trigger next load
+            # Check if still at bottom or content doesn't fill viewport
             sb = self._grid.verticalScrollBar()
             from .grid import THUMB_SIZE, THUMB_SPACING
-            if sb.maximum() > 0 and sb.value() >= sb.maximum() - (THUMB_SIZE + THUMB_SPACING * 2):
+            threshold = THUMB_SIZE + THUMB_SPACING * 2
+            if sb.maximum() == 0 or sb.value() >= sb.maximum() - threshold:
                 self._on_reached_bottom()
 
     def _fetch_thumbnail(self, index: int, url: str) -> None:
