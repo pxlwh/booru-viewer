@@ -473,11 +473,13 @@ class ImagePreview(QWidget):
 
         # Image viewer (index 0)
         self._image_viewer = ImageViewer()
+        self._image_viewer.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._image_viewer.close_requested.connect(self.close_requested)
         self._stack.addWidget(self._image_viewer)
 
         # Video player (index 1)
         self._video_player = VideoPlayer()
+        self._video_player.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._stack.addWidget(self._video_player)
 
         # Info label
@@ -485,7 +487,7 @@ class ImagePreview(QWidget):
         self._info_label.setStyleSheet("padding: 2px 6px;")
         layout.addWidget(self._info_label)
 
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._on_context_menu)
 

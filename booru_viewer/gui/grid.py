@@ -356,15 +356,24 @@ class ThumbnailGrid(QScrollArea):
             else:
                 self._select(idx - 1)
         elif key in (Qt.Key.Key_Down, Qt.Key.Key_J):
-            if idx + cols >= len(self._thumbs):
-                self.nav_past_end.emit()
+            target = idx + cols
+            if target >= len(self._thumbs):
+                # If there are posts ahead in the last row, go to the last one
+                if idx < len(self._thumbs) - 1:
+                    self._select(len(self._thumbs) - 1)
+                else:
+                    self.nav_past_end.emit()
             else:
-                self._select(idx + cols)
+                self._select(target)
         elif key in (Qt.Key.Key_Up, Qt.Key.Key_K):
-            if idx - cols < 0:
-                self.nav_before_start.emit()
+            target = idx - cols
+            if target < 0:
+                if idx > 0:
+                    self._select(0)
+                else:
+                    self.nav_before_start.emit()
             else:
-                self._select(idx - cols)
+                self._select(target)
         elif key == Qt.Key.Key_Return or key == Qt.Key.Key_Enter:
             if 0 <= idx < len(self._thumbs):
                 self.post_activated.emit(idx)
