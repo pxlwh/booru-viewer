@@ -1254,27 +1254,16 @@ class BooruApp(QMainWindow):
     def _blacklist_tag_from_slideshow(self, tag: str) -> None:
         self._db.add_blacklisted_tag(tag)
         self._db.set_setting("blacklist_enabled", "1")
-        # Clear slideshow if previewed post has this tag
-        idx = self._grid.selected_index
-        if 0 <= idx < len(self._posts) and tag in self._posts[idx].tag_list:
-            self._preview.clear()
-            if self._fullscreen_window:
-                self._fullscreen_window._viewer.clear()
-                self._fullscreen_window._video.stop()
         self._status.showMessage(f"Blacklisted: {tag}")
-        self._do_search()
+        self._remove_blacklisted_from_grid(tag=tag)
 
     def _blacklist_post_from_slideshow(self) -> None:
         idx = self._grid.selected_index
         if 0 <= idx < len(self._posts):
             post = self._posts[idx]
             self._db.add_blacklisted_post(post.file_url)
-            self._preview.clear()
-            if self._fullscreen_window:
-                self._fullscreen_window._viewer.clear()
-                self._fullscreen_window._video.stop()
             self._status.showMessage(f"Post #{post.id} blacklisted")
-            self._do_search()
+            self._remove_blacklisted_from_grid(post_url=post.file_url)
 
     def _open_fullscreen_preview(self) -> None:
         path = self._preview._current_path
@@ -1496,19 +1485,59 @@ class BooruApp(QMainWindow):
                         self._fullscreen_window._viewer.clear()
                         self._fullscreen_window._video.stop()
             self._status.showMessage(f"Blacklisted: {tag}")
-            self._do_search()
+            self._remove_blacklisted_from_grid(tag=tag)
         elif action == bl_post_action:
             self._db.add_blacklisted_post(post.file_url)
-            # Clear preview/slideshow if this is the previewed post
-            from ..core.cache import cached_path_for
-            cp = str(cached_path_for(post.file_url))
+            self._remove_blacklisted_from_grid(post_url=post.file_url)
+            self._status.showMessage(f"Post #{post.id} blacklisted")
+            self._do_search()
+
+    def _remove_blacklisted_from_grid(self, tag: str = None, post_url: str = None) -> None:
+        """Remove matching posts from the grid in-place without re-searching."""
+        to_remove = []
+        for i, post in enumerate(self._posts):
+            if tag and tag in post.tag_list:
+                to_remove.append(i)
+            elif post_url and post.file_url == post_url:
+                to_remove.append(i)
+
+        if not to_remove:
+            return
+
+        # Check if previewed post is being removed
+        from ..core.cache import cached_path_for
+        for i in to_remove:
+            cp = str(cached_path_for(self._posts[i].file_url))
             if cp == self._preview._current_path:
                 self._preview.clear()
                 if self._fullscreen_window and self._fullscreen_window.isVisible():
                     self._fullscreen_window._viewer.clear()
                     self._fullscreen_window._video.stop()
-            self._status.showMessage(f"Post #{post.id} blacklisted")
-            self._do_search()
+                break
+
+        # Remove from posts list (reverse order to keep indices valid)
+        for i in reversed(to_remove):
+            self._posts.pop(i)
+
+        # Rebuild grid with remaining posts
+        thumbs = self._grid.set_posts(len(self._posts))
+        from ..core.config import saved_dir
+        site_id = self._site_combo.currentData()
+        _sd = saved_dir()
+        _saved_ids = {int(f.stem) for f in _sd.iterdir() if f.is_file() and f.stem.isdigit()} if _sd.exists() else set()
+
+        for i, (post, thumb) in enumerate(zip(self._posts, thumbs)):
+            if site_id and self._db.is_bookmarked(site_id, post.id):
+                thumb.set_bookmarked(True)
+            thumb.set_saved_locally(post.id in _saved_ids)
+            from ..core.cache import cached_path_for as cpf
+            cached = cpf(post.file_url)
+            if cached.exists():
+                thumb._cached_path = str(cached)
+            if post.preview_url:
+                self._fetch_thumbnail(i, post.preview_url)
+
+        self._status.showMessage(f"{len(self._posts)} results — {len(to_remove)} removed")
 
     @staticmethod
     def _is_child_of_menu(action, menu) -> bool:
@@ -1925,19 +1954,21 @@ class BooruApp(QMainWindow):
             return
 
         import shutil
+        _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+        ext = Path(path).suffix.lower()
+
         if shutil.which("wl-copy"):
             import subprocess
-            _MIMES = {
-                ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-                ".png": "image/png", ".gif": "image/gif",
-                ".webp": "image/webp", ".mp4": "video/mp4",
-                ".webm": "video/webm", ".mkv": "video/x-matroska",
-                ".avi": "video/x-msvideo", ".mov": "video/quicktime",
-            }
-            mime = _MIMES.get(Path(path).suffix.lower(), "application/octet-stream")
             try:
-                with open(path, "rb") as f:
-                    subprocess.run(["wl-copy", "--type", mime], stdin=f, timeout=10)
+                if ext in _IMAGE_EXTS:
+                    _MIMES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                              ".png": "image/png", ".gif": "image/gif", ".webp": "image/webp"}
+                    with open(path, "rb") as f:
+                        subprocess.run(["wl-copy", "--type", _MIMES[ext]], stdin=f, timeout=10)
+                else:
+                    # Videos/other: copy as file URI
+                    uri = f"file://{Path(path).resolve()}"
+                    subprocess.run(["wl-copy", "--type", "text/uri-list", uri], input=uri.encode(), timeout=5)
                 self._status.showMessage(f"Copied to clipboard: {Path(path).name}")
                 return
             except Exception as e:
