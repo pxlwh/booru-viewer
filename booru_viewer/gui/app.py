@@ -746,17 +746,50 @@ class BooruApp(QMainWindow):
         """Update slideshow button states for the current post."""
         if not self._fullscreen_window:
             return
-        idx = self._grid.selected_index
+        from ..core.config import saved_dir, saved_folder_dir, MEDIA_EXTENSIONS
         site_id = self._site_combo.currentData()
-        if 0 <= idx < len(self._posts) and site_id:
-            post = self._posts[idx]
-            favorited = self._db.is_favorited(site_id, post.id)
-            saved = False
-            if 0 <= idx < len(self._grid._thumbs):
-                saved = self._grid._thumbs[idx]._saved_locally
-            self._fullscreen_window.update_state(favorited, saved)
+
+        if self._stack.currentIndex() == 1:
+            # Favorites view
+            grid = self._favorites_view._grid
+            favs = self._favorites_view._favorites
+            idx = grid.selected_index
+            if 0 <= idx < len(favs):
+                fav = favs[idx]
+                saved = False
+                if fav.folder:
+                    saved = any(
+                        (saved_folder_dir(fav.folder) / f"{fav.post_id}{ext}").exists()
+                        for ext in MEDIA_EXTENSIONS
+                    )
+                else:
+                    saved = any(
+                        (saved_dir() / f"{fav.post_id}{ext}").exists()
+                        for ext in MEDIA_EXTENSIONS
+                    )
+                self._fullscreen_window.update_state(True, saved)
+            else:
+                self._fullscreen_window.update_state(False, False)
         else:
-            self._fullscreen_window.update_state(False, False)
+            idx = self._grid.selected_index
+            if 0 <= idx < len(self._posts) and site_id:
+                post = self._posts[idx]
+                favorited = self._db.is_favorited(site_id, post.id)
+                saved = any(
+                    (saved_dir() / f"{post.id}{ext}").exists()
+                    for ext in MEDIA_EXTENSIONS
+                )
+                if not saved:
+                    for folder in self._db.get_folders():
+                        saved = any(
+                            (saved_folder_dir(folder) / f"{post.id}{ext}").exists()
+                            for ext in MEDIA_EXTENSIONS
+                        )
+                        if saved:
+                            break
+                self._fullscreen_window.update_state(favorited, saved)
+            else:
+                self._fullscreen_window.update_state(False, False)
 
     def _on_image_done(self, path: str, info: str) -> None:
         self._dl_progress.hide()
