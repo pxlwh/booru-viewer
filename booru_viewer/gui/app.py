@@ -1066,7 +1066,7 @@ class BooruApp(QMainWindow):
             self._preview._current_path = path
         else:
             self._set_preview_media(path, info)
-        self._status.showMessage("Loaded")
+        self._status.showMessage(f"{len(self._posts)} results — Loaded")
         # Update drag path on the selected thumbnail
         idx = self._grid.selected_index
         if 0 <= idx < len(self._grid._thumbs):
