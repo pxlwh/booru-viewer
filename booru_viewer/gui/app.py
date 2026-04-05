@@ -327,7 +327,6 @@ class BooruApp(QMainWindow):
 
         self._library_btn = QPushButton("Library")
         self._library_btn.setCheckable(True)
-        self._library_btn.setFixedWidth(60)
         self._library_btn.clicked.connect(lambda: self._switch_view(2))
         nav.addWidget(self._library_btn)
 

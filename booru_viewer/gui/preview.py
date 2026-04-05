@@ -48,12 +48,12 @@ class FullscreenPreview(QMainWindow):
         toolbar.setContentsMargins(8, 4, 8, 4)
 
         self._bookmark_btn = QPushButton("Bookmark")
-        self._bookmark_btn.setFixedWidth(80)
+        
         self._bookmark_btn.clicked.connect(self.bookmark_requested)
         toolbar.addWidget(self._bookmark_btn)
 
         self._save_btn = QPushButton("Save")
-        self._save_btn.setFixedWidth(70)
+        
         self._save_btn.clicked.connect(self.save_toggle_requested)
         toolbar.addWidget(self._save_btn)
         self._is_saved = False
@@ -102,7 +102,7 @@ class FullscreenPreview(QMainWindow):
 
     def update_state(self, bookmarked: bool, saved: bool) -> None:
         self._bookmark_btn.setText("Unbookmark" if bookmarked else "Bookmark")
-        self._bookmark_btn.setFixedWidth(90 if bookmarked else 80)
+        
         self._is_saved = saved
         self._save_btn.setText("Unsave" if saved else "Save")
 
@@ -378,13 +378,19 @@ class VideoPlayer(QWidget):
         controls = QHBoxLayout()
         controls.setContentsMargins(4, 2, 4, 2)
 
-        self._play_btn = QPushButton("Play")
-        self._play_btn.setFixedWidth(65)
+        # Nerd Font glyphs with text fallback
+        self._use_icons = self._has_nerd_font()
+        _play = "\uf04b" if self._use_icons else "Play"
+        _mute = "\uf026" if self._use_icons else "Mute"
+        _auto = "\uf01d" if self._use_icons else "Auto"
+        _loop = "\uf01e" if self._use_icons else "Loop"
+
+        self._play_btn = QPushButton(_play)
         self._play_btn.clicked.connect(self._toggle_play)
         controls.addWidget(self._play_btn)
 
         self._time_label = QLabel("0:00")
-        self._time_label.setFixedWidth(45)
+        self._time_label.setMinimumWidth(40)
         controls.addWidget(self._time_label)
 
         self._seek_slider = _ClickSeekSlider(Qt.Orientation.Horizontal)
@@ -394,24 +400,22 @@ class VideoPlayer(QWidget):
         controls.addWidget(self._seek_slider, stretch=1)
 
         self._duration_label = QLabel("0:00")
-        self._duration_label.setFixedWidth(45)
+        self._duration_label.setMinimumWidth(40)
         controls.addWidget(self._duration_label)
 
         self._vol_slider = QSlider(Qt.Orientation.Horizontal)
         self._vol_slider.setRange(0, 100)
         self._vol_slider.setValue(50)
-        self._vol_slider.setFixedWidth(80)
+        self._vol_slider.setMaximumWidth(80)
         self._vol_slider.valueChanged.connect(self._set_volume)
         controls.addWidget(self._vol_slider)
 
-        self._mute_btn = QPushButton("Mute")
-        self._mute_btn.setFixedWidth(80)
+        self._mute_btn = QPushButton(_mute)
         self._mute_btn.clicked.connect(self._toggle_mute)
         controls.addWidget(self._mute_btn)
 
         self._autoplay = True
-        self._autoplay_btn = QPushButton("Auto")
-        self._autoplay_btn.setFixedWidth(70)
+        self._autoplay_btn = QPushButton(_auto)
         self._autoplay_btn.setCheckable(True)
         self._autoplay_btn.setChecked(True)
         self._autoplay_btn.setToolTip("Auto-play videos when selected")
@@ -420,8 +424,7 @@ class VideoPlayer(QWidget):
         controls.addWidget(self._autoplay_btn)
 
         self._loop_state = 0  # 0=Loop, 1=Once, 2=Next
-        self._loop_btn = QPushButton("Loop")
-        self._loop_btn.setFixedWidth(55)
+        self._loop_btn = QPushButton(_loop)
         self._loop_btn.setToolTip("Loop: repeat / Once: stop at end / Next: advance")
         self._loop_btn.clicked.connect(self._cycle_loop)
         controls.addWidget(self._loop_btn)
@@ -448,14 +451,30 @@ class VideoPlayer(QWidget):
         else:
             self._player.pause()
 
+    @staticmethod
+    def _has_nerd_font() -> bool:
+        """Check if the app font can render Nerd Font glyphs."""
+        from PySide6.QtGui import QFontMetrics, QFont
+        from PySide6.QtWidgets import QApplication
+        app = QApplication.instance()
+        if not app:
+            return False
+        fm = QFontMetrics(app.font())
+        return fm.inFont("\uf04b")  # Nerd Font play icon
+
     def _toggle_autoplay(self, checked: bool = True) -> None:
         self._autoplay = self._autoplay_btn.isChecked()
-        self._autoplay_btn.setText("Autoplay" if self._autoplay else "Manual")
-        # If turning off autoplay mid-playback, let current video finish then stop
+        if self._use_icons:
+            self._autoplay_btn.setText("\uf01d" if self._autoplay else "\uf04d")
+        else:
+            self._autoplay_btn.setText("Autoplay" if self._autoplay else "Manual")
 
     def _cycle_loop(self) -> None:
         self._loop_state = (self._loop_state + 1) % 3
-        labels = ["Loop", "Once", "Next"]
+        if self._use_icons:
+            labels = ["\uf01e", "\uf0e2", "\uf051"]  # repeat, once, next
+        else:
+            labels = ["Loop", "Once", "Next"]
         self._loop_btn.setText(labels[self._loop_state])
         self._autoplay_btn.setVisible(self._loop_state == 2)
 
@@ -485,7 +504,10 @@ class VideoPlayer(QWidget):
 
     def _toggle_mute(self) -> None:
         self._audio.setMuted(not self._audio.isMuted())
-        self._mute_btn.setText("Unmute" if self._audio.isMuted() else "Mute")
+        if self._use_icons:
+            self._mute_btn.setText("\uf028" if self._audio.isMuted() else "\uf026")
+        else:
+            self._mute_btn.setText("Unmute" if self._audio.isMuted() else "Mute")
 
     _last_pos = 0
 
@@ -510,9 +532,9 @@ class VideoPlayer(QWidget):
 
     def _on_state(self, state) -> None:
         if state == QMediaPlayer.PlaybackState.PlayingState:
-            self._play_btn.setText("Pause")
+            self._play_btn.setText("\uf04c" if self._use_icons else "Pause")
         else:
-            self._play_btn.setText("Play")
+            self._play_btn.setText("\uf04b" if self._use_icons else "Play")
 
     def _on_media_status(self, status) -> None:
         pass
