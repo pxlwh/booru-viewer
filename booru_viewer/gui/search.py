@@ -110,13 +110,40 @@ class SearchBar(QWidget):
             hist_header = menu.addAction("-- Recent --")
             hist_header.setEnabled(False)
             hist_actions = {}
+            hist_delete_actions = {}
             for query in history:
-                a = menu.addAction(f"  {query}")
-                hist_actions[id(a)] = query
+                row = QWidget()
+                row_layout = QHBoxLayout(row)
+                row_layout.setContentsMargins(8, 2, 4, 2)
+                label = QPushButton(query)
+                label.setFlat(True)
+                label.setStyleSheet("text-align: left; border: none; padding: 2px 4px;")
+                delete_btn = QPushButton("x")
+                delete_btn.setFixedWidth(20)
+                delete_btn.setFlat(True)
+                delete_btn.setToolTip("Remove from history")
+                row_layout.addWidget(label, stretch=1)
+                row_layout.addWidget(delete_btn)
+
+                from PySide6.QtWidgets import QWidgetAction
+                wa = QWidgetAction(menu)
+                wa.setDefaultWidget(row)
+                menu.addAction(wa)
+                hist_actions[id(label)] = query
+                hist_delete_actions[id(delete_btn)] = query
+
+                label.clicked.connect(lambda checked, q=query, m=menu: (
+                    self._input.setText(q), self._do_search(), m.close()
+                ))
+                delete_btn.clicked.connect(lambda checked, q=query, m=menu: (
+                    self._db.remove_search_history(q), m.close(), self._show_history_menu()
+                ))
+
             menu.addSeparator()
             clear_action = menu.addAction("Clear History")
         else:
             hist_actions = {}
+            hist_delete_actions = {}
             clear_action = None
 
         if not saved and not history:
@@ -129,9 +156,6 @@ class SearchBar(QWidget):
 
         if clear_action and action == clear_action:
             self._db.clear_search_history()
-        elif id(action) in hist_actions:
-            self._input.setText(hist_actions[id(action)])
-            self._do_search()
         elif saved and id(action) in saved_actions:
             _, query = saved_actions[id(action)]
             self._input.setText(query)

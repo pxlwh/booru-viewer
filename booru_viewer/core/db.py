@@ -429,6 +429,10 @@ class Database:
         self.conn.execute("DELETE FROM search_history")
         self.conn.commit()
 
+    def remove_search_history(self, query: str) -> None:
+        self.conn.execute("DELETE FROM search_history WHERE query = ?", (query,))
+        self.conn.commit()
+
     # -- Saved Searches --
 
     def add_saved_search(self, name: str, query: str, site_id: int | None = None) -> None:
