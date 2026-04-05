@@ -31,7 +31,7 @@ Supports custom styling via `custom.qss` — see [Theming](#theming).
 - Thumbnail grid with keyboard navigation
 
 ### Preview
-- Image viewer with zoom (scroll wheel, `+`/`-`), pan (drag), and reset (middle click)
+- Image viewer with zoom (scroll wheel), pan (drag), and reset (middle click)
 - GIF animation, Pixiv ugoira auto-conversion (zip to animated GIF)
 - Video playback (MP4, WebM) with play/pause, seek, volume, mute, and seamless looping
 - Info panel with post details, clickable tags, and filetype
@@ -101,7 +101,7 @@ Windows 10 dark mode is automatically detected and applied.
 
 | Key | Action |
 |-----|--------|
-| Scroll wheel / `+`/`-` | Zoom |
+| Scroll wheel | Zoom |
 | Middle click / `0` | Reset view |
 | Left / Right | Previous / next post |
 | `,` / `.` | Seek 5s back / forward (video) |
