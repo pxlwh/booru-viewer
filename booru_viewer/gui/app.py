@@ -671,6 +671,7 @@ class BooruApp(QMainWindow):
         self._run_async(_search)
 
     def _on_search_done(self, posts: list) -> None:
+        self._last_activated_index = -1
         self._posts = posts
         self._status.showMessage(f"{len(posts)} results")
         thumbs = self._grid.set_posts(len(posts))
@@ -768,6 +769,8 @@ class BooruApp(QMainWindow):
 
     # -- Post selection / preview --
 
+    _last_activated_index = -1
+
     def _on_post_selected(self, index: int) -> None:
         multi = self._grid.selected_indices
         if len(multi) > 1:
@@ -780,7 +783,9 @@ class BooruApp(QMainWindow):
             )
             if self._info_panel.isVisible():
                 self._info_panel.set_post(post)
-            self._on_post_activated(index)
+            if index != self._last_activated_index:
+                self._last_activated_index = index
+                self._on_post_activated(index)
 
     def _on_post_activated(self, index: int) -> None:
         if 0 <= index < len(self._posts):

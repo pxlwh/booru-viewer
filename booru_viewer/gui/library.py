@@ -7,10 +7,8 @@ import os
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal, QObject, QUrl, QTimer
+from PySide6.QtCore import Qt, Signal, QObject
 from PySide6.QtGui import QPixmap
-from PySide6.QtMultimedia import QMediaPlayer, QVideoSink, QVideoFrame
-from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -241,43 +239,42 @@ class LibraryView(QWidget):
         threading.Thread(target=_work, daemon=True).start()
 
     def _capture_video_thumb(self, index: int, source: str, dest: str) -> None:
-        """Grab first frame from video using Qt's QMediaPlayer + QVideoSink."""
-        from PySide6.QtMultimedia import QAudioOutput
-        player = QMediaPlayer()
-        audio = QAudioOutput()
-        audio.setVolume(0)
-        player.setAudioOutput(audio)
-        sink = QVideoSink()
-        player.setVideoSink(sink)
-        captured = [False]
-
-        def _on_frame(frame: QVideoFrame):
-            if captured[0]:
-                return
-            if frame.isValid():
-                img = frame.toImage()
-                if not img.isNull():
-                    captured[0] = True
-                    scaled = img.scaled(
-                        LIBRARY_THUMB_SIZE, LIBRARY_THUMB_SIZE,
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                        Qt.TransformationMode.SmoothTransformation,
-                    )
-                    scaled.save(dest, "JPEG", 85)
+        """Grab first frame from video. Tries ffmpeg, falls back to placeholder."""
+        def _work():
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ["ffmpeg", "-y", "-i", source, "-vframes", "1",
+                     "-vf", f"scale={LIBRARY_THUMB_SIZE}:{LIBRARY_THUMB_SIZE}:force_original_aspect_ratio=decrease",
+                     "-q:v", "5", dest],
+                    capture_output=True, timeout=10,
+                )
+                if Path(dest).exists():
                     self._signals.thumb_ready.emit(index, dest)
-                    player.stop()
-                    player.deleteLater()
+                    return
+            except (FileNotFoundError, Exception):
+                pass
+            # Fallback: generate a placeholder
+            from PySide6.QtGui import QPainter, QColor, QFont
+            from PySide6.QtGui import QPolygon
+            from PySide6.QtCore import QPoint as QP
+            pix = QPixmap(LIBRARY_THUMB_SIZE - 4, LIBRARY_THUMB_SIZE - 4)
+            pix.fill(QColor(40, 40, 40))
+            painter = QPainter(pix)
+            painter.setPen(QColor(180, 180, 180))
+            painter.setFont(QFont(painter.font().family(), 9))
+            ext = Path(source).suffix.upper().lstrip(".")
+            painter.drawText(pix.rect(), Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter, ext)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(180, 180, 180, 150))
+            cx, cy = pix.width() // 2, pix.height() // 2 - 10
+            painter.drawPolygon(QPolygon([QP(cx - 15, cy - 20), QP(cx - 15, cy + 20), QP(cx + 20, cy)]))
+            painter.end()
+            pix.save(dest, "JPEG", 85)
+            if Path(dest).exists():
+                self._signals.thumb_ready.emit(index, dest)
 
-        def _cleanup():
-            if not captured[0]:
-                player.stop()
-                player.deleteLater()
-
-        sink.videoFrameChanged.connect(_on_frame)
-        player.setSource(QUrl.fromLocalFile(source))
-        player.play()
-        # Timeout cleanup if no frame arrives
-        QTimer.singleShot(5000, _cleanup)
+        threading.Thread(target=_work, daemon=True).start()
 
     def _on_thumb_ready(self, index: int, path: str) -> None:
         thumbs = self._grid._thumbs
