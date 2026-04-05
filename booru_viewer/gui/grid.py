@@ -218,6 +218,8 @@ class ThumbnailGrid(QScrollArea):
     multi_context_requested = Signal(list, object)  # list[int], QPoint
     reached_bottom = Signal()  # emitted when scrolled to the bottom
     reached_top = Signal()     # emitted when scrolled to the top
+    nav_past_end = Signal()    # keyboard nav past last post
+    nav_before_start = Signal()  # keyboard nav before first post
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -344,13 +346,25 @@ class ThumbnailGrid(QScrollArea):
             return
 
         if key in (Qt.Key.Key_Right, Qt.Key.Key_L):
-            self._select(min(idx + 1, len(self._thumbs) - 1))
+            if idx + 1 >= len(self._thumbs):
+                self.nav_past_end.emit()
+            else:
+                self._select(idx + 1)
         elif key in (Qt.Key.Key_Left, Qt.Key.Key_H):
-            self._select(max(idx - 1, 0))
+            if idx - 1 < 0:
+                self.nav_before_start.emit()
+            else:
+                self._select(idx - 1)
         elif key in (Qt.Key.Key_Down, Qt.Key.Key_J):
-            self._select(min(idx + cols, len(self._thumbs) - 1))
+            if idx + cols >= len(self._thumbs):
+                self.nav_past_end.emit()
+            else:
+                self._select(idx + cols)
         elif key in (Qt.Key.Key_Up, Qt.Key.Key_K):
-            self._select(max(idx - cols, 0))
+            if idx - cols < 0:
+                self.nav_before_start.emit()
+            else:
+                self._select(idx - cols)
         elif key == Qt.Key.Key_Return or key == Qt.Key.Key_Enter:
             if 0 <= idx < len(self._thumbs):
                 self.post_activated.emit(idx)
