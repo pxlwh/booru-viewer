@@ -1,0 +1,116 @@
+/* booru-viewer — Tokyo Night */
+
+QWidget {
+    background-color: #1a1b26;
+    color: #a9b1d6;
+    font-size: 13px;
+}
+
+QPushButton {
+    background-color: #24283b;
+    color: #a9b1d6;
+    border: 1px solid #3b4261;
+    border-radius: 4px;
+    padding: 5px 14px;
+}
+QPushButton:hover {
+    background-color: #3b4261;
+    border-color: #7aa2f7;
+}
+QPushButton:pressed {
+    background-color: #7aa2f7;
+    color: #1a1b26;
+}
+QPushButton:checked {
+    background-color: #7aa2f7;
+    color: #1a1b26;
+    border-color: #7aa2f7;
+}
+
+QLineEdit, QSpinBox, QComboBox, QTextEdit {
+    background-color: #24283b;
+    color: #a9b1d6;
+    border: 1px solid #3b4261;
+    border-radius: 4px;
+    padding: 4px 8px;
+    selection-background-color: #7aa2f7;
+    selection-color: #1a1b26;
+}
+QLineEdit:focus, QSpinBox:focus, QTextEdit:focus {
+    border-color: #7aa2f7;
+}
+
+QComboBox::drop-down { border: none; width: 20px; }
+QComboBox QAbstractItemView {
+    background-color: #24283b;
+    color: #a9b1d6;
+    border: 1px solid #3b4261;
+    selection-background-color: #3b4261;
+}
+
+QScrollBar:vertical {
+    background: #1a1b26;
+    width: 10px;
+    border: none;
+}
+QScrollBar::handle:vertical {
+    background: #3b4261;
+    border-radius: 4px;
+    min-height: 20px;
+}
+QScrollBar::handle:vertical:hover { background: #7aa2f7; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+
+QScrollBar:horizontal {
+    background: #1a1b26;
+    height: 10px;
+}
+QScrollBar::handle:horizontal {
+    background: #3b4261;
+    border-radius: 4px;
+}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
+
+QMenuBar, QMenu {
+    background-color: #1a1b26;
+    color: #a9b1d6;
+    border: 1px solid #24283b;
+}
+QMenu::item:selected {
+    background-color: #3b4261;
+}
+
+QStatusBar {
+    background-color: #1a1b26;
+    color: #565f89;
+}
+
+QSplitter::handle {
+    background: #3b4261;
+    width: 2px;
+}
+
+QLabel { background: transparent; }
+
+QSlider::groove:horizontal {
+    background: #24283b;
+    height: 4px;
+    border-radius: 2px;
+}
+QSlider::handle:horizontal {
+    background: #7aa2f7;
+    width: 12px;
+    margin: -4px 0;
+    border-radius: 6px;
+}
+
+QTabBar::tab {
+    background: #24283b;
+    color: #a9b1d6;
+    border: 1px solid #3b4261;
+    padding: 6px 16px;
+}
+QTabBar::tab:selected {
+    background: #3b4261;
+    color: #7aa2f7;
+}

@@ -1,0 +1,116 @@
+/* booru-viewer — Gruvbox Dark */
+
+QWidget {
+    background-color: #282828;
+    color: #ebdbb2;
+    font-size: 13px;
+}
+
+QPushButton {
+    background-color: #3c3836;
+    color: #ebdbb2;
+    border: 1px solid #504945;
+    border-radius: 4px;
+    padding: 5px 14px;
+}
+QPushButton:hover {
+    background-color: #504945;
+    border-color: #fe8019;
+}
+QPushButton:pressed {
+    background-color: #fe8019;
+    color: #282828;
+}
+QPushButton:checked {
+    background-color: #fe8019;
+    color: #282828;
+    border-color: #fe8019;
+}
+
+QLineEdit, QSpinBox, QComboBox, QTextEdit {
+    background-color: #3c3836;
+    color: #ebdbb2;
+    border: 1px solid #504945;
+    border-radius: 4px;
+    padding: 4px 8px;
+    selection-background-color: #fe8019;
+    selection-color: #282828;
+}
+QLineEdit:focus, QSpinBox:focus, QTextEdit:focus {
+    border-color: #fe8019;
+}
+
+QComboBox::drop-down { border: none; width: 20px; }
+QComboBox QAbstractItemView {
+    background-color: #3c3836;
+    color: #ebdbb2;
+    border: 1px solid #504945;
+    selection-background-color: #504945;
+}
+
+QScrollBar:vertical {
+    background: #282828;
+    width: 10px;
+    border: none;
+}
+QScrollBar::handle:vertical {
+    background: #665c54;
+    border-radius: 4px;
+    min-height: 20px;
+}
+QScrollBar::handle:vertical:hover { background: #fe8019; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+
+QScrollBar:horizontal {
+    background: #282828;
+    height: 10px;
+}
+QScrollBar::handle:horizontal {
+    background: #665c54;
+    border-radius: 4px;
+}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
+
+QMenuBar, QMenu {
+    background-color: #282828;
+    color: #ebdbb2;
+    border: 1px solid #3c3836;
+}
+QMenu::item:selected {
+    background-color: #504945;
+}
+
+QStatusBar {
+    background-color: #282828;
+    color: #a89984;
+}
+
+QSplitter::handle {
+    background: #504945;
+    width: 2px;
+}
+
+QLabel { background: transparent; }
+
+QSlider::groove:horizontal {
+    background: #3c3836;
+    height: 4px;
+    border-radius: 2px;
+}
+QSlider::handle:horizontal {
+    background: #fe8019;
+    width: 12px;
+    margin: -4px 0;
+    border-radius: 6px;
+}
+
+QTabBar::tab {
+    background: #3c3836;
+    color: #ebdbb2;
+    border: 1px solid #504945;
+    padding: 6px 16px;
+}
+QTabBar::tab:selected {
+    background: #504945;
+    color: #fe8019;
+}

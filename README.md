@@ -142,12 +142,20 @@ API credentials are optional — needed for Gelbooru and rate-limited sites.
 
 ## Theming
 
-The app uses your OS native theme by default. To customize, create `custom.qss` in your data directory:
+The app uses your OS native theme by default. To customize, copy a `.qss` file from the [`themes/`](themes/) folder to your data directory as `custom.qss`:
 
 - **Linux**: `~/.local/share/booru-viewer/custom.qss`
 - **Windows**: `%APPDATA%\booru-viewer\custom.qss`
 
-A template is available in Settings > Theme > Create from Template.
+A template is also available in Settings > Theme > Create from Template.
+
+### Included Themes
+
+<picture><img src="screenshots/themes/nord.png" alt="Nord" width="400"></picture> <picture><img src="screenshots/themes/catppuccin-mocha.png" alt="Catppuccin Mocha" width="400"></picture>
+
+<picture><img src="screenshots/themes/gruvbox.png" alt="Gruvbox" width="400"></picture> <picture><img src="screenshots/themes/solarized-dark.png" alt="Solarized Dark" width="400"></picture>
+
+<picture><img src="screenshots/themes/tokyo-night.png" alt="Tokyo Night" width="400"></picture>
 
 ## Settings
 
