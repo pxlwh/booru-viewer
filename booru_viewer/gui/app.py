@@ -1950,8 +1950,10 @@ class BooruApp(QMainWindow):
                 if cp.exists():
                     path = str(cp)
         if not path or not Path(path).exists():
+            log.debug(f"Copy failed: path={path} preview_path={self._preview._current_path}")
             self._status.showMessage("Nothing to copy")
             return
+        log.debug(f"Copying: {path}")
 
         import shutil
         _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
