@@ -158,6 +158,12 @@ A template is available in Settings > Theme > Create from Template.
 | Library | `~/.local/share/booru-viewer/saved/` | `%APPDATA%\booru-viewer\saved\` |
 | Theme | `~/.local/share/booru-viewer/custom.qss` | `%APPDATA%\booru-viewer\custom.qss` |
 
+## Privacy
+
+booru-viewer makes **no connections** except to the booru sites you configure. There is no telemetry, analytics, update checking, or phoning home. All data stays local on your machine.
+
+Every outgoing request is logged in the debug panel (View > Log) so you can verify this yourself — you will only see requests to the booru API endpoints and CDNs you chose to connect to.
+
 ## License
 
 MIT
