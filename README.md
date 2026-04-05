@@ -6,13 +6,21 @@ Qt6 GUI, cross-platform (Linux + Windows), fully themeable.
 
 ## Screenshots
 
-**Windows — Native Light Theme**
+**Windows 11 — Light Theme**
 
-<picture><img src="screenshots/windows.png" alt="Windows — Native Light Theme" width="700"></picture>
+<picture><img src="screenshots/windows11-light.png" alt="Windows 11 — Light Theme" width="700"></picture>
 
-**Windows — Dark Theme (auto-detected)**
+**Windows 11 — Dark Theme (auto-detected)**
 
-<picture><img src="screenshots/windows-dark.png" alt="Windows — Dark Theme" width="700"></picture>
+<picture><img src="screenshots/windows11-dark.png" alt="Windows 11 — Dark Theme" width="700"></picture>
+
+**Windows 10 — Light Theme**
+
+<picture><img src="screenshots/windows.png" alt="Windows 10 — Light Theme" width="700"></picture>
+
+**Windows 10 — Dark Theme (auto-detected)**
+
+<picture><img src="screenshots/windows-dark.png" alt="Windows 10 — Dark Theme" width="700"></picture>
 
 **Linux — Styled via system Qt6 theme**
 
