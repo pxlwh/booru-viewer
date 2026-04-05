@@ -445,6 +445,7 @@ class BooruApp(QMainWindow):
         # Global shortcuts for preview navigation
         QShortcut(QKeySequence("Left"), self, lambda: self._navigate_preview(-1))
         QShortcut(QKeySequence("Right"), self, lambda: self._navigate_preview(1))
+        QShortcut(QKeySequence("Ctrl+C"), self, self._copy_preview_to_clipboard)
 
     def _setup_menu(self) -> None:
         menu = self.menuBar()
@@ -1892,9 +1893,6 @@ class BooruApp(QMainWindow):
             if self._preview._stack.currentIndex() == 1 and self._preview.underMouse():
                 self._preview._video_player._toggle_play()
                 return
-        elif key == Qt.Key.Key_C and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
-            self._copy_preview_to_clipboard()
-            return
         super().keyPressEvent(event)
 
     def _copy_preview_to_clipboard(self) -> None:
