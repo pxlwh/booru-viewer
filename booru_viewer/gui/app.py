@@ -1968,9 +1968,9 @@ class BooruApp(QMainWindow):
                     with open(path, "rb") as f:
                         subprocess.run(["wl-copy", "--type", _MIMES[ext]], stdin=f, timeout=10)
                 else:
-                    # Videos/other: copy as file URI
-                    uri = f"file://{Path(path).resolve()}"
-                    subprocess.run(["wl-copy", "--type", "text/uri-list", uri], input=uri.encode(), timeout=5)
+                    # Videos/other: copy as file URI for file manager paste
+                    uri = f"file://{Path(path).resolve()}\r\n"
+                    subprocess.run(["wl-copy", "--type", "text/uri-list"], input=uri.encode(), timeout=5)
                 self._status.showMessage(f"Copied to clipboard: {Path(path).name}")
                 return
             except Exception as e:
