@@ -671,7 +671,6 @@ class BooruApp(QMainWindow):
         self._run_async(_search)
 
     def _on_search_done(self, posts: list) -> None:
-        self._last_activated_index = -1
         self._posts = posts
         self._status.showMessage(f"{len(posts)} results")
         thumbs = self._grid.set_posts(len(posts))
@@ -769,8 +768,6 @@ class BooruApp(QMainWindow):
 
     # -- Post selection / preview --
 
-    _last_activated_index = -1
-
     def _on_post_selected(self, index: int) -> None:
         multi = self._grid.selected_indices
         if len(multi) > 1:
@@ -783,9 +780,7 @@ class BooruApp(QMainWindow):
             )
             if self._info_panel.isVisible():
                 self._info_panel.set_post(post)
-            if index != self._last_activated_index:
-                self._last_activated_index = index
-                self._on_post_activated(index)
+            self._on_post_activated(index)
 
     def _on_post_activated(self, index: int) -> None:
         if 0 <= index < len(self._posts):
@@ -1270,13 +1265,11 @@ class BooruApp(QMainWindow):
             self._db.set_setting("blacklist_enabled", "1")
             self._preview.clear()
             self._status.showMessage(f"Blacklisted: {tag}")
-            self._last_activated_index = -1
             self._do_search()
         elif action == bl_post_action:
             self._db.add_blacklisted_post(post.file_url)
             self._preview.clear()
             self._status.showMessage(f"Post #{post.id} blacklisted")
-            self._last_activated_index = -1
             self._do_search()
 
     @staticmethod

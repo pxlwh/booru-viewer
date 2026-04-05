@@ -119,6 +119,8 @@ class ThumbnailWidget(QWidget):
             pen = QPen(highlight, BORDER_WIDTH)
         elif self._multi_selected:
             pen = QPen(highlight.darker(150), BORDER_WIDTH)
+        elif self._hover:
+            pen = QPen(highlight.lighter(150), 1)
         else:
             pen = QPen(mid, 1)
         p.setPen(pen)
@@ -376,6 +378,13 @@ class ThumbnailGrid(QScrollArea):
         if self._multi_selected and index in self._multi_selected:
             self.multi_context_requested.emit(sorted(self._multi_selected), pos)
         else:
+            # Select visually but don't activate (no preview change)
+            self._clear_multi()
+            if 0 <= self._selected_index < len(self._thumbs):
+                self._thumbs[self._selected_index].set_selected(False)
+            self._selected_index = index
+            self._thumbs[index].set_selected(True)
+            self.ensureWidgetVisible(self._thumbs[index])
             self.context_requested.emit(index, pos)
 
     def select_all(self) -> None:
