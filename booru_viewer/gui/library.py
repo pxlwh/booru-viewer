@@ -105,6 +105,10 @@ class LibraryView(QWidget):
         for i, (filepath, thumb) in enumerate(zip(self._files, thumbs)):
             thumb._cached_path = str(filepath)
             thumb.setToolTip(filepath.name)
+            if not filepath.exists():
+                thumb.set_missing(True)
+                continue
+            thumb.set_saved_locally(True)
             cached_thumb = lib_thumb_dir / f"{filepath.stem}.jpg"
             if cached_thumb.exists():
                 pix = QPixmap(str(cached_thumb))

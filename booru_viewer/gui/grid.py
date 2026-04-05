@@ -27,9 +27,10 @@ class ThumbnailWidget(QWidget):
     double_clicked = Signal(int)
     right_clicked = Signal(int, object)  # index, QPoint
 
-    # QSS-controllable dot colors: qproperty-savedColor / qproperty-bookmarkedColor
+    # QSS-controllable dot colors
     _saved_color = QColor("#22cc22")
     _bookmarked_color = QColor("#ffcc00")
+    _missing_color = QColor("#ff4444")
 
     def _get_saved_color(self): return self._saved_color
     def _set_saved_color(self, c): self._saved_color = QColor(c) if isinstance(c, str) else c
@@ -39,6 +40,10 @@ class ThumbnailWidget(QWidget):
     def _set_bookmarked_color(self, c): self._bookmarked_color = QColor(c) if isinstance(c, str) else c
     bookmarkedColor = Property(QColor, _get_bookmarked_color, _set_bookmarked_color)
 
+    def _get_missing_color(self): return self._missing_color
+    def _set_missing_color(self, c): self._missing_color = QColor(c) if isinstance(c, str) else c
+    missingColor = Property(QColor, _get_missing_color, _set_missing_color)
+
     def __init__(self, index: int, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.index = index
@@ -47,6 +52,7 @@ class ThumbnailWidget(QWidget):
         self._multi_selected = False
         self._bookmarked = False
         self._saved_locally = False
+        self._missing = False
         self._hover = False
         self._drag_start: QPoint | None = None
         self._cached_path: str | None = None
@@ -77,6 +83,10 @@ class ThumbnailWidget(QWidget):
 
     def set_saved_locally(self, saved: bool) -> None:
         self._saved_locally = saved
+        self.update()
+
+    def set_missing(self, missing: bool) -> None:
+        self._missing = missing
         self.update()
 
     def set_prefetch_progress(self, progress: float) -> None:
@@ -120,7 +130,7 @@ class ThumbnailWidget(QWidget):
             y = (self.height() - self._pixmap.height()) // 2
             p.drawPixmap(x, y, self._pixmap)
 
-        # Saved dot + bookmark star (right-aligned, star right of dot)
+        # Indicators: missing (red) / saved (green) dot + bookmark star
         indicator_x = self.width() - 4
         if self._bookmarked:
             from PySide6.QtGui import QFont
@@ -128,7 +138,12 @@ class ThumbnailWidget(QWidget):
             p.setFont(QFont(p.font().family(), 8))
             indicator_x -= 11
             p.drawText(indicator_x, 12, "\u2605")
-        if self._saved_locally:
+        if self._missing:
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(self._missing_color)
+            indicator_x -= 9
+            p.drawEllipse(indicator_x, 4, 7, 7)
+        elif self._saved_locally:
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(self._saved_color)
             indicator_x -= 9
