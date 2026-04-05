@@ -205,6 +205,11 @@ class BooruApp(QMainWindow):
         self.resize(1200, 800)
 
         self._db = Database()
+        # Apply custom library directory if set
+        lib_dir = self._db.get_setting("library_dir")
+        if lib_dir:
+            from ..core.config import set_library_dir
+            set_library_dir(Path(lib_dir))
         self._current_site: Site | None = None
         self._posts: list[Post] = []
         self._current_page = 1

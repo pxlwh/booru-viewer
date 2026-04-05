@@ -39,9 +39,20 @@ def thumbnails_dir() -> Path:
     return path
 
 
+_library_dir_override: Path | None = None
+
+
+def set_library_dir(path: Path | None) -> None:
+    global _library_dir_override
+    _library_dir_override = path
+
+
 def saved_dir() -> Path:
     """Return the saved images directory."""
-    path = data_dir() / "saved"
+    if _library_dir_override:
+        path = _library_dir_override
+    else:
+        path = data_dir() / "saved"
     path.mkdir(parents=True, exist_ok=True)
     return path
 

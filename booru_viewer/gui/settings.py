@@ -307,6 +307,18 @@ class SettingsDialog(QDialog):
 
         layout.addLayout(form)
 
+        # Library directory (editable)
+        lib_row = QHBoxLayout()
+        from ..core.config import saved_dir
+        current_lib = self._db.get_setting("library_dir") or str(saved_dir())
+        self._library_dir = QLineEdit(current_lib)
+        lib_row.addWidget(self._library_dir, stretch=1)
+        browse_lib_btn = QPushButton("Browse...")
+        browse_lib_btn.clicked.connect(self._browse_library_dir)
+        lib_row.addWidget(browse_lib_btn)
+        layout.addWidget(QLabel("Library directory (restart required):"))
+        layout.addLayout(lib_row)
+
         open_btn = QPushButton("Open Data Folder")
         open_btn.clicked.connect(self._open_data_folder)
         layout.addWidget(open_btn)
@@ -554,6 +566,12 @@ class SettingsDialog(QDialog):
         except Exception as e:
             QMessageBox.warning(self, "Error", str(e))
 
+    def _browse_library_dir(self) -> None:
+        from PySide6.QtWidgets import QFileDialog
+        path = QFileDialog.getExistingDirectory(self, "Select Library Directory", self._library_dir.text())
+        if path:
+            self._library_dir.setText(path)
+
     def _open_data_folder(self) -> None:
         from PySide6.QtGui import QDesktopServices
         from PySide6.QtCore import QUrl
@@ -628,6 +646,7 @@ class SettingsDialog(QDialog):
         self._db.set_setting("default_score", str(self._default_score.value()))
         self._db.set_setting("preload_thumbnails", "1" if self._preload.isChecked() else "0")
         self._db.set_setting("prefetch_adjacent", "1" if self._prefetch.isChecked() else "0")
+        self._db.set_setting("library_dir", self._library_dir.text().strip())
         self._db.set_setting("max_cache_mb", str(self._max_cache.value()))
         self._db.set_setting("auto_evict", "1" if self._auto_evict.isChecked() else "0")
         self._db.set_setting("clear_cache_on_exit", "1" if self._clear_on_exit.isChecked() else "0")
