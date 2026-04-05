@@ -1768,6 +1768,19 @@ class BooruApp(QMainWindow):
                     import shutil
                     shutil.copy2(path, dest)
 
+                # Copy browse thumbnail to library thumbnail cache
+                if post.preview_url:
+                    from ..core.config import thumbnails_dir
+                    from ..core.cache import cached_path_for as _cpf
+                    thumb_src = _cpf(post.preview_url, thumbnails_dir())
+                    if thumb_src.exists():
+                        lib_thumb_dir = thumbnails_dir() / "library"
+                        lib_thumb_dir.mkdir(parents=True, exist_ok=True)
+                        lib_thumb = lib_thumb_dir / f"{post.id}.jpg"
+                        if not lib_thumb.exists():
+                            import shutil as _sh
+                            _sh.copy2(thumb_src, lib_thumb)
+
                 where = folder or "Unsorted"
                 self._signals.bookmark_done.emit(
                     self._grid.selected_index,
