@@ -48,6 +48,16 @@ QPushButton:pressed { background-color: #555; }
 QPushButton:checked { background-color: #0078d7; }  /* Active tab (Browse/Bookmarks/Library), Autoplay, Loop toggles */
 ```
 
+**Note:** Qt's QSS does not support the CSS `content` property, so you cannot replace button text (e.g. "Play" → "") via stylesheet alone. However, you can use a Nerd Font to change how unicode characters render:
+
+```css
+QPushButton {
+    font-family: "JetBrainsMono Nerd Font", monospace;
+}
+```
+
+To use icon buttons, you would need to modify the Python source code directly — the button labels are set in `preview.py` via `QPushButton("Play")` etc.
+
 ### Text Inputs
 
 ```css
