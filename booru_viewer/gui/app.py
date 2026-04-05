@@ -304,7 +304,8 @@ class BooruApp(QMainWindow):
         self._score_spin = QSpinBox()
         self._score_spin.setRange(0, 99999)
         self._score_spin.setValue(0)
-        self._score_spin.setFixedWidth(70)
+        self._score_spin.setFixedWidth(90)
+        self._score_spin.setButtonSymbols(QSpinBox.ButtonSymbols.UpDownArrows)
         top.addWidget(self._score_spin)
 
         self._search_bar = SearchBar(db=self._db)

@@ -35,6 +35,25 @@ def _url_hash(url: str) -> str:
     return hashlib.sha256(url.encode()).hexdigest()[:16]
 
 
+# Shared httpx client for connection pooling (avoids per-request TLS handshakes)
+_shared_client: httpx.AsyncClient | None = None
+
+
+def _get_shared_client(referer: str = "") -> httpx.AsyncClient:
+    global _shared_client
+    if _shared_client is None or _shared_client.is_closed:
+        _shared_client = httpx.AsyncClient(
+            headers={
+                "User-Agent": USER_AGENT,
+                "Accept": "image/*,video/*,*/*",
+            },
+            follow_redirects=True,
+            timeout=60.0,
+            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+        )
+    return _shared_client
+
+
 _IMAGE_MAGIC = {
     b'\x89PNG': True,
     b'\xff\xd8\xff': True,  # JPEG
@@ -142,15 +161,7 @@ async def download_image(
 
     own_client = client is None
     if own_client:
-        client = httpx.AsyncClient(
-            headers={
-                "User-Agent": USER_AGENT,
-                "Referer": referer,
-                "Accept": "image/*,video/*,*/*",
-            },
-            follow_redirects=True,
-            timeout=60.0,
-        )
+        client = _get_shared_client()
     try:
         if progress_callback:
             async with client.stream("GET", url) as resp:
@@ -184,8 +195,7 @@ async def download_image(
         if local.suffix.lower() == ".zip" and zipfile.is_zipfile(local):
             local = _convert_ugoira_to_gif(local)
     finally:
-        if own_client:
-            await client.aclose()
+        pass  # shared client stays open for connection reuse
     return local
 
 
