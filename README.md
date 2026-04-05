@@ -154,9 +154,9 @@ Categories=Graphics;
 |-----|--------|
 | Scroll wheel | Zoom |
 | Middle click / `0` | Reset view |
-| Left / Right | Previous / next post |
+| Arrow keys / `h`/`j`/`k`/`l` | Navigate posts |
 | `,` / `.` | Seek 5s back / forward (video) |
-| `Space` | Play / pause (video) |
+| `Space` | Play / pause (video, hover to activate) |
 | Right click | Context menu (bookmark, save, slideshow) |
 
 ### Slideshow

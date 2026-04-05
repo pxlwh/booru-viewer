@@ -1609,8 +1609,18 @@ class BooruApp(QMainWindow):
             self._privacy_overlay.raise_()
             self._privacy_overlay.show()
             self.setWindowTitle("booru-viewer")
+            # Pause preview video
+            if self._preview._stack.currentIndex() == 1:
+                self._preview._video_player._player.pause()
+            # Hide and pause slideshow
+            if self._fullscreen_window and self._fullscreen_window.isVisible():
+                if self._fullscreen_window._stack.currentIndex() == 1:
+                    self._fullscreen_window._video._player.pause()
+                self._fullscreen_window.hide()
         else:
             self._privacy_overlay.hide()
+            if self._fullscreen_window:
+                self._fullscreen_window.show()
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
