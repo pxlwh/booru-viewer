@@ -39,8 +39,9 @@ class LibraryView(QWidget):
     file_selected = Signal(str)
     file_activated = Signal(str)
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, db=None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._db = db
         self._files: list[Path] = []
         self._signals = _LibThumbSignals()
         self._signals.thumb_ready.connect(
@@ -110,26 +111,7 @@ class LibraryView(QWidget):
                 if not pix.isNull():
                     thumb.set_pixmap(pix)
                     continue
-            if filepath.suffix.lower() not in self._VIDEO_EXTS:
-                self._generate_thumb_async(i, filepath, cached_thumb)
-            else:
-                # Video placeholder with play triangle
-                from PySide6.QtGui import QPainter, QColor, QFont
-                pix = QPixmap(LIBRARY_THUMB_SIZE - 4, LIBRARY_THUMB_SIZE - 4)
-                pix.fill(QColor(40, 40, 40))
-                painter = QPainter(pix)
-                painter.setPen(QColor(180, 180, 180))
-                painter.setFont(QFont(painter.font().family(), 9))
-                painter.drawText(pix.rect(), Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter, filepath.suffix.upper().lstrip("."))
-                # Draw play triangle
-                painter.setPen(Qt.PenStyle.NoPen)
-                painter.setBrush(QColor(180, 180, 180, 150))
-                cx, cy = pix.width() // 2, pix.height() // 2 - 10
-                from PySide6.QtGui import QPolygon
-                from PySide6.QtCore import QPoint as QP
-                painter.drawPolygon(QPolygon([QP(cx - 15, cy - 20), QP(cx - 15, cy + 20), QP(cx + 20, cy)]))
-                painter.end()
-                thumb.set_pixmap(pix)
+            self._generate_thumb_async(i, filepath, cached_thumb)
 
     # ------------------------------------------------------------------
     # Folder list
@@ -214,27 +196,36 @@ class LibraryView(QWidget):
     def _generate_thumb_async(
         self, index: int, source: Path, dest: Path
     ) -> None:
-        if source.suffix.lower() in self._VIDEO_EXTS:
-            # Can't thumbnail videos with PIL — just show the file directly
-            # and let QPixmap try (it won't work for video, but that's OK)
-            return
-
         def _work() -> None:
             try:
-                from PIL import Image
-
-                with Image.open(source) as img:
-                    img.thumbnail(
-                        (LIBRARY_THUMB_SIZE, LIBRARY_THUMB_SIZE), Image.LANCZOS
-                    )
-                    if img.mode in ("RGBA", "P"):
-                        img = img.convert("RGB")
-                    img.save(str(dest), "JPEG", quality=85)
-                self._signals.thumb_ready.emit(index, str(dest))
+                if source.suffix.lower() in self._VIDEO_EXTS:
+                    self._generate_video_thumb(source, dest)
+                else:
+                    from PIL import Image
+                    with Image.open(source) as img:
+                        img.thumbnail(
+                            (LIBRARY_THUMB_SIZE, LIBRARY_THUMB_SIZE), Image.LANCZOS
+                        )
+                        if img.mode in ("RGBA", "P"):
+                            img = img.convert("RGB")
+                        img.save(str(dest), "JPEG", quality=85)
+                if dest.exists():
+                    self._signals.thumb_ready.emit(index, str(dest))
             except Exception as e:
                 log.warning("Library thumb %d (%s) failed: %s", index, source.name, e)
 
         threading.Thread(target=_work, daemon=True).start()
+
+    @staticmethod
+    def _generate_video_thumb(source: Path, dest: Path) -> None:
+        """Extract first frame from video using ffmpeg."""
+        import subprocess
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", str(source), "-vframes", "1",
+             "-vf", f"scale={LIBRARY_THUMB_SIZE}:{LIBRARY_THUMB_SIZE}:force_original_aspect_ratio=decrease",
+             "-q:v", "5", str(dest)],
+            capture_output=True, timeout=10,
+        )
 
     def _on_thumb_ready(self, index: int, path: str) -> None:
         thumbs = self._grid._thumbs
