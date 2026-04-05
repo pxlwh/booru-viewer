@@ -99,12 +99,16 @@ class LibraryView(QWidget):
             self._grid.set_posts(0)
             self._files = []
             return
-        self._count_label.setStyleSheet("")
         self._refresh_folders()
         self._files = self._scan_files()
         self._sort_files()
 
-        self._count_label.setText(f"{len(self._files)} files")
+        if self._files:
+            self._count_label.setText(f"{len(self._files)} files")
+            self._count_label.setStyleSheet("")
+        else:
+            self._count_label.setText("Library empty or directory unreachable")
+            self._count_label.setStyleSheet("color: #ff4444;")
         thumbs = self._grid.set_posts(len(self._files))
 
         lib_thumb_dir = thumbnails_dir() / "library"
