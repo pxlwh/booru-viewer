@@ -1027,8 +1027,14 @@ class BooruApp(QMainWindow):
         fav_action = menu.addAction("Unfavorite" if self._is_current_favorited(index) else "Favorite")
         menu.addSeparator()
         bl_menu = menu.addMenu("Blacklist Tag")
-        for tag in post.tag_list[:20]:
-            bl_menu.addAction(tag)
+        if post.tag_categories:
+            for category, tags in post.tag_categories.items():
+                cat_menu = bl_menu.addMenu(category)
+                for tag in tags[:30]:
+                    cat_menu.addAction(tag)
+        else:
+            for tag in post.tag_list[:30]:
+                bl_menu.addAction(tag)
 
         action = menu.exec(pos)
         if not action:
@@ -1074,12 +1080,21 @@ class BooruApp(QMainWindow):
             self._status.showMessage("Tags copied")
         elif action == fav_action:
             self._toggle_favorite(index)
-        elif action.parent() == bl_menu:
+        elif self._is_child_of_menu(action, bl_menu):
             tag = action.text()
             self._db.add_blacklisted_tag(tag)
             self._db.set_setting("blacklist_enabled", "1")
             self._status.showMessage(f"Blacklisted: {tag}")
             self._do_search()
+
+    @staticmethod
+    def _is_child_of_menu(action, menu) -> bool:
+        parent = action.parent()
+        while parent:
+            if parent == menu:
+                return True
+            parent = getattr(parent, 'parent', lambda: None)()
+        return False
 
     def _on_multi_context_menu(self, indices: list, pos) -> None:
         """Context menu for multi-selected posts."""
