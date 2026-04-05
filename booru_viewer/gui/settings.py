@@ -115,6 +115,19 @@ class SettingsDialog(QDialog):
         self._prefetch.setChecked(self._db.get_setting_bool("prefetch_adjacent"))
         form.addRow("", self._prefetch)
 
+        # Slideshow monitor
+        from PySide6.QtWidgets import QApplication
+        self._monitor_combo = QComboBox()
+        self._monitor_combo.addItem("Same as app")
+        for i, screen in enumerate(QApplication.screens()):
+            self._monitor_combo.addItem(f"{screen.name()} ({screen.size().width()}x{screen.size().height()})")
+        current_monitor = self._db.get_setting("slideshow_monitor")
+        if current_monitor:
+            idx = self._monitor_combo.findText(current_monitor)
+            if idx >= 0:
+                self._monitor_combo.setCurrentIndex(idx)
+        form.addRow("Slideshow monitor:", self._monitor_combo)
+
         # File dialog platform (Linux only)
         self._file_dialog_combo = None
         if not IS_WINDOWS:
@@ -664,6 +677,7 @@ class SettingsDialog(QDialog):
         self._db.set_setting("default_score", str(self._default_score.value()))
         self._db.set_setting("preload_thumbnails", "1" if self._preload.isChecked() else "0")
         self._db.set_setting("prefetch_adjacent", "1" if self._prefetch.isChecked() else "0")
+        self._db.set_setting("slideshow_monitor", self._monitor_combo.currentText())
         self._db.set_setting("library_dir", self._library_dir.text().strip())
         self._db.set_setting("max_cache_mb", str(self._max_cache.value()))
         self._db.set_setting("auto_evict", "1" if self._auto_evict.isChecked() else "0")

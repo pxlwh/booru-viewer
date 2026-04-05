@@ -30,7 +30,7 @@ class FullscreenPreview(QMainWindow):
     save_toggle_requested = Signal()  # save or unsave depending on state
     closed = Signal()
 
-    def __init__(self, grid_cols: int = 3, show_actions: bool = True, parent=None) -> None:
+    def __init__(self, grid_cols: int = 3, show_actions: bool = True, monitor: str = "", parent=None) -> None:
         super().__init__(parent, Qt.WindowType.Window)
         self.setWindowTitle("booru-viewer — Fullscreen")
         self.setMinimumSize(640, 480)
@@ -84,10 +84,19 @@ class FullscreenPreview(QMainWindow):
 
         from PySide6.QtWidgets import QApplication
         QApplication.instance().installEventFilter(self)
-        # Show on the same monitor as the parent window
-        if parent and parent.screen():
-            self.setScreen(parent.screen())
-            self.setGeometry(parent.screen().geometry())
+        # Pick target monitor
+        target_screen = None
+        if monitor and monitor != "Same as app":
+            for screen in QApplication.screens():
+                label = f"{screen.name()} ({screen.size().width()}x{screen.size().height()})"
+                if label == monitor:
+                    target_screen = screen
+                    break
+        if not target_screen and parent and parent.screen():
+            target_screen = parent.screen()
+        if target_screen:
+            self.setScreen(target_screen)
+            self.setGeometry(target_screen.geometry())
         self.showFullScreen()
 
     def update_state(self, bookmarked: bool, saved: bool) -> None:

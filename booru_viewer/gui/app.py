@@ -1111,7 +1111,8 @@ class BooruApp(QMainWindow):
         from .preview import FullscreenPreview
         cols = self._grid._flow.columns
         show_actions = self._stack.currentIndex() != 2
-        self._fullscreen_window = FullscreenPreview(grid_cols=cols, show_actions=show_actions, parent=self)
+        monitor = self._db.get_setting("slideshow_monitor")
+        self._fullscreen_window = FullscreenPreview(grid_cols=cols, show_actions=show_actions, monitor=monitor, parent=self)
         self._fullscreen_window.navigate.connect(self._navigate_fullscreen)
         if show_actions:
             self._fullscreen_window.bookmark_requested.connect(self._bookmark_from_preview)
