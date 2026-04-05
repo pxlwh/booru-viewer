@@ -91,6 +91,9 @@ async def download_image(
         gif_path = local.with_suffix(".gif")
         if gif_path.exists():
             return gif_path
+        # If the zip is cached but not yet converted, convert it now
+        if local.exists() and zipfile.is_zipfile(local):
+            return _convert_ugoira_to_gif(local)
 
     # Validate cached file isn't corrupt (e.g. HTML error page saved as image)
     if local.exists():
