@@ -74,7 +74,7 @@ Or run directly: `python -m booru_viewer.main_gui`
 
 Download `booru-viewer.exe` from [Releases](https://git.pax.moe/pax/booru-viewer/releases).
 
-For WebM video playback, install **VP9 Video Extensions** from the Microsoft Store.
+For WebM video playback, install [VP9 Video Extensions](https://apps.microsoft.com/detail/9n4d0msmp0pt) from the Microsoft Store.
 
 Windows 10 dark mode is automatically detected and applied.
 
