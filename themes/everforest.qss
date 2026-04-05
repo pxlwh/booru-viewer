@@ -1,0 +1,116 @@
+/* booru-viewer — Everforest Dark */
+
+QWidget {
+    background-color: #2d353b;
+    color: #d3c6aa;
+    font-size: 13px;
+}
+
+QPushButton {
+    background-color: #343f44;
+    color: #d3c6aa;
+    border: 1px solid #4f585e;
+    border-radius: 4px;
+    padding: 5px 14px;
+}
+QPushButton:hover {
+    background-color: #4f585e;
+    border-color: #a7c080;
+}
+QPushButton:pressed {
+    background-color: #a7c080;
+    color: #2d353b;
+}
+QPushButton:checked {
+    background-color: #a7c080;
+    color: #2d353b;
+    border-color: #a7c080;
+}
+
+QLineEdit, QSpinBox, QComboBox, QTextEdit {
+    background-color: #272e33;
+    color: #d3c6aa;
+    border: 1px solid #4f585e;
+    border-radius: 4px;
+    padding: 4px 8px;
+    selection-background-color: #a7c080;
+    selection-color: #2d353b;
+}
+QLineEdit:focus, QSpinBox:focus, QTextEdit:focus {
+    border-color: #a7c080;
+}
+
+QComboBox::drop-down { border: none; width: 20px; }
+QComboBox QAbstractItemView {
+    background-color: #272e33;
+    color: #d3c6aa;
+    border: 1px solid #4f585e;
+    selection-background-color: #343f44;
+}
+
+QScrollBar:vertical {
+    background: #2d353b;
+    width: 10px;
+    border: none;
+}
+QScrollBar::handle:vertical {
+    background: #4f585e;
+    border-radius: 4px;
+    min-height: 20px;
+}
+QScrollBar::handle:vertical:hover { background: #a7c080; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+
+QScrollBar:horizontal {
+    background: #2d353b;
+    height: 10px;
+}
+QScrollBar::handle:horizontal {
+    background: #4f585e;
+    border-radius: 4px;
+}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
+
+QMenuBar, QMenu {
+    background-color: #2d353b;
+    color: #d3c6aa;
+    border: 1px solid #343f44;
+}
+QMenu::item:selected {
+    background-color: #343f44;
+}
+
+QStatusBar {
+    background-color: #272e33;
+    color: #859289;
+}
+
+QSplitter::handle {
+    background: #4f585e;
+    width: 2px;
+}
+
+QLabel { background: transparent; }
+
+QSlider::groove:horizontal {
+    background: #343f44;
+    height: 4px;
+    border-radius: 2px;
+}
+QSlider::handle:horizontal {
+    background: #a7c080;
+    width: 12px;
+    margin: -4px 0;
+    border-radius: 6px;
+}
+
+QTabBar::tab {
+    background: #343f44;
+    color: #d3c6aa;
+    border: 1px solid #4f585e;
+    padding: 6px 16px;
+}
+QTabBar::tab:selected {
+    background: #4f585e;
+    color: #a7c080;
+}

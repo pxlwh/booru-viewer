@@ -155,7 +155,7 @@ A template is also available in Settings > Theme > Create from Template.
 
 <picture><img src="screenshots/themes/gruvbox.png" alt="Gruvbox" width="400"></picture> <picture><img src="screenshots/themes/solarized-dark.png" alt="Solarized Dark" width="400"></picture>
 
-<picture><img src="screenshots/themes/tokyo-night.png" alt="Tokyo Night" width="400"></picture>
+<picture><img src="screenshots/themes/tokyo-night.png" alt="Tokyo Night" width="400"></picture> <picture><img src="screenshots/themes/everforest.png" alt="Everforest" width="400"></picture>
 
 ## Settings
 
