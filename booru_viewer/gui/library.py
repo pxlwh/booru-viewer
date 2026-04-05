@@ -7,8 +7,10 @@ import os
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal, QObject
+from PySide6.QtCore import Qt, Signal, QObject, QUrl, QTimer
 from PySide6.QtGui import QPixmap
+from PySide6.QtMultimedia import QMediaPlayer, QVideoSink, QVideoFrame
+from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -31,6 +33,7 @@ LIBRARY_THUMB_SIZE = 180
 
 class _LibThumbSignals(QObject):
     thumb_ready = Signal(int, str)
+    video_thumb_request = Signal(int, str, str)  # index, source, dest
 
 
 class LibraryView(QWidget):
@@ -46,6 +49,9 @@ class LibraryView(QWidget):
         self._signals = _LibThumbSignals()
         self._signals.thumb_ready.connect(
             self._on_thumb_ready, Qt.ConnectionType.QueuedConnection
+        )
+        self._signals.video_thumb_request.connect(
+            self._capture_video_thumb, Qt.ConnectionType.QueuedConnection
         )
 
         layout = QVBoxLayout(self)
@@ -212,19 +218,21 @@ class LibraryView(QWidget):
     def _generate_thumb_async(
         self, index: int, source: Path, dest: Path
     ) -> None:
+        if source.suffix.lower() in self._VIDEO_EXTS:
+            # Video thumbnails must run on main thread (Qt requirement)
+            self._signals.video_thumb_request.emit(index, str(source), str(dest))
+            return
+
         def _work() -> None:
             try:
-                if source.suffix.lower() in self._VIDEO_EXTS:
-                    self._generate_video_thumb(source, dest)
-                else:
-                    from PIL import Image
-                    with Image.open(source) as img:
-                        img.thumbnail(
-                            (LIBRARY_THUMB_SIZE, LIBRARY_THUMB_SIZE), Image.LANCZOS
-                        )
-                        if img.mode in ("RGBA", "P"):
-                            img = img.convert("RGB")
-                        img.save(str(dest), "JPEG", quality=85)
+                from PIL import Image
+                with Image.open(source) as img:
+                    img.thumbnail(
+                        (LIBRARY_THUMB_SIZE, LIBRARY_THUMB_SIZE), Image.LANCZOS
+                    )
+                    if img.mode in ("RGBA", "P"):
+                        img = img.convert("RGB")
+                    img.save(str(dest), "JPEG", quality=85)
                 if dest.exists():
                     self._signals.thumb_ready.emit(index, str(dest))
             except Exception as e:
@@ -232,16 +240,32 @@ class LibraryView(QWidget):
 
         threading.Thread(target=_work, daemon=True).start()
 
-    @staticmethod
-    def _generate_video_thumb(source: Path, dest: Path) -> None:
-        """Extract first frame from video using ffmpeg."""
-        import subprocess
-        subprocess.run(
-            ["ffmpeg", "-y", "-i", str(source), "-vframes", "1",
-             "-vf", f"scale={LIBRARY_THUMB_SIZE}:{LIBRARY_THUMB_SIZE}:force_original_aspect_ratio=decrease",
-             "-q:v", "5", str(dest)],
-            capture_output=True, timeout=10,
-        )
+    def _capture_video_thumb(self, index: int, source: str, dest: str) -> None:
+        """Grab first frame from video using Qt's QMediaPlayer + QVideoSink."""
+        player = QMediaPlayer()
+        sink = QVideoSink()
+        player.setVideoSink(sink)
+
+        def _on_frame(frame: QVideoFrame):
+            if frame.isValid():
+                img = frame.toImage()
+                if not img.isNull():
+                    scaled = img.scaled(
+                        LIBRARY_THUMB_SIZE, LIBRARY_THUMB_SIZE,
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
+                    )
+                    scaled.save(dest, "JPEG", 85)
+                    self._signals.thumb_ready.emit(index, dest)
+                sink.videoFrameChanged.disconnect(_on_frame)
+                player.stop()
+                player.deleteLater()
+
+        sink.videoFrameChanged.connect(_on_frame)
+        player.setSource(QUrl.fromLocalFile(source))
+        player.play()
+        # Pause immediately — we just need one frame
+        QTimer.singleShot(100, player.pause)
 
     def _on_thumb_ready(self, index: int, path: str) -> None:
         thumbs = self._grid._thumbs
