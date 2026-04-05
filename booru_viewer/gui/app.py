@@ -219,6 +219,8 @@ class BooruApp(QMainWindow):
         self._min_score = 0
         self._loading = False
         self._last_scroll_page = 0
+        self._prefetch_pause = asyncio.Event()
+        self._prefetch_pause.set()  # not paused
         self._signals = AsyncSignals()
 
         self._async_loop = asyncio.new_event_loop()
@@ -932,6 +934,7 @@ class BooruApp(QMainWindow):
                 self._signals.download_progress.emit(downloaded, total)
 
             async def _load():
+                self._prefetch_pause.clear()  # pause prefetch
                 try:
                     path = await download_image(post.file_url, progress_callback=_progress)
                     info = f"#{post.id}  {post.width}x{post.height}  score:{post.score}  [{post.rating}]  {Path(post.file_url.split('?')[0]).suffix.lstrip('.').upper() if post.file_url else ''}"
@@ -939,6 +942,8 @@ class BooruApp(QMainWindow):
                 except Exception as e:
                     log.error(f"Image download failed: {e}")
                     self._signals.image_error.emit(str(e))
+                finally:
+                    self._prefetch_pause.set()  # resume prefetch
 
             self._run_async(_load)
 
@@ -977,6 +982,7 @@ class BooruApp(QMainWindow):
 
         async def _prefetch_spiral():
             for adj in order:
+                await self._prefetch_pause.wait()  # yield to active downloads
                 if 0 <= adj < len(self._posts) and self._posts[adj].file_url:
                     self._signals.prefetch_progress.emit(adj, 0.0)
                     try:
