@@ -136,16 +136,50 @@ class InfoPanel(QWidget):
             item = self._tags_flow.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
-        # Add clickable tags
-        for tag in post.tag_list[:100]:
-            btn = QPushButton(tag)
-            btn.setFlat(True)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet(
-                "QPushButton { text-align: left; padding: 1px 4px; border: none; }"
-            )
-            btn.clicked.connect(lambda checked, t=tag: self.tag_clicked.emit(t))
-            self._tags_flow.addWidget(btn)
+
+        # Tag category colors
+        _CAT_COLORS = {
+            "Artist": "#f2ac08",
+            "Character": "#0a0",
+            "Copyright": "#c0f",
+            "Species": "#e44",
+            "General": "",
+            "Meta": "#888",
+            "Lore": "#888",
+        }
+
+        if post.tag_categories:
+            # Display tags grouped by category
+            for category, tags in post.tag_categories.items():
+                color = _CAT_COLORS.get(category, "")
+                header = QLabel(f"{category}:")
+                header.setStyleSheet(
+                    f"font-weight: bold; margin-top: 6px; margin-bottom: 2px;"
+                    + (f" color: {color};" if color else "")
+                )
+                self._tags_flow.addWidget(header)
+                for tag in tags[:50]:
+                    btn = QPushButton(tag)
+                    btn.setFlat(True)
+                    btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                    style = "QPushButton { text-align: left; padding: 1px 4px; border: none;"
+                    if color:
+                        style += f" color: {color};"
+                    style += " }"
+                    btn.setStyleSheet(style)
+                    btn.clicked.connect(lambda checked, t=tag: self.tag_clicked.emit(t))
+                    self._tags_flow.addWidget(btn)
+        else:
+            # Fallback: flat tag list (Gelbooru, Moebooru)
+            for tag in post.tag_list[:100]:
+                btn = QPushButton(tag)
+                btn.setFlat(True)
+                btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                btn.setStyleSheet(
+                    "QPushButton { text-align: left; padding: 1px 4px; border: none; }"
+                )
+                btn.clicked.connect(lambda checked, t=tag: self.tag_clicked.emit(t))
+                self._tags_flow.addWidget(btn)
         self._tags_flow.addStretch()
 
     def clear(self) -> None:

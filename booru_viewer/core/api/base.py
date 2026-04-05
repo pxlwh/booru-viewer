@@ -25,6 +25,7 @@ class Post:
     source: str | None
     width: int = 0
     height: int = 0
+    tag_categories: dict[str, list[str]] = field(default_factory=dict)
 
     @property
     def tag_list(self) -> list[str]:

@@ -51,6 +51,7 @@ class DanbooruClient(BooruClient):
                     source=item.get("source"),
                     width=item.get("image_width", 0),
                     height=item.get("image_height", 0),
+                    tag_categories=self._extract_tag_categories(item),
                 )
             )
         return posts
@@ -105,3 +106,19 @@ class DanbooruClient(BooruClient):
             if key in item and item[key]:
                 parts.append(item[key])
         return " ".join(parts) if parts else ""
+
+    @staticmethod
+    def _extract_tag_categories(item: dict) -> dict[str, list[str]]:
+        cats: dict[str, list[str]] = {}
+        mapping = {
+            "tag_string_artist": "Artist",
+            "tag_string_character": "Character",
+            "tag_string_copyright": "Copyright",
+            "tag_string_general": "General",
+            "tag_string_meta": "Meta",
+        }
+        for key, label in mapping.items():
+            val = item.get(key, "")
+            if val and val.strip():
+                cats[label] = val.split()
+        return cats

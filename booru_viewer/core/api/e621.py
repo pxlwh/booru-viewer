@@ -67,6 +67,7 @@ class E621Client(BooruClient):
                     source=self._get_source(item),
                     width=self._get_nested(item, "file", "width") or 0,
                     height=self._get_nested(item, "file", "height") or 0,
+                    tag_categories=self._extract_tag_categories(item),
                 )
             )
         return posts
@@ -155,6 +156,23 @@ class E621Client(BooruClient):
         if isinstance(tags_obj, str):
             return tags_obj
         return ""
+
+    @staticmethod
+    def _extract_tag_categories(item: dict) -> dict[str, list[str]]:
+        tags_obj = item.get("tags")
+        if not isinstance(tags_obj, dict):
+            return {}
+        cats: dict[str, list[str]] = {}
+        mapping = {
+            "artist": "Artist", "character": "Character",
+            "copyright": "Copyright", "species": "Species",
+            "general": "General", "meta": "Meta", "lore": "Lore",
+        }
+        for key, label in mapping.items():
+            tag_list = tags_obj.get(key, [])
+            if isinstance(tag_list, list) and tag_list:
+                cats[label] = tag_list
+        return cats
 
     @staticmethod
     def _get_score(item: dict) -> int:
