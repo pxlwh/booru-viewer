@@ -1963,10 +1963,13 @@ class BooruApp(QMainWindow):
             import subprocess
             try:
                 if ext in _IMAGE_EXTS:
-                    _MIMES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-                              ".png": "image/png", ".gif": "image/gif", ".webp": "image/webp"}
-                    with open(path, "rb") as f:
-                        subprocess.run(["wl-copy", "--type", _MIMES[ext]], stdin=f, timeout=10)
+                    # Convert to PNG for universal clipboard compat
+                    from PIL import Image as _PIL
+                    import io as _io
+                    img = _PIL.open(path)
+                    buf = _io.BytesIO()
+                    img.save(buf, "PNG")
+                    subprocess.run(["wl-copy", "--type", "image/png"], input=buf.getvalue(), timeout=10)
                 else:
                     # Videos/other: copy as file URI
                     uri = f"file://{Path(path).resolve()}"
