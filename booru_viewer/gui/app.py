@@ -1096,6 +1096,9 @@ class BooruApp(QMainWindow):
         if self._preview._stack.currentIndex() == 1:
             video_pos = self._preview._video_player._player.position()
         # Clear the main preview — slideshow takes over
+        # Show info panel in the freed space
+        self._info_was_visible = self._info_panel.isVisible()
+        self._info_panel.show()
         self._preview.clear()
         self._preview._info_label.setText(info)
         self._preview._current_path = path
@@ -1124,6 +1127,9 @@ class BooruApp(QMainWindow):
             self._update_fullscreen_state()
 
     def _on_fullscreen_closed(self) -> None:
+        # Restore info panel visibility
+        if not getattr(self, '_info_was_visible', False):
+            self._info_panel.hide()
         # Grab video position before cleanup
         video_pos = 0
         if self._fullscreen_window and self._fullscreen_window._stack.currentIndex() == 1:
