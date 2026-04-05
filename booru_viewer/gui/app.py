@@ -765,13 +765,13 @@ class BooruApp(QMainWindow):
             self._prefetch_adjacent(index)
 
     def _prefetch_adjacent(self, index: int) -> None:
-        """Silently download adjacent posts with staggered delays."""
+        """Prefetch posts in all 4 directions (left, right, up, down)."""
+        cols = self._grid._flow.columns
+        offsets = [1, -1, cols, -cols]
         async def _prefetch_batch():
-            for i, offset in enumerate((1, -1)):
+            for offset in offsets:
                 adj = index + offset
                 if 0 <= adj < len(self._posts) and self._posts[adj].file_url:
-                    if i > 0:
-                        await asyncio.sleep(1)
                     try:
                         await download_image(self._posts[adj].file_url)
                     except Exception:
