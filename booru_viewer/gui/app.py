@@ -554,8 +554,9 @@ class BooruApp(QMainWindow):
         self._current_page = 1
         self._shown_post_ids = set()
         self._page_cache = {}
-        self._infinite_exhausted = False  # page_num -> list[Post]
+        self._infinite_exhausted = False
         self._min_score = self._score_spin.value()
+        self._preview.clear()
         self._do_search()
 
     def _prev_page(self) -> None:
