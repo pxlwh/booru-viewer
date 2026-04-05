@@ -35,7 +35,7 @@ class SettingsDialog(QDialog):
     """Full settings panel with tabs."""
 
     settings_changed = Signal()
-    favorites_imported = Signal()
+    bookmarks_imported = Signal()
 
     def __init__(self, db: Database, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -153,8 +153,8 @@ class SettingsDialog(QDialog):
         self._cache_size_label = QLabel(f"{total_mb:.1f} MB")
         stats_layout.addRow("Total size:", self._cache_size_label)
 
-        self._fav_count_label = QLabel(f"{self._db.favorite_count()}")
-        stats_layout.addRow("Favorites:", self._fav_count_label)
+        self._fav_count_label = QLabel(f"{self._db.bookmark_count()}")
+        stats_layout.addRow("Bookmarks:", self._fav_count_label)
 
         layout.addWidget(stats_group)
 
@@ -317,12 +317,12 @@ class SettingsDialog(QDialog):
         exp_group = QGroupBox("Backup")
         exp_layout = QHBoxLayout(exp_group)
 
-        export_btn = QPushButton("Export Favorites")
-        export_btn.clicked.connect(self._export_favorites)
+        export_btn = QPushButton("Export Bookmarks")
+        export_btn.clicked.connect(self._export_bookmarks)
         exp_layout.addWidget(export_btn)
 
-        import_btn = QPushButton("Import Favorites")
-        import_btn.clicked.connect(self._import_favorites)
+        import_btn = QPushButton("Import Bookmarks")
+        import_btn.clicked.connect(self._import_bookmarks)
         exp_layout.addWidget(import_btn)
 
         layout.addWidget(exp_group)
@@ -499,7 +499,7 @@ class SettingsDialog(QDialog):
     def _clear_image_cache(self) -> None:
         reply = QMessageBox.question(
             self, "Confirm",
-            "Delete all cached images? (Favorites stay in the database but cached files are removed.)",
+            "Delete all cached images? (Bookmarks stay in the database but cached files are removed.)",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
@@ -520,9 +520,9 @@ class SettingsDialog(QDialog):
 
     def _evict_now(self) -> None:
         max_bytes = self._max_cache.value() * 1024 * 1024
-        # Protect favorited file paths
+        # Protect bookmarked file paths
         protected = set()
-        for fav in self._db.get_favorites(limit=999999):
+        for fav in self._db.get_bookmarks(limit=999999):
             if fav.cached_path:
                 protected.add(fav.cached_path)
         count = evict_oldest(max_bytes, protected)
@@ -559,13 +559,13 @@ class SettingsDialog(QDialog):
         from PySide6.QtCore import QUrl
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(data_dir())))
 
-    def _export_favorites(self) -> None:
+    def _export_bookmarks(self) -> None:
         from .dialogs import save_file
         import json
-        path = save_file(self, "Export Favorites", "favorites.json", "JSON (*.json)")
+        path = save_file(self, "Export Bookmarks", "bookmarks.json", "JSON (*.json)")
         if not path:
             return
-        favs = self._db.get_favorites(limit=999999)
+        favs = self._db.get_bookmarks(limit=999999)
         data = [
             {
                 "post_id": f.post_id,
@@ -577,18 +577,18 @@ class SettingsDialog(QDialog):
                 "score": f.score,
                 "source": f.source,
                 "folder": f.folder,
-                "favorited_at": f.favorited_at,
+                "bookmarked_at": f.bookmarked_at,
             }
             for f in favs
         ]
         with open(path, "w") as fp:
             json.dump(data, fp, indent=2)
-        QMessageBox.information(self, "Done", f"Exported {len(data)} favorites.")
+        QMessageBox.information(self, "Done", f"Exported {len(data)} bookmarks.")
 
-    def _import_favorites(self) -> None:
+    def _import_bookmarks(self) -> None:
         from .dialogs import open_file
         import json
-        path = open_file(self, "Import Favorites", "JSON (*.json)")
+        path = open_file(self, "Import Bookmarks", "JSON (*.json)")
         if not path:
             return
         try:
@@ -598,7 +598,7 @@ class SettingsDialog(QDialog):
             for item in data:
                 try:
                     folder = item.get("folder")
-                    self._db.add_favorite(
+                    self._db.add_bookmark(
                         site_id=item["site_id"],
                         post_id=item["post_id"],
                         file_url=item["file_url"],
@@ -614,8 +614,8 @@ class SettingsDialog(QDialog):
                     count += 1
                 except Exception:
                     pass
-            QMessageBox.information(self, "Done", f"Imported {count} favorites.")
-            self.favorites_imported.emit()
+            QMessageBox.information(self, "Done", f"Imported {count} bookmarks.")
+            self.bookmarks_imported.emit()
         except Exception as e:
             QMessageBox.warning(self, "Error", str(e))
 

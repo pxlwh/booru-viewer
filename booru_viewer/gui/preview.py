@@ -26,7 +26,7 @@ class FullscreenPreview(QMainWindow):
     """Fullscreen media viewer with navigation — images, GIFs, and video."""
 
     navigate = Signal(int)  # direction: -1/+1 for left/right, -cols/+cols for up/down
-    favorite_requested = Signal()
+    bookmark_requested = Signal()
     save_toggle_requested = Signal()  # save or unsave depending on state
 
     def __init__(self, grid_cols: int = 3, parent=None) -> None:
@@ -44,10 +44,10 @@ class FullscreenPreview(QMainWindow):
         toolbar = QHBoxLayout(self._toolbar)
         toolbar.setContentsMargins(8, 4, 8, 4)
 
-        self._fav_btn = QPushButton("Favorite")
-        self._fav_btn.setFixedWidth(80)
-        self._fav_btn.clicked.connect(self.favorite_requested)
-        toolbar.addWidget(self._fav_btn)
+        self._bookmark_btn = QPushButton("Bookmark")
+        self._bookmark_btn.setFixedWidth(80)
+        self._bookmark_btn.clicked.connect(self.bookmark_requested)
+        toolbar.addWidget(self._bookmark_btn)
 
         self._save_btn = QPushButton("Save")
         self._save_btn.setFixedWidth(70)
@@ -80,9 +80,9 @@ class FullscreenPreview(QMainWindow):
         QApplication.instance().installEventFilter(self)
         self.showFullScreen()
 
-    def update_state(self, favorited: bool, saved: bool) -> None:
-        self._fav_btn.setText("Unfavorite" if favorited else "Favorite")
-        self._fav_btn.setFixedWidth(90 if favorited else 80)
+    def update_state(self, bookmarked: bool, saved: bool) -> None:
+        self._bookmark_btn.setText("Unbookmark" if bookmarked else "Bookmark")
+        self._bookmark_btn.setFixedWidth(90 if bookmarked else 80)
         self._is_saved = saved
         self._save_btn.setText("Unsave" if saved else "Save")
 
@@ -500,7 +500,7 @@ class ImagePreview(QWidget):
     open_in_browser = Signal()
     save_to_folder = Signal(str)
     unsave_requested = Signal()
-    favorite_requested = Signal()
+    bookmark_requested = Signal()
     navigate = Signal(int)  # -1 = prev, +1 = next
     fullscreen_requested = Signal()
 
@@ -587,7 +587,7 @@ class ImagePreview(QWidget):
 
     def _on_context_menu(self, pos) -> None:
         menu = QMenu(self)
-        fav_action = menu.addAction("Favorite")
+        fav_action = menu.addAction("Bookmark")
 
         save_menu = menu.addMenu("Save to Library")
         save_unsorted = save_menu.addAction("Unsorted")
@@ -624,7 +624,7 @@ class ImagePreview(QWidget):
         if not action:
             return
         if action == fav_action:
-            self.favorite_requested.emit()
+            self.bookmark_requested.emit()
         elif action == save_unsorted:
             self.save_to_folder.emit("")
         elif action == save_new:

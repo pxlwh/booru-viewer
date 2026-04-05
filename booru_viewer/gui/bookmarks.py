@@ -1,4 +1,4 @@
-"""Favorites browser widget with folder support."""
+"""Bookmarks browser widget with folder support."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 
-from ..core.db import Database, Favorite
+from ..core.db import Database, Bookmark
 from ..core.cache import download_thumbnail
 from .grid import ThumbnailGrid
 
@@ -34,16 +34,16 @@ class FavThumbSignals(QObject):
     thumb_ready = Signal(int, str)
 
 
-class FavoritesView(QWidget):
-    """Browse and search local favorites with folder support."""
+class BookmarksView(QWidget):
+    """Browse and search local bookmarks with folder support."""
 
-    favorite_selected = Signal(object)
-    favorite_activated = Signal(object)
+    bookmark_selected = Signal(object)
+    bookmark_activated = Signal(object)
 
     def __init__(self, db: Database, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._db = db
-        self._favorites: list[Favorite] = []
+        self._bookmarks: list[Bookmark] = []
         self._signals = FavThumbSignals()
         self._signals.thumb_ready.connect(self._on_thumb_ready, Qt.ConnectionType.QueuedConnection)
 
@@ -65,7 +65,7 @@ class FavoritesView(QWidget):
         top.addWidget(manage_btn)
 
         self._search_input = QLineEdit()
-        self._search_input.setPlaceholderText("Search favorites by tag...")
+        self._search_input.setPlaceholderText("Search bookmarks by tag...")
         self._search_input.returnPressed.connect(self._do_search)
         top.addWidget(self._search_input, stretch=1)
 
@@ -93,7 +93,7 @@ class FavoritesView(QWidget):
         current = self._folder_combo.currentText()
         self._folder_combo.blockSignals(True)
         self._folder_combo.clear()
-        self._folder_combo.addItem("All Favorites")
+        self._folder_combo.addItem("All Bookmarks")
         self._folder_combo.addItem("Unfiled")
         for folder in self._db.get_folders():
             self._folder_combo.addItem(folder)
@@ -110,26 +110,26 @@ class FavoritesView(QWidget):
         folder_filter = None
         if folder_text == "Unfiled":
             folder_filter = ""  # sentinel for NULL folder
-        elif folder_text not in ("All Favorites", ""):
+        elif folder_text not in ("All Bookmarks", ""):
             folder_filter = folder_text
 
         if folder_filter == "":
             # Get unfiled: folder IS NULL
-            self._favorites = [
-                f for f in self._db.get_favorites(search=search, limit=500)
+            self._bookmarks = [
+                f for f in self._db.get_bookmarks(search=search, limit=500)
                 if f.folder is None
             ]
         elif folder_filter:
-            self._favorites = self._db.get_favorites(search=search, folder=folder_filter, limit=500)
+            self._bookmarks = self._db.get_bookmarks(search=search, folder=folder_filter, limit=500)
         else:
-            self._favorites = self._db.get_favorites(search=search, limit=500)
+            self._bookmarks = self._db.get_bookmarks(search=search, limit=500)
 
-        self._count_label.setText(f"{len(self._favorites)} favorites")
-        thumbs = self._grid.set_posts(len(self._favorites))
+        self._count_label.setText(f"{len(self._bookmarks)} bookmarks")
+        thumbs = self._grid.set_posts(len(self._bookmarks))
 
         from ..core.config import saved_dir, saved_folder_dir, MEDIA_EXTENSIONS
-        for i, (fav, thumb) in enumerate(zip(self._favorites, thumbs)):
-            thumb.set_favorited(True)
+        for i, (fav, thumb) in enumerate(zip(self._bookmarks, thumbs)):
+            thumb.set_bookmarked(True)
             # Check if saved to library
             saved = False
             if fav.folder:
@@ -171,15 +171,15 @@ class FavoritesView(QWidget):
         self.refresh(search=text if text else None)
 
     def _on_selected(self, index: int) -> None:
-        if 0 <= index < len(self._favorites):
-            self.favorite_selected.emit(self._favorites[index])
+        if 0 <= index < len(self._bookmarks):
+            self.bookmark_selected.emit(self._bookmarks[index])
 
     def _on_activated(self, index: int) -> None:
-        if 0 <= index < len(self._favorites):
-            self.favorite_activated.emit(self._favorites[index])
+        if 0 <= index < len(self._bookmarks):
+            self.bookmark_activated.emit(self._bookmarks[index])
 
-    def _copy_to_library_unsorted(self, fav: Favorite) -> None:
-        """Copy a favorited image to the unsorted library folder."""
+    def _copy_to_library_unsorted(self, fav: Bookmark) -> None:
+        """Copy a bookmarked image to the unsorted library folder."""
         from ..core.config import saved_dir
         if fav.cached_path and Path(fav.cached_path).exists():
             import shutil
@@ -188,8 +188,8 @@ class FavoritesView(QWidget):
             if not dest.exists():
                 shutil.copy2(src, dest)
 
-    def _copy_to_library(self, fav: Favorite, folder: str) -> None:
-        """Copy a favorited image to the library folder on disk."""
+    def _copy_to_library(self, fav: Bookmark, folder: str) -> None:
+        """Copy a bookmarked image to the library folder on disk."""
         from ..core.config import saved_folder_dir
         if fav.cached_path and Path(fav.cached_path).exists():
             import shutil
@@ -205,9 +205,9 @@ class FavoritesView(QWidget):
             self._refresh_folders()
 
     def _on_context_menu(self, index: int, pos) -> None:
-        if index < 0 or index >= len(self._favorites):
+        if index < 0 or index >= len(self._bookmarks):
             return
-        fav = self._favorites[index]
+        fav = self._bookmarks[index]
 
         from PySide6.QtGui import QDesktopServices
         from PySide6.QtCore import QUrl
@@ -246,7 +246,7 @@ class FavoritesView(QWidget):
         move_new = move_menu.addAction("+ New Folder...")
 
         menu.addSeparator()
-        unfav = menu.addAction("Unfavorite")
+        remove_bookmark = menu.addAction("Remove Bookmark")
 
         action = menu.exec(pos)
         if not action:
@@ -260,7 +260,7 @@ class FavoritesView(QWidget):
             if ok and name.strip():
                 self._db.add_folder(name.strip())
                 self._copy_to_library(fav, name.strip())
-                self._db.move_favorite_to_folder(fav.id, name.strip())
+                self._db.move_bookmark_to_folder(fav.id, name.strip())
                 self.refresh()
         elif id(action) in save_lib_folders:
             folder_name = save_lib_folders[id(action)]
@@ -281,28 +281,26 @@ class FavoritesView(QWidget):
         elif action == copy_tags:
             QApplication.clipboard().setText(fav.tags)
         elif action == move_none:
-            self._db.move_favorite_to_folder(fav.id, None)
+            self._db.move_bookmark_to_folder(fav.id, None)
             self.refresh()
         elif action == move_new:
             name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
             if ok and name.strip():
                 self._db.add_folder(name.strip())
-                self._db.move_favorite_to_folder(fav.id, name.strip())
+                self._db.move_bookmark_to_folder(fav.id, name.strip())
                 self._copy_to_library(fav, name.strip())
                 self.refresh()
         elif id(action) in folder_actions:
             folder_name = folder_actions[id(action)]
-            self._db.move_favorite_to_folder(fav.id, folder_name)
+            self._db.move_bookmark_to_folder(fav.id, folder_name)
             self._copy_to_library(fav, folder_name)
             self.refresh()
-        elif action == unfav:
-            from ..core.cache import delete_from_library
-            delete_from_library(fav.post_id, fav.folder)
-            self._db.remove_favorite(fav.site_id, fav.post_id)
+        elif action == remove_bookmark:
+            self._db.remove_bookmark(fav.site_id, fav.post_id)
             self.refresh()
 
     def _on_multi_context_menu(self, indices: list, pos) -> None:
-        favs = [self._favorites[i] for i in indices if 0 <= i < len(self._favorites)]
+        favs = [self._bookmarks[i] for i in indices if 0 <= i < len(self._bookmarks)]
         if not favs:
             return
 
@@ -320,7 +318,7 @@ class FavoritesView(QWidget):
             folder_actions[id(a)] = folder
 
         menu.addSeparator()
-        unfav_all = menu.addAction(f"Unfavorite All ({len(favs)})")
+        remove_all = menu.addAction(f"Remove All Bookmarks ({len(favs)})")
 
         action = menu.exec(pos)
         if not action:
@@ -340,17 +338,15 @@ class FavoritesView(QWidget):
             self.refresh()
         elif action == move_none:
             for fav in favs:
-                self._db.move_favorite_to_folder(fav.id, None)
+                self._db.move_bookmark_to_folder(fav.id, None)
             self.refresh()
         elif id(action) in folder_actions:
             folder_name = folder_actions[id(action)]
             for fav in favs:
-                self._db.move_favorite_to_folder(fav.id, folder_name)
+                self._db.move_bookmark_to_folder(fav.id, folder_name)
                 self._copy_to_library(fav, folder_name)
             self.refresh()
-        elif action == unfav_all:
-            from ..core.cache import delete_from_library
+        elif action == remove_all:
             for fav in favs:
-                delete_from_library(fav.post_id, fav.folder)
-                self._db.remove_favorite(fav.site_id, fav.post_id)
+                self._db.remove_bookmark(fav.site_id, fav.post_id)
             self.refresh()

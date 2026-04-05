@@ -288,7 +288,7 @@ class SiteManagerDialog(QDialog):
             return
         site_id = item.data(Qt.ItemDataRole.UserRole)
         reply = QMessageBox.question(
-            self, "Confirm", "Remove this site and all its favorites?",
+            self, "Confirm", "Remove this site and all its bookmarks?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:

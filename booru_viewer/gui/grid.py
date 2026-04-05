@@ -27,17 +27,17 @@ class ThumbnailWidget(QWidget):
     double_clicked = Signal(int)
     right_clicked = Signal(int, object)  # index, QPoint
 
-    # QSS-controllable dot colors: qproperty-savedColor / qproperty-favoritedColor
+    # QSS-controllable dot colors: qproperty-savedColor / qproperty-bookmarkedColor
     _saved_color = QColor("#22cc22")
-    _favorited_color = QColor("#ff4444")
+    _bookmarked_color = QColor("#ff4444")
 
     def _get_saved_color(self): return self._saved_color
     def _set_saved_color(self, c): self._saved_color = QColor(c) if isinstance(c, str) else c
     savedColor = Property(QColor, _get_saved_color, _set_saved_color)
 
-    def _get_favorited_color(self): return self._favorited_color
-    def _set_favorited_color(self, c): self._favorited_color = QColor(c) if isinstance(c, str) else c
-    favoritedColor = Property(QColor, _get_favorited_color, _set_favorited_color)
+    def _get_bookmarked_color(self): return self._bookmarked_color
+    def _set_bookmarked_color(self, c): self._bookmarked_color = QColor(c) if isinstance(c, str) else c
+    bookmarkedColor = Property(QColor, _get_bookmarked_color, _set_bookmarked_color)
 
     def __init__(self, index: int, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -45,7 +45,7 @@ class ThumbnailWidget(QWidget):
         self._pixmap: QPixmap | None = None
         self._selected = False
         self._multi_selected = False
-        self._favorited = False
+        self._bookmarked = False
         self._saved_locally = False
         self._hover = False
         self._drag_start: QPoint | None = None
@@ -71,8 +71,8 @@ class ThumbnailWidget(QWidget):
         self._multi_selected = selected
         self.update()
 
-    def set_favorited(self, favorited: bool) -> None:
-        self._favorited = favorited
+    def set_bookmarked(self, bookmarked: bool) -> None:
+        self._bookmarked = bookmarked
         self.update()
 
     def set_saved_locally(self, saved: bool) -> None:
@@ -120,11 +120,20 @@ class ThumbnailWidget(QWidget):
             y = (self.height() - self._pixmap.height()) // 2
             p.drawPixmap(x, y, self._pixmap)
 
-        # Favorite/saved indicator
-        if self._favorited:
+        # Bookmark/saved indicators (independent dots)
+        dot_x = self.width() - 14
+        if self._saved_locally:
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(self._saved_color if self._saved_locally else self._favorited_color)
-            p.drawEllipse(self.width() - 14, 4, 10, 10)
+            p.setBrush(self._saved_color)
+            p.drawEllipse(dot_x, 4, 10, 10)
+            dot_x -= 14
+        if self._bookmarked:
+            from PySide6.QtGui import QFont
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(self._bookmarked_color)
+            p.setFont(QFont(p.font().family(), 10))
+            p.setPen(self._bookmarked_color)
+            p.drawText(dot_x - 2, 14, "\u2605")
 
         # Multi-select checkmark
         if self._multi_selected:

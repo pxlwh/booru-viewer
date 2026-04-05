@@ -43,7 +43,8 @@ from .grid import ThumbnailGrid
 from .preview import ImagePreview
 from .search import SearchBar
 from .sites import SiteManagerDialog
-from .favorites import FavoritesView
+from .bookmarks import BookmarksView
+from .library import LibraryView
 from .settings import SettingsDialog
 
 log = logging.getLogger("booru")
@@ -78,8 +79,8 @@ class AsyncSignals(QObject):
     thumb_done = Signal(int, str)
     image_done = Signal(str, str)
     image_error = Signal(str)
-    fav_done = Signal(int, str)
-    fav_error = Signal(str)
+    bookmark_done = Signal(int, str)
+    bookmark_error = Signal(str)
     autocomplete_done = Signal(list)
     batch_progress = Signal(int, int)      # current, total
     batch_done = Signal(str)
@@ -231,8 +232,8 @@ class BooruApp(QMainWindow):
         s.thumb_done.connect(self._on_thumb_done, Q)
         s.image_done.connect(self._on_image_done, Q)
         s.image_error.connect(self._on_image_error, Q)
-        s.fav_done.connect(self._on_fav_done, Q)
-        s.fav_error.connect(self._on_fav_error, Q)
+        s.bookmark_done.connect(self._on_bookmark_done, Q)
+        s.bookmark_error.connect(self._on_bookmark_error, Q)
         s.autocomplete_done.connect(self._on_autocomplete_done, Q)
         s.batch_progress.connect(self._on_batch_progress, Q)
         s.batch_done.connect(lambda m: self._status.showMessage(m), Q)
@@ -254,7 +255,7 @@ class BooruApp(QMainWindow):
         self._dl_progress.hide()
         self._status.showMessage(f"Error: {e}")
 
-    def _on_fav_error(self, e: str) -> None:
+    def _on_bookmark_error(self, e: str) -> None:
         self._status.showMessage(f"Error: {e}")
 
     def _run_async(self, coro_func, *args):
@@ -314,10 +315,16 @@ class BooruApp(QMainWindow):
         self._browse_btn.clicked.connect(lambda: self._switch_view(0))
         nav.addWidget(self._browse_btn)
 
-        self._fav_btn = QPushButton("Favorites")
-        self._fav_btn.setCheckable(True)
-        self._fav_btn.clicked.connect(lambda: self._switch_view(1))
-        nav.addWidget(self._fav_btn)
+        self._bookmark_btn = QPushButton("Bookmarks")
+        self._bookmark_btn.setCheckable(True)
+        self._bookmark_btn.clicked.connect(lambda: self._switch_view(1))
+        nav.addWidget(self._bookmark_btn)
+
+        self._library_btn = QPushButton("Library")
+        self._library_btn.setCheckable(True)
+        self._library_btn.setFixedWidth(60)
+        self._library_btn.clicked.connect(lambda: self._switch_view(2))
+        nav.addWidget(self._library_btn)
 
         layout.addLayout(nav)
 
@@ -338,10 +345,15 @@ class BooruApp(QMainWindow):
         self._grid.page_back.connect(self._prev_page)
         self._stack.addWidget(self._grid)
 
-        self._favorites_view = FavoritesView(self._db)
-        self._favorites_view.favorite_selected.connect(self._on_favorite_selected)
-        self._favorites_view.favorite_activated.connect(self._on_favorite_activated)
-        self._stack.addWidget(self._favorites_view)
+        self._bookmarks_view = BookmarksView(self._db)
+        self._bookmarks_view.bookmark_selected.connect(self._on_bookmark_selected)
+        self._bookmarks_view.bookmark_activated.connect(self._on_bookmark_activated)
+        self._stack.addWidget(self._bookmarks_view)
+
+        self._library_view = LibraryView(self._db)
+        self._library_view.file_selected.connect(self._on_library_selected)
+        self._library_view.file_activated.connect(self._on_library_activated)
+        self._stack.addWidget(self._library_view)
 
         self._splitter.addWidget(self._stack)
 
@@ -352,7 +364,7 @@ class BooruApp(QMainWindow):
         self._preview.close_requested.connect(self._close_preview)
         self._preview.open_in_default.connect(self._open_preview_in_default)
         self._preview.open_in_browser.connect(self._open_preview_in_browser)
-        self._preview.favorite_requested.connect(self._favorite_from_preview)
+        self._preview.bookmark_requested.connect(self._bookmark_from_preview)
         self._preview.save_to_folder.connect(self._save_from_preview)
         self._preview.unsave_requested.connect(self._unsave_from_preview)
         self._preview.navigate.connect(self._navigate_preview)
@@ -500,10 +512,13 @@ class BooruApp(QMainWindow):
     def _switch_view(self, index: int) -> None:
         self._stack.setCurrentIndex(index)
         self._browse_btn.setChecked(index == 0)
-        self._fav_btn.setChecked(index == 1)
+        self._bookmark_btn.setChecked(index == 1)
+        self._library_btn.setChecked(index == 2)
         if index == 1:
-            self._favorites_view.refresh()
-            self._favorites_view._grid.setFocus()
+            self._bookmarks_view.refresh()
+            self._bookmarks_view._grid.setFocus()
+        elif index == 2:
+            self._library_view.refresh()
         else:
             self._grid.setFocus()
 
@@ -672,21 +687,21 @@ class BooruApp(QMainWindow):
             if d.exists():
                 _folder_saved[folder] = {int(f.stem) for f in d.iterdir() if f.is_file() and f.stem.isdigit()}
 
-        # Pre-fetch favorites for the site once (used for folder checks)
-        _favs = self._db.get_favorites(site_id=site_id) if site_id else []
+        # Pre-fetch bookmarks for the site once (used for folder checks)
+        _favs = self._db.get_bookmarks(site_id=site_id) if site_id else []
 
         for i, (post, thumb) in enumerate(zip(posts, thumbs)):
-            if site_id and self._db.is_favorited(site_id, post.id):
-                thumb.set_favorited(True)
-                # Check if saved to library (not just cached)
-                saved = post.id in _saved_ids
-                if not saved:
-                    # Check folders
-                    for f in _favs:
-                        if f.post_id == post.id and f.folder and f.folder in _folder_saved:
-                            saved = post.id in _folder_saved[f.folder]
-                            break
-                thumb.set_saved_locally(saved)
+            # Bookmark status (DB)
+            if site_id and self._db.is_bookmarked(site_id, post.id):
+                thumb.set_bookmarked(True)
+            # Saved status (filesystem) — independent of bookmark
+            saved = post.id in _saved_ids
+            if not saved:
+                for folder_name, folder_ids in _folder_saved.items():
+                    if post.id in folder_ids:
+                        saved = True
+                        break
+            thumb.set_saved_locally(saved)
             # Set drag path from cache
             from ..core.cache import cached_path_for
             cached = cached_path_for(post.file_url)
@@ -834,9 +849,9 @@ class BooruApp(QMainWindow):
         site_id = self._site_combo.currentData()
 
         if self._stack.currentIndex() == 1:
-            # Favorites view
-            grid = self._favorites_view._grid
-            favs = self._favorites_view._favorites
+            # Bookmarks view
+            grid = self._bookmarks_view._grid
+            favs = self._bookmarks_view._bookmarks
             idx = grid.selected_index
             if 0 <= idx < len(favs):
                 fav = favs[idx]
@@ -858,7 +873,7 @@ class BooruApp(QMainWindow):
             idx = self._grid.selected_index
             if 0 <= idx < len(self._posts) and site_id:
                 post = self._posts[idx]
-                favorited = self._db.is_favorited(site_id, post.id)
+                bookmarked = self._db.is_bookmarked(site_id, post.id)
                 saved = any(
                     (saved_dir() / f"{post.id}{ext}").exists()
                     for ext in MEDIA_EXTENSIONS
@@ -871,7 +886,7 @@ class BooruApp(QMainWindow):
                         )
                         if saved:
                             break
-                self._fullscreen_window.update_state(favorited, saved)
+                self._fullscreen_window.update_state(bookmarked, saved)
             else:
                 self._fullscreen_window.update_state(False, False)
 
@@ -897,19 +912,27 @@ class BooruApp(QMainWindow):
         current = cache_size_bytes(include_thumbnails=False)
         if current > max_bytes:
             protected = set()
-            for fav in self._db.get_favorites(limit=999999):
+            for fav in self._db.get_bookmarks(limit=999999):
                 if fav.cached_path:
                     protected.add(fav.cached_path)
             evicted = evict_oldest(max_bytes, protected)
             if evicted:
                 log.info(f"Auto-evicted {evicted} cached files")
 
-    def _on_favorite_selected(self, fav) -> None:
-        self._status.showMessage(f"Favorite #{fav.post_id}")
-        self._on_favorite_activated(fav)
+    def _on_library_selected(self, path: str) -> None:
+        self._preview.set_media(path, Path(path).name)
+        self._update_fullscreen(path, Path(path).name)
 
-    def _on_favorite_activated(self, fav) -> None:
-        info = f"Favorite #{fav.post_id}"
+    def _on_library_activated(self, path: str) -> None:
+        self._preview.set_media(path, Path(path).name)
+        self._update_fullscreen(path, Path(path).name)
+
+    def _on_bookmark_selected(self, fav) -> None:
+        self._status.showMessage(f"Bookmark #{fav.post_id}")
+        self._on_bookmark_activated(fav)
+
+    def _on_bookmark_activated(self, fav) -> None:
+        info = f"Bookmark #{fav.post_id}"
 
         # Try local cache first
         if fav.cached_path and Path(fav.cached_path).exists():
@@ -937,8 +960,8 @@ class BooruApp(QMainWindow):
             try:
                 path = await download_image(fav.file_url)
                 # Update cached_path in DB
-                self._db.update_favorite_cache_path(fav.id, str(path))
-                info = f"Favorite #{fav.post_id}"
+                self._db.update_bookmark_cache_path(fav.id, str(path))
+                info = f"Bookmark #{fav.post_id}"
                 self._signals.image_done.emit(str(path), info)
             except Exception as e:
                 self._signals.image_error.emit(str(e))
@@ -970,13 +993,13 @@ class BooruApp(QMainWindow):
     def _navigate_preview(self, direction: int) -> None:
         """Navigate to prev/next post in the preview. direction: -1 or +1."""
         if self._stack.currentIndex() == 1:
-            # Favorites view
-            grid = self._favorites_view._grid
-            favs = self._favorites_view._favorites
+            # Bookmarks view
+            grid = self._bookmarks_view._grid
+            favs = self._bookmarks_view._bookmarks
             idx = grid.selected_index + direction
             if 0 <= idx < len(favs):
                 grid._select(idx)
-                self._on_favorite_activated(favs[idx])
+                self._on_bookmark_activated(favs[idx])
         else:
             idx = self._grid.selected_index + direction
             log.info(f"Navigate: direction={direction} current={self._grid.selected_index} next={idx} total={len(self._posts)}")
@@ -990,10 +1013,10 @@ class BooruApp(QMainWindow):
                 self._nav_page_turn = "last"
                 self._prev_page()
 
-    def _favorite_from_preview(self) -> None:
+    def _bookmark_from_preview(self) -> None:
         idx = self._grid.selected_index
         if 0 <= idx < len(self._posts):
-            self._toggle_favorite(idx)
+            self._toggle_bookmark(idx)
             self._update_fullscreen_state()
 
     def _save_from_preview(self, folder: str) -> None:
@@ -1013,7 +1036,7 @@ class BooruApp(QMainWindow):
             site_id = self._site_combo.currentData()
             folder = None
             if site_id:
-                favs = self._db.get_favorites(site_id=site_id)
+                favs = self._db.get_bookmarks(site_id=site_id)
                 for f in favs:
                     if f.post_id == post.id and f.folder:
                         folder = f.folder
@@ -1042,7 +1065,7 @@ class BooruApp(QMainWindow):
         cols = self._grid._flow.columns
         self._fullscreen_window = FullscreenPreview(grid_cols=cols, parent=self)
         self._fullscreen_window.navigate.connect(self._navigate_fullscreen)
-        self._fullscreen_window.favorite_requested.connect(self._favorite_from_preview)
+        self._fullscreen_window.bookmark_requested.connect(self._bookmark_from_preview)
         self._fullscreen_window.save_toggle_requested.connect(self._save_toggle_from_slideshow)
         self._fullscreen_window.destroyed.connect(self._on_fullscreen_closed)
         self._fullscreen_window.set_media(path, self._preview._info_label.text())
@@ -1053,7 +1076,7 @@ class BooruApp(QMainWindow):
 
     def _navigate_fullscreen(self, direction: int) -> None:
         self._navigate_preview(direction)
-        # For synchronous loads (cached/favorites), update immediately
+        # For synchronous loads (cached/bookmarks), update immediately
         if self._preview._current_path:
             self._update_fullscreen(
                 self._preview._current_path,
@@ -1091,7 +1114,7 @@ class BooruApp(QMainWindow):
         copy_url = menu.addAction("Copy Image URL")
         copy_tags = menu.addAction("Copy Tags")
         menu.addSeparator()
-        fav_action = menu.addAction("Unfavorite" if self._is_current_favorited(index) else "Favorite")
+        fav_action = menu.addAction("Remove Bookmark" if self._is_current_bookmarked(index) else "Bookmark")
         menu.addSeparator()
         bl_menu = menu.addMenu("Blacklist Tag")
         if post.tag_categories:
@@ -1129,7 +1152,7 @@ class BooruApp(QMainWindow):
             site_id = self._site_combo.currentData()
             folder = None
             if site_id:
-                favs = self._db.get_favorites(site_id=site_id)
+                favs = self._db.get_bookmarks(site_id=site_id)
                 for f in favs:
                     if f.post_id == post.id and f.folder:
                         folder = f.folder
@@ -1147,7 +1170,7 @@ class BooruApp(QMainWindow):
             QApplication.clipboard().setText(post.tags)
             self._status.showMessage("Tags copied")
         elif action == fav_action:
-            self._toggle_favorite(index)
+            self._toggle_bookmark(index)
         elif self._is_child_of_menu(action, bl_menu):
             tag = action.text()
             self._db.add_blacklisted_tag(tag)
@@ -1176,7 +1199,7 @@ class BooruApp(QMainWindow):
         count = len(posts)
 
         menu = QMenu(self)
-        fav_all = menu.addAction(f"Favorite All ({count})")
+        fav_all = menu.addAction(f"Bookmark All ({count})")
 
         save_menu = menu.addMenu(f"Save All to Library ({count})")
         save_unsorted = save_menu.addAction("Unsorted")
@@ -1188,7 +1211,7 @@ class BooruApp(QMainWindow):
         save_new = save_menu.addAction("+ New Folder...")
 
         menu.addSeparator()
-        unfav_all = menu.addAction(f"Unfavorite All ({count})")
+        unfav_all = menu.addAction(f"Remove All Bookmarks ({count})")
         menu.addSeparator()
         batch_dl = menu.addAction(f"Download All ({count})...")
         copy_urls = menu.addAction("Copy All URLs")
@@ -1198,7 +1221,7 @@ class BooruApp(QMainWindow):
             return
 
         if action == fav_all:
-            self._bulk_favorite(indices, posts)
+            self._bulk_bookmark(indices, posts)
         elif action == save_unsorted:
             self._bulk_save(indices, posts, None)
         elif action == save_new:
@@ -1225,19 +1248,19 @@ class BooruApp(QMainWindow):
                     # Delete from all folders
                     for folder in self._db.get_folders():
                         delete_from_library(post.id, folder)
-                    self._db.remove_favorite(site_id, post.id)
+                    self._db.remove_bookmark(site_id, post.id)
                 for idx in indices:
                     if 0 <= idx < len(self._grid._thumbs):
-                        self._grid._thumbs[idx].set_favorited(False)
+                        self._grid._thumbs[idx].set_bookmarked(False)
                         self._grid._thumbs[idx].set_saved_locally(False)
                 self._grid._clear_multi()
-                self._status.showMessage(f"Unfavorited {count} posts")
+                self._status.showMessage(f"Removed {count} bookmarks")
         elif action == copy_urls:
             urls = "\n".join(p.file_url for p in posts)
             QApplication.clipboard().setText(urls)
             self._status.showMessage(f"Copied {count} URLs")
 
-    def _bulk_favorite(self, indices: list[int], posts: list[Post]) -> None:
+    def _bulk_bookmark(self, indices: list[int], posts: list[Post]) -> None:
         site_id = self._site_combo.currentData()
         if not site_id:
             return
@@ -1245,20 +1268,20 @@ class BooruApp(QMainWindow):
 
         async def _do():
             for i, (idx, post) in enumerate(zip(indices, posts)):
-                if self._db.is_favorited(site_id, post.id):
+                if self._db.is_bookmarked(site_id, post.id):
                     continue
                 try:
                     path = await download_image(post.file_url)
-                    self._db.add_favorite(
+                    self._db.add_bookmark(
                         site_id=site_id, post_id=post.id,
                         file_url=post.file_url, preview_url=post.preview_url,
                         tags=post.tags, rating=post.rating, score=post.score,
                         source=post.source, cached_path=str(path),
                     )
-                    self._signals.fav_done.emit(idx, f"Favorited {i+1}/{len(posts)}")
+                    self._signals.bookmark_done.emit(idx, f"Bookmarked {i+1}/{len(posts)}")
                 except Exception:
                     pass
-            self._signals.batch_done.emit(f"Favorited {len(posts)} posts")
+            self._signals.batch_done.emit(f"Bookmarked {len(posts)} posts")
 
         self._run_async(_do)
 
@@ -1278,30 +1301,30 @@ class BooruApp(QMainWindow):
                     dest = dest_dir / f"{post.id}{ext}"
                     if not dest.exists():
                         shutil.copy2(path, dest)
-                    if site_id and not self._db.is_favorited(site_id, post.id):
-                        self._db.add_favorite(
+                    if site_id and not self._db.is_bookmarked(site_id, post.id):
+                        self._db.add_bookmark(
                             site_id=site_id, post_id=post.id,
                             file_url=post.file_url, preview_url=post.preview_url,
                             tags=post.tags, rating=post.rating, score=post.score,
                             source=post.source, cached_path=str(path), folder=folder,
                         )
-                    self._signals.fav_done.emit(idx, f"Saved {i+1}/{len(posts)} to {where}")
+                    self._signals.bookmark_done.emit(idx, f"Saved {i+1}/{len(posts)} to {where}")
                 except Exception:
                     pass
             self._signals.batch_done.emit(f"Saved {len(posts)} to {where}")
 
         self._run_async(_do)
 
-    def _toggle_favorite_if_not(self, post: Post) -> None:
-        """Favorite a post if not already favorited."""
+    def _ensure_bookmarked(self, post: Post) -> None:
+        """Bookmark a post if not already bookmarked."""
         site_id = self._site_combo.currentData()
-        if not site_id or self._db.is_favorited(site_id, post.id):
+        if not site_id or self._db.is_bookmarked(site_id, post.id):
             return
 
         async def _fav():
             try:
                 path = await download_image(post.file_url)
-                self._db.add_favorite(
+                self._db.add_bookmark(
                     site_id=site_id,
                     post_id=post.id,
                     file_url=post.file_url,
@@ -1334,11 +1357,11 @@ class BooruApp(QMainWindow):
 
         self._run_async(_batch)
 
-    def _is_current_favorited(self, index: int) -> bool:
+    def _is_current_bookmarked(self, index: int) -> bool:
         site_id = self._site_combo.currentData()
         if not site_id or index < 0 or index >= len(self._posts):
             return False
-        return self._db.is_favorited(site_id, self._posts[index].id)
+        return self._db.is_bookmarked(site_id, self._posts[index].id)
 
     def _open_in_browser(self, post: Post) -> None:
         if self._current_site:
@@ -1381,36 +1404,13 @@ class BooruApp(QMainWindow):
                     import shutil
                     shutil.copy2(path, dest)
 
-                # Also favorite it with the folder
-                site_id = self._site_combo.currentData()
-                if site_id and not self._db.is_favorited(site_id, post.id):
-                    self._db.add_favorite(
-                        site_id=site_id,
-                        post_id=post.id,
-                        file_url=post.file_url,
-                        preview_url=post.preview_url,
-                        tags=post.tags,
-                        rating=post.rating,
-                        score=post.score,
-                        source=post.source,
-                        cached_path=str(path),
-                        folder=folder,
-                    )
-                elif site_id and folder:
-                    # Already favorited, just update the folder
-                    favs = self._db.get_favorites(site_id=site_id)
-                    for f in favs:
-                        if f.post_id == post.id:
-                            self._db.move_favorite_to_folder(f.id, folder)
-                            break
-
                 where = folder or "Unsorted"
-                self._signals.fav_done.emit(
+                self._signals.bookmark_done.emit(
                     self._grid.selected_index,
                     f"Saved #{post.id} to {where}"
                 )
             except Exception as e:
-                self._signals.fav_error.emit(str(e))
+                self._signals.bookmark_error.emit(str(e))
 
         self._run_async(_save)
 
@@ -1479,12 +1479,12 @@ class BooruApp(QMainWindow):
     def _open_settings(self) -> None:
         dlg = SettingsDialog(self._db, self)
         dlg.settings_changed.connect(self._apply_settings)
-        self._favorites_imported = False
-        dlg.favorites_imported.connect(lambda: setattr(self, '_favorites_imported', True))
+        self._bookmarks_imported = False
+        dlg.bookmarks_imported.connect(lambda: setattr(self, '_favorites_imported', True))
         dlg.exec()
-        if self._favorites_imported:
+        if self._bookmarks_imported:
             self._switch_view(1)
-            self._favorites_view.refresh()
+            self._bookmarks_view.refresh()
 
     def _apply_settings(self) -> None:
         """Re-read settings from DB and apply to UI."""
@@ -1493,7 +1493,7 @@ class BooruApp(QMainWindow):
         if idx >= 0:
             self._rating_combo.setCurrentIndex(idx)
         self._score_spin.setValue(self._db.get_setting_int("default_score"))
-        self._favorites_view.refresh()
+        self._bookmarks_view.refresh()
         self._status.showMessage("Settings applied")
 
     # -- Fullscreen & Privacy --
@@ -1541,7 +1541,7 @@ class BooruApp(QMainWindow):
         if key == Qt.Key.Key_F and self._posts:
             idx = self._grid.selected_index
             if 0 <= idx < len(self._posts):
-                self._toggle_favorite(idx)
+                self._toggle_bookmark(idx)
                 return
         elif key == Qt.Key.Key_I:
             self._toggle_info()
@@ -1553,35 +1553,27 @@ class BooruApp(QMainWindow):
                 return
         super().keyPressEvent(event)
 
-    # -- Favorites --
+    # -- Bookmarks --
 
-    def _toggle_favorite(self, index: int) -> None:
+    def _toggle_bookmark(self, index: int) -> None:
         post = self._posts[index]
         site_id = self._site_combo.currentData()
         if not site_id:
             return
 
-        if self._db.is_favorited(site_id, post.id):
-            # Delete from library if saved
-            favs = self._db.get_favorites(site_id=site_id)
-            for f in favs:
-                if f.post_id == post.id:
-                    from ..core.cache import delete_from_library
-                    delete_from_library(post.id, f.folder)
-                    break
-            self._db.remove_favorite(site_id, post.id)
-            self._status.showMessage(f"Unfavorited #{post.id}")
+        if self._db.is_bookmarked(site_id, post.id):
+            self._db.remove_bookmark(site_id, post.id)
+            self._status.showMessage(f"Unbookmarked #{post.id}")
             thumbs = self._grid._thumbs
             if 0 <= index < len(thumbs):
-                thumbs[index].set_favorited(False)
-                thumbs[index].set_saved_locally(False)
+                thumbs[index].set_bookmarked(False)
         else:
-            self._status.showMessage(f"Favoriting #{post.id}...")
+            self._status.showMessage(f"Bookmarking #{post.id}...")
 
             async def _fav():
                 try:
                     path = await download_image(post.file_url)
-                    self._db.add_favorite(
+                    self._db.add_bookmark(
                         site_id=site_id,
                         post_id=post.id,
                         file_url=post.file_url,
@@ -1592,17 +1584,17 @@ class BooruApp(QMainWindow):
                         source=post.source,
                         cached_path=str(path),
                     )
-                    self._signals.fav_done.emit(index, f"Favorited #{post.id}")
+                    self._signals.bookmark_done.emit(index, f"Bookmarked #{post.id}")
                 except Exception as e:
-                    self._signals.fav_error.emit(str(e))
+                    self._signals.bookmark_error.emit(str(e))
 
             self._run_async(_fav)
 
-    def _on_fav_done(self, index: int, msg: str) -> None:
+    def _on_bookmark_done(self, index: int, msg: str) -> None:
         self._status.showMessage(msg)
         thumbs = self._grid._thumbs
         if 0 <= index < len(thumbs):
-            thumbs[index].set_favorited(True)
+            thumbs[index].set_bookmarked(True)
             # Only green if actually saved to library, not just cached
             if "Saved" in msg:
                 thumbs[index].set_saved_locally(True)

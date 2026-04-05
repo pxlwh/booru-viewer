@@ -1,4 +1,4 @@
-"""SQLite database for favorites, sites, and cache metadata."""
+"""SQLite database for bookmarks, sites, and cache metadata."""
 
 from __future__ import annotations
 
@@ -105,7 +105,7 @@ class Site:
 
 
 @dataclass
-class Favorite:
+class Bookmark:
     id: int
     site_id: int
     post_id: int
@@ -117,7 +117,11 @@ class Favorite:
     source: str | None
     cached_path: str | None
     folder: str | None
-    favorited_at: str
+    bookmarked_at: str
+
+
+# Back-compat alias — will be removed in a future version.
+Favorite = Bookmark
 
 
 class Database:
@@ -217,9 +221,9 @@ class Database:
         )
         self.conn.commit()
 
-    # -- Favorites --
+    # -- Bookmarks --
 
-    def add_favorite(
+    def add_bookmark(
         self,
         site_id: int,
         post_id: int,
@@ -231,7 +235,7 @@ class Database:
         source: str | None = None,
         cached_path: str | None = None,
         folder: str | None = None,
-    ) -> Favorite:
+    ) -> Bookmark:
         now = datetime.now(timezone.utc).isoformat()
         cur = self.conn.execute(
             "INSERT OR IGNORE INTO favorites "
@@ -240,7 +244,7 @@ class Database:
             (site_id, post_id, file_url, preview_url, tags, rating, score, source, cached_path, folder, now),
         )
         self.conn.commit()
-        return Favorite(
+        return Bookmark(
             id=cur.lastrowid,  # type: ignore[arg-type]
             site_id=site_id,
             post_id=post_id,
@@ -252,12 +256,15 @@ class Database:
             source=source,
             cached_path=cached_path,
             folder=folder,
-            favorited_at=now,
+            bookmarked_at=now,
         )
 
-    def add_favorites_batch(self, favorites: list[dict]) -> None:
-        """Add multiple favorites in a single transaction."""
-        for fav in favorites:
+    # Back-compat shim
+    add_favorite = add_bookmark
+
+    def add_bookmarks_batch(self, bookmarks: list[dict]) -> None:
+        """Add multiple bookmarks in a single transaction."""
+        for fav in bookmarks:
             self.conn.execute(
                 "INSERT OR IGNORE INTO favorites "
                 "(site_id, post_id, file_url, preview_url, tags, rating, score, source, cached_path, folder, favorited_at) "
@@ -268,28 +275,37 @@ class Database:
             )
         self.conn.commit()
 
-    def remove_favorite(self, site_id: int, post_id: int) -> None:
+    # Back-compat shim
+    add_favorites_batch = add_bookmarks_batch
+
+    def remove_bookmark(self, site_id: int, post_id: int) -> None:
         self.conn.execute(
             "DELETE FROM favorites WHERE site_id = ? AND post_id = ?",
             (site_id, post_id),
         )
         self.conn.commit()
 
-    def is_favorited(self, site_id: int, post_id: int) -> bool:
+    # Back-compat shim
+    remove_favorite = remove_bookmark
+
+    def is_bookmarked(self, site_id: int, post_id: int) -> bool:
         row = self.conn.execute(
             "SELECT 1 FROM favorites WHERE site_id = ? AND post_id = ?",
             (site_id, post_id),
         ).fetchone()
         return row is not None
 
-    def get_favorites(
+    # Back-compat shim
+    is_favorited = is_bookmarked
+
+    def get_bookmarks(
         self,
         search: str | None = None,
         site_id: int | None = None,
         folder: str | None = None,
         limit: int = 100,
         offset: int = 0,
-    ) -> list[Favorite]:
+    ) -> list[Bookmark]:
         q = "SELECT * FROM favorites WHERE 1=1"
         params: list = []
         if site_id is not None:
@@ -305,11 +321,14 @@ class Database:
         q += " ORDER BY favorited_at DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
         rows = self.conn.execute(q, params).fetchall()
-        return [self._row_to_favorite(r) for r in rows]
+        return [self._row_to_bookmark(r) for r in rows]
+
+    # Back-compat shim
+    get_favorites = get_bookmarks
 
     @staticmethod
-    def _row_to_favorite(r) -> Favorite:
-        return Favorite(
+    def _row_to_bookmark(r) -> Bookmark:
+        return Bookmark(
             id=r["id"],
             site_id=r["site_id"],
             post_id=r["post_id"],
@@ -321,19 +340,28 @@ class Database:
             source=r["source"],
             cached_path=r["cached_path"],
             folder=r["folder"] if "folder" in r.keys() else None,
-            favorited_at=r["favorited_at"],
+            bookmarked_at=r["favorited_at"],
         )
 
-    def update_favorite_cache_path(self, fav_id: int, cached_path: str) -> None:
+    # Back-compat shim
+    _row_to_favorite = _row_to_bookmark
+
+    def update_bookmark_cache_path(self, fav_id: int, cached_path: str) -> None:
         self.conn.execute(
             "UPDATE favorites SET cached_path = ? WHERE id = ?",
             (cached_path, fav_id),
         )
         self.conn.commit()
 
-    def favorite_count(self) -> int:
+    # Back-compat shim
+    update_favorite_cache_path = update_bookmark_cache_path
+
+    def bookmark_count(self) -> int:
         row = self.conn.execute("SELECT COUNT(*) FROM favorites").fetchone()
         return row[0]
+
+    # Back-compat shim
+    favorite_count = bookmark_count
 
     # -- Folders --
 
@@ -363,11 +391,14 @@ class Database:
         )
         self.conn.commit()
 
-    def move_favorite_to_folder(self, fav_id: int, folder: str | None) -> None:
+    def move_bookmark_to_folder(self, fav_id: int, folder: str | None) -> None:
         self.conn.execute(
             "UPDATE favorites SET folder = ? WHERE id = ?", (folder, fav_id)
         )
         self.conn.commit()
+
+    # Back-compat shim
+    move_favorite_to_folder = move_bookmark_to_folder
 
     # -- Blacklist --
 
