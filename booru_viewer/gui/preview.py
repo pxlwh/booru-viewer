@@ -39,13 +39,10 @@ class FullscreenPreview(QMainWindow):
         self._stack.addWidget(self._viewer)
 
         self._video = VideoPlayer()
-        self._video.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        for child in self._video.findChildren(QWidget):
-            child.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._stack.addWidget(self._video)
 
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setFocus()
+        from PySide6.QtWidgets import QApplication
+        QApplication.instance().installEventFilter(self)
         self.showFullScreen()
 
     def set_media(self, path: str, info: str = "") -> None:
@@ -66,25 +63,35 @@ class FullscreenPreview(QMainWindow):
                 self._viewer.set_image(pix, info)
             self._stack.setCurrentIndex(0)
 
+    def eventFilter(self, obj, event):
+        from PySide6.QtCore import QEvent
+        if event.type() == QEvent.Type.KeyPress:
+            key = event.key()
+            if key in (Qt.Key.Key_Escape, Qt.Key.Key_Q):
+                self.close()
+                return True
+            elif key in (Qt.Key.Key_Left, Qt.Key.Key_H):
+                self.navigate.emit(-1)
+                return True
+            elif key in (Qt.Key.Key_Right, Qt.Key.Key_L):
+                self.navigate.emit(1)
+                return True
+            elif key == Qt.Key.Key_Space and self._stack.currentIndex() == 1:
+                self._video._toggle_play()
+                return True
+            elif key == Qt.Key.Key_Period and self._stack.currentIndex() == 1:
+                self._video._seek_relative(5000)
+                return True
+            elif key == Qt.Key.Key_Comma and self._stack.currentIndex() == 1:
+                self._video._seek_relative(-5000)
+                return True
+        return super().eventFilter(obj, event)
+
     def closeEvent(self, event) -> None:
+        from PySide6.QtWidgets import QApplication
+        QApplication.instance().removeEventFilter(self)
         self._video.stop()
         super().closeEvent(event)
-
-    def keyPressEvent(self, event: QKeyEvent) -> None:
-        if event.key() in (Qt.Key.Key_Escape, Qt.Key.Key_Q):
-            self.close()
-        elif event.key() in (Qt.Key.Key_Left, Qt.Key.Key_H):
-            self.navigate.emit(-1)
-        elif event.key() in (Qt.Key.Key_Right, Qt.Key.Key_L):
-            self.navigate.emit(1)
-        elif event.key() == Qt.Key.Key_Space and self._stack.currentIndex() == 1:
-            self._video._toggle_play()
-        elif event.key() == Qt.Key.Key_Period and self._stack.currentIndex() == 1:
-            self._video._seek_relative(5000)
-        elif event.key() == Qt.Key.Key_Comma and self._stack.currentIndex() == 1:
-            self._video._seek_relative(-5000)
-        else:
-            super().keyPressEvent(event)
 
 
 # -- Image Viewer (zoom/pan) --
