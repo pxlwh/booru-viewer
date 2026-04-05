@@ -92,6 +92,14 @@ class LibraryView(QWidget):
 
     def refresh(self) -> None:
         """Scan the selected folder, sort, display thumbnails."""
+        root = saved_dir()
+        if not root.exists() or not os.access(root, os.R_OK):
+            self._count_label.setText("Library directory unreachable")
+            self._count_label.setStyleSheet("color: #ff4444; font-weight: bold;")
+            self._grid.set_posts(0)
+            self._files = []
+            return
+        self._count_label.setStyleSheet("")
         self._refresh_folders()
         self._files = self._scan_files()
         self._sort_files()
