@@ -310,6 +310,7 @@ class VideoPlayer(QWidget):
     def play_file(self, path: str, info: str = "") -> None:
         self._current_file = path
         self._error_fired = False
+        self._player.setLoops(QMediaPlayer.Loops.Infinite)
         self._player.setSource(QUrl.fromLocalFile(path))
         if self._autoplay:
             self._player.play()
@@ -360,10 +361,7 @@ class VideoPlayer(QWidget):
             self._play_btn.setText("Play")
 
     def _on_media_status(self, status) -> None:
-        # Manual loop: when video ends, restart it
-        if status == QMediaPlayer.MediaStatus.EndOfMedia:
-            self._player.setPosition(0)
-            self._player.play()
+        pass  # Looping handled by QMediaPlayer.Loops.Infinite
 
     def _on_error(self, error, msg: str = "") -> None:
         if self._current_file and not self._error_fired:
