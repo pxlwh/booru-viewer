@@ -1068,13 +1068,16 @@ class BooruApp(QMainWindow):
         self._preview._video_player.stop()
         from .preview import FullscreenPreview
         cols = self._grid._flow.columns
-        self._fullscreen_window = FullscreenPreview(grid_cols=cols, parent=self)
+        show_actions = self._stack.currentIndex() != 2  # hide for Library tab
+        self._fullscreen_window = FullscreenPreview(grid_cols=cols, show_actions=show_actions, parent=self)
         self._fullscreen_window.navigate.connect(self._navigate_fullscreen)
-        self._fullscreen_window.bookmark_requested.connect(self._bookmark_from_preview)
-        self._fullscreen_window.save_toggle_requested.connect(self._save_toggle_from_slideshow)
+        if show_actions:
+            self._fullscreen_window.bookmark_requested.connect(self._bookmark_from_preview)
+            self._fullscreen_window.save_toggle_requested.connect(self._save_toggle_from_slideshow)
         self._fullscreen_window.destroyed.connect(self._on_fullscreen_closed)
         self._fullscreen_window.set_media(path, self._preview._info_label.text())
-        self._update_fullscreen_state()
+        if show_actions:
+            self._update_fullscreen_state()
 
     def _on_fullscreen_closed(self) -> None:
         self._fullscreen_window = None

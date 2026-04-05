@@ -29,7 +29,7 @@ class FullscreenPreview(QMainWindow):
     bookmark_requested = Signal()
     save_toggle_requested = Signal()  # save or unsave depending on state
 
-    def __init__(self, grid_cols: int = 3, parent=None) -> None:
+    def __init__(self, grid_cols: int = 3, show_actions: bool = True, parent=None) -> None:
         super().__init__(parent, Qt.WindowType.Window)
         self.setWindowTitle("booru-viewer — Fullscreen")
         self._grid_cols = grid_cols
@@ -54,6 +54,10 @@ class FullscreenPreview(QMainWindow):
         self._save_btn.clicked.connect(self.save_toggle_requested)
         toolbar.addWidget(self._save_btn)
         self._is_saved = False
+
+        if not show_actions:
+            self._bookmark_btn.hide()
+            self._save_btn.hide()
 
         toolbar.addStretch()
 
