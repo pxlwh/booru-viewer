@@ -33,6 +33,7 @@ class FullscreenPreview(QMainWindow):
     def __init__(self, grid_cols: int = 3, show_actions: bool = True, parent=None) -> None:
         super().__init__(parent, Qt.WindowType.Window)
         self.setWindowTitle("booru-viewer — Fullscreen")
+        self.setMinimumSize(640, 480)
         self._grid_cols = grid_cols
 
         central = QWidget()
