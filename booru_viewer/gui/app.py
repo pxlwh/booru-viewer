@@ -608,6 +608,17 @@ class BooruApp(QMainWindow):
             if post.preview_url:
                 self._fetch_thumbnail(i, post.preview_url)
 
+        # Auto-select first/last post if page turn was triggered by navigation
+        turn = getattr(self, "_nav_page_turn", None)
+        if turn and posts:
+            self._nav_page_turn = None
+            if turn == "first":
+                idx = 0
+            else:
+                idx = len(posts) - 1
+            self._grid._select(idx)
+            self._on_post_activated(idx)
+
         self._grid.setFocus()
 
     def _fetch_thumbnail(self, index: int, url: str) -> None:
@@ -788,8 +799,10 @@ class BooruApp(QMainWindow):
                 self._grid._select(idx)
                 self._on_post_activated(idx)
             elif idx >= len(self._posts) and direction == 1 and len(self._posts) > 0:
+                self._nav_page_turn = "first"
                 self._next_page()
             elif idx < 0 and direction == -1 and self._current_page > 1:
+                self._nav_page_turn = "last"
                 self._prev_page()
 
     def _favorite_from_preview(self) -> None:
