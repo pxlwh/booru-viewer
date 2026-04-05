@@ -28,6 +28,7 @@ class FullscreenPreview(QMainWindow):
     navigate = Signal(int)  # direction: -1/+1 for left/right, -cols/+cols for up/down
     bookmark_requested = Signal()
     save_toggle_requested = Signal()  # save or unsave depending on state
+    privacy_requested = Signal()
     closed = Signal()
 
     def __init__(self, grid_cols: int = 3, show_actions: bool = True, monitor: str = "", parent=None) -> None:
@@ -136,7 +137,10 @@ class FullscreenPreview(QMainWindow):
                 return super().eventFilter(obj, event)
             key = event.key()
             mods = event.modifiers()
-            if key == Qt.Key.Key_H and mods & Qt.KeyboardModifier.ControlModifier:
+            if key == Qt.Key.Key_P and mods & Qt.KeyboardModifier.ControlModifier:
+                self.privacy_requested.emit()
+                return True
+            elif key == Qt.Key.Key_H and mods & Qt.KeyboardModifier.ControlModifier:
                 self._toolbar.setVisible(not self._toolbar.isVisible())
                 # Also hide video controls if showing video
                 if self._stack.currentIndex() == 1:

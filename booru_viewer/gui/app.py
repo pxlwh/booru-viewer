@@ -1118,6 +1118,7 @@ class BooruApp(QMainWindow):
             self._fullscreen_window.bookmark_requested.connect(self._bookmark_from_preview)
             self._fullscreen_window.save_toggle_requested.connect(self._save_toggle_from_slideshow)
         self._fullscreen_window.closed.connect(self._on_fullscreen_closed)
+        self._fullscreen_window.privacy_requested.connect(self._toggle_privacy)
         self._fullscreen_window.set_media(path, info)
         # Seek to the position from the preview after media loads
         if video_pos > 0 and self._fullscreen_window._stack.currentIndex() == 1:
