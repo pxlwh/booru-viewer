@@ -363,7 +363,7 @@ class BooruApp(QMainWindow):
         self._splitter.addWidget(self._stack)
 
         # Right: preview + info (vertical split)
-        right = QSplitter(Qt.Orientation.Vertical)
+        self._right_splitter = right = QSplitter(Qt.Orientation.Vertical)
 
         self._preview = ImagePreview()
         self._preview.close_requested.connect(self._close_preview)
@@ -1096,11 +1096,13 @@ class BooruApp(QMainWindow):
         if self._preview._stack.currentIndex() == 1:
             video_pos = self._preview._video_player._player.position()
         # Clear the main preview — slideshow takes over
-        # Show info panel in the freed space
+        # Hide preview, expand info panel into the freed space
         self._info_was_visible = self._info_panel.isVisible()
-        self._info_panel.show()
+        self._right_splitter_sizes = self._right_splitter.sizes()
         self._preview.clear()
-        self._preview._info_label.setText(info)
+        self._preview.hide()
+        self._info_panel.show()
+        self._right_splitter.setSizes([0, 0, 1000])
         self._preview._current_path = path
         from .preview import FullscreenPreview
         cols = self._grid._flow.columns
@@ -1127,9 +1129,12 @@ class BooruApp(QMainWindow):
             self._update_fullscreen_state()
 
     def _on_fullscreen_closed(self) -> None:
-        # Restore info panel visibility
+        # Restore preview and info panel visibility
+        self._preview.show()
         if not getattr(self, '_info_was_visible', False):
             self._info_panel.hide()
+        if hasattr(self, '_right_splitter_sizes'):
+            self._right_splitter.setSizes(self._right_splitter_sizes)
         # Grab video position before cleanup
         video_pos = 0
         if self._fullscreen_window and self._fullscreen_window._stack.currentIndex() == 1:
