@@ -114,3 +114,12 @@ QTabBar::tab:selected {
     background: #504945;
     color: #fe8019;
 }
+
+QSpinBox::up-button, QSpinBox::down-button {
+    background: #3c3836;
+    border: 1px solid #504945;
+    width: 16px;
+}
+QSpinBox::up-button:hover, QSpinBox::down-button:hover {
+    background: #504945;
+}
