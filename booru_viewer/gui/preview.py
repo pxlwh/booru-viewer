@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QPoint, QPointF, Signal, QUrl
+from PySide6.QtCore import Qt, QPoint, QPointF, Signal, QUrl, Property
 from PySide6.QtGui import QPixmap, QPainter, QWheelEvent, QMouseEvent, QKeyEvent, QColor, QMovie
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QMainWindow,
