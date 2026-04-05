@@ -7,6 +7,17 @@ Copy any `.qss` file from this folder to your data directory as `custom.qss`:
 
 Restart the app after changing themes.
 
+## Included Themes
+
+| Theme | File | Preview |
+|-------|------|---------|
+| Nord | [nord.qss](nord.qss) | <picture><img src="../screenshots/themes/nord.png" width="300"></picture> |
+| Catppuccin Mocha | [catppuccin-mocha.qss](catppuccin-mocha.qss) | <picture><img src="../screenshots/themes/catppuccin-mocha.png" width="300"></picture> |
+| Gruvbox | [gruvbox.qss](gruvbox.qss) | <picture><img src="../screenshots/themes/gruvbox.png" width="300"></picture> |
+| Solarized Dark | [solarized-dark.qss](solarized-dark.qss) | <picture><img src="../screenshots/themes/solarized-dark.png" width="300"></picture> |
+| Tokyo Night | [tokyo-night.qss](tokyo-night.qss) | <picture><img src="../screenshots/themes/tokyo-night.png" width="300"></picture> |
+| Everforest | [everforest.qss](everforest.qss) | <picture><img src="../screenshots/themes/everforest.png" width="300"></picture> |
+
 ## Widget Targets
 
 ### Global
