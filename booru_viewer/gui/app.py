@@ -1042,7 +1042,9 @@ class BooruApp(QMainWindow):
         elif action.parent() == bl_menu:
             tag = action.text()
             self._db.add_blacklisted_tag(tag)
+            self._db.set_setting("blacklist_enabled", "1")
             self._status.showMessage(f"Blacklisted: {tag}")
+            self._do_search()
 
     def _on_multi_context_menu(self, indices: list, pos) -> None:
         """Context menu for multi-selected posts."""

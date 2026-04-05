@@ -84,6 +84,7 @@ _DEFAULTS = {
     "confirm_favorites": "0",
     "preload_thumbnails": "1",
     "file_dialog_platform": "qt",
+    "blacklist_enabled": "1",
 }
 
 
