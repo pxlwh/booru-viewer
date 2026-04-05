@@ -809,17 +809,31 @@ class BooruApp(QMainWindow):
                 self._prefetch_adjacent(index)
 
     def _prefetch_adjacent(self, index: int) -> None:
-        """Prefetch outward from clicked post, gradually covering the whole page."""
+        """Prefetch outward from clicked post in all directions, covering the whole page."""
         total = len(self._posts)
         if total == 0:
             return
+        cols = self._grid._flow.columns
 
-        # Build spiral order: distance 1, 2, 3... from index
+        # Build ring order: at each distance, grab all 8 directions
+        seen = {index}
         order = []
         for dist in range(1, total):
+            ring = set()
+            for dy in (-dist, 0, dist):
+                for dx in (-dist, 0, dist):
+                    if dy == 0 and dx == 0:
+                        continue
+                    adj = index + dy * cols + dx
+                    if 0 <= adj < total and adj not in seen:
+                        ring.add(adj)
+            # Also add pure linear neighbors for non-grid nav
             for adj in (index + dist, index - dist):
-                if 0 <= adj < total:
-                    order.append(adj)
+                if 0 <= adj < total and adj not in seen:
+                    ring.add(adj)
+            for adj in sorted(ring):
+                seen.add(adj)
+                order.append(adj)
             if len(order) >= total - 1:
                 break
 
