@@ -1896,20 +1896,7 @@ class BooruApp(QMainWindow):
         super().keyPressEvent(event)
 
     def _copy_preview_to_clipboard(self) -> None:
-        # Try preview pixmap
-        pix = self._preview._image_viewer._pixmap
-        if pix and not pix.isNull():
-            QApplication.clipboard().setPixmap(pix)
-            self._status.showMessage(f"{len(self._posts)} results — Copied to clipboard")
-            return
-        # Try slideshow pixmap
-        if self._fullscreen_window and self._fullscreen_window._viewer._pixmap:
-            pix = self._fullscreen_window._viewer._pixmap
-            if not pix.isNull():
-                QApplication.clipboard().setPixmap(pix)
-                self._status.showMessage(f"{len(self._posts)} results — Copied to clipboard")
-                return
-        # Try loading from preview path or selected post's cached file
+        # Find the file path to copy
         path = self._preview._current_path
         if not path:
             idx = self._grid.selected_index
@@ -1918,13 +1905,37 @@ class BooruApp(QMainWindow):
                 cp = cached_path_for(self._posts[idx].file_url)
                 if cp.exists():
                     path = str(cp)
-        if path:
-            pix = QPixmap(path)
-            if not pix.isNull():
-                QApplication.clipboard().setPixmap(pix)
+        if not path or not Path(path).exists():
+            self._status.showMessage(f"{len(self._posts)} results — Nothing to copy")
+            return
+
+        # Try wl-copy on Wayland, fall back to Qt clipboard
+        import shutil
+        if shutil.which("wl-copy"):
+            import subprocess
+            mime = "image/png"
+            ext = Path(path).suffix.lower()
+            if ext in (".jpg", ".jpeg"):
+                mime = "image/jpeg"
+            elif ext == ".gif":
+                mime = "image/gif"
+            elif ext == ".webp":
+                mime = "image/webp"
+            try:
+                with open(path, "rb") as f:
+                    subprocess.run(["wl-copy", "--type", mime], stdin=f, timeout=5)
                 self._status.showMessage(f"{len(self._posts)} results — Copied to clipboard")
                 return
-        self._status.showMessage(f"{len(self._posts)} results — Nothing to copy")
+            except Exception as e:
+                log.warning(f"wl-copy failed: {e}")
+
+        # Qt fallback
+        pix = QPixmap(path)
+        if not pix.isNull():
+            QApplication.clipboard().setPixmap(pix)
+            self._status.showMessage(f"{len(self._posts)} results — Copied to clipboard")
+        else:
+            self._status.showMessage(f"{len(self._posts)} results — Nothing to copy")
 
     # -- Bookmarks --
 
