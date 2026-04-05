@@ -466,7 +466,9 @@ class ThumbnailGrid(QScrollArea):
 
     def _check_scroll_bottom(self, value: int) -> None:
         sb = self.verticalScrollBar()
-        if sb.maximum() > 0 and value >= sb.maximum() - 10:
+        # Trigger when within one row height of the bottom
+        threshold = THUMB_SIZE + THUMB_SPACING * 2
+        if sb.maximum() > 0 and value >= sb.maximum() - threshold:
             self.reached_bottom.emit()
         if value <= 0 and sb.maximum() > 0:
             self.reached_top.emit()
