@@ -103,6 +103,7 @@ Windows 10 dark mode is automatically detected and applied.
 | `Ctrl+A` | Select all |
 | `Ctrl+Click` / `Shift+Click` | Multi-select |
 | `Home` / `End` | Jump to first / last |
+| Scroll tilt left / right | Previous / next page |
 | Right click | Context menu |
 
 ### Preview
