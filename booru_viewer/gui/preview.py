@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QPoint, QPointF, Signal, QUrl, Property
+from PySide6.QtCore import Qt, QPoint, QPointF, Signal, QUrl
 from PySide6.QtGui import QPixmap, QPainter, QWheelEvent, QMouseEvent, QKeyEvent, QColor, QMovie
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QMainWindow,
@@ -48,12 +48,12 @@ class FullscreenPreview(QMainWindow):
         toolbar.setContentsMargins(8, 4, 8, 4)
 
         self._bookmark_btn = QPushButton("Bookmark")
-        
+        self._bookmark_btn.setFixedWidth(80)
         self._bookmark_btn.clicked.connect(self.bookmark_requested)
         toolbar.addWidget(self._bookmark_btn)
 
         self._save_btn = QPushButton("Save")
-        
+        self._save_btn.setFixedWidth(70)
         self._save_btn.clicked.connect(self.save_toggle_requested)
         toolbar.addWidget(self._save_btn)
         self._is_saved = False
@@ -102,7 +102,7 @@ class FullscreenPreview(QMainWindow):
 
     def update_state(self, bookmarked: bool, saved: bool) -> None:
         self._bookmark_btn.setText("Unbookmark" if bookmarked else "Bookmark")
-        
+        self._bookmark_btn.setFixedWidth(90 if bookmarked else 80)
         self._is_saved = saved
         self._save_btn.setText("Unsave" if saved else "Save")
 
@@ -378,14 +378,13 @@ class VideoPlayer(QWidget):
         controls = QHBoxLayout()
         controls.setContentsMargins(4, 2, 4, 2)
 
-        self._use_icons = None  # lazy detection
-
         self._play_btn = QPushButton("Play")
+        self._play_btn.setFixedWidth(65)
         self._play_btn.clicked.connect(self._toggle_play)
         controls.addWidget(self._play_btn)
 
         self._time_label = QLabel("0:00")
-        self._time_label.setMinimumWidth(40)
+        self._time_label.setFixedWidth(45)
         controls.addWidget(self._time_label)
 
         self._seek_slider = _ClickSeekSlider(Qt.Orientation.Horizontal)
@@ -395,22 +394,24 @@ class VideoPlayer(QWidget):
         controls.addWidget(self._seek_slider, stretch=1)
 
         self._duration_label = QLabel("0:00")
-        self._duration_label.setMinimumWidth(40)
+        self._duration_label.setFixedWidth(45)
         controls.addWidget(self._duration_label)
 
         self._vol_slider = QSlider(Qt.Orientation.Horizontal)
         self._vol_slider.setRange(0, 100)
         self._vol_slider.setValue(50)
-        self._vol_slider.setMaximumWidth(80)
+        self._vol_slider.setFixedWidth(80)
         self._vol_slider.valueChanged.connect(self._set_volume)
         controls.addWidget(self._vol_slider)
 
         self._mute_btn = QPushButton("Mute")
+        self._mute_btn.setFixedWidth(80)
         self._mute_btn.clicked.connect(self._toggle_mute)
         controls.addWidget(self._mute_btn)
 
         self._autoplay = True
         self._autoplay_btn = QPushButton("Auto")
+        self._autoplay_btn.setFixedWidth(70)
         self._autoplay_btn.setCheckable(True)
         self._autoplay_btn.setChecked(True)
         self._autoplay_btn.setToolTip("Auto-play videos when selected")
@@ -420,6 +421,7 @@ class VideoPlayer(QWidget):
 
         self._loop_state = 0  # 0=Loop, 1=Once, 2=Next
         self._loop_btn = QPushButton("Loop")
+        self._loop_btn.setFixedWidth(55)
         self._loop_btn.setToolTip("Loop: repeat / Once: stop at end / Next: advance")
         self._loop_btn.clicked.connect(self._cycle_loop)
         controls.addWidget(self._loop_btn)
@@ -436,7 +438,6 @@ class VideoPlayer(QWidget):
         self._error_fired = False
 
     def play_file(self, path: str, info: str = "") -> None:
-        self._detect_icons()
         self._current_file = path
         self._error_fired = False
         self._ended = False
@@ -447,79 +448,14 @@ class VideoPlayer(QWidget):
         else:
             self._player.pause()
 
-    # Glyph map — override via QSS: qproperty-playIcon etc.
-    _play_icon = ""
-    _pause_icon = ""
-    _mute_icon = ""
-    _unmute_icon = ""
-    _loop_icon = ""
-    _once_icon = ""
-    _next_icon = ""
-    _auto_icon = ""
-    _manual_icon = ""
-
-    # Default Nerd Font codicon glyphs
-    _NF_GLYPHS = {
-        "play": "\ueb7c", "pause": "\ueb7e",
-        "mute": "\ueb80", "unmute": "\ueb7f",
-        "loop": "\ueb82", "once": "\ueba2", "next": "\uea9c",
-        "auto": "\ueb96", "manual": "\ueb84",
-    }
-
-    def _get_play_icon(self): return self._play_icon
-    def _set_play_icon(self, v): self._play_icon = v
-    playIcon = Property(str, _get_play_icon, _set_play_icon)
-
-    def _get_pause_icon(self): return self._pause_icon
-    def _set_pause_icon(self, v): self._pause_icon = v
-    pauseIcon = Property(str, _get_pause_icon, _set_pause_icon)
-
-    def _get_mute_icon(self): return self._mute_icon
-    def _set_mute_icon(self, v): self._mute_icon = v
-    muteIcon = Property(str, _get_mute_icon, _set_mute_icon)
-
-    def _get_unmute_icon(self): return self._unmute_icon
-    def _set_unmute_icon(self, v): self._unmute_icon = v
-    unmuteIcon = Property(str, _get_unmute_icon, _set_unmute_icon)
-
-    def _detect_icons(self) -> None:
-        """Detect Nerd Font support and swap button labels."""
-        if self._use_icons is not None:
-            return
-        self.ensurePolished()
-        from PySide6.QtGui import QFontMetrics
-        fm = QFontMetrics(self._play_btn.font())
-        self._use_icons = fm.inFont("\ueb7c")  # codicon play
-        if self._use_icons:
-            self._play_btn.setText(self._play_icon or self._NF_GLYPHS["play"])
-            self._mute_btn.setText(self._mute_icon or self._NF_GLYPHS["mute"])
-            g = self._NF_GLYPHS
-            labels = [
-                self._loop_icon or g["loop"],
-                self._once_icon or g["once"],
-                self._next_icon or g["next"],
-            ]
-            self._loop_btn.setText(labels[self._loop_state])
-
     def _toggle_autoplay(self, checked: bool = True) -> None:
         self._autoplay = self._autoplay_btn.isChecked()
-        if self._use_icons:
-            g = self._NF_GLYPHS
-            self._autoplay_btn.setText(self._auto_icon or g["auto"] if self._autoplay else self._manual_icon or g["manual"])
-        else:
-            self._autoplay_btn.setText("Autoplay" if self._autoplay else "Manual")
+        self._autoplay_btn.setText("Autoplay" if self._autoplay else "Manual")
+        # If turning off autoplay mid-playback, let current video finish then stop
 
     def _cycle_loop(self) -> None:
         self._loop_state = (self._loop_state + 1) % 3
-        if self._use_icons:
-            g = self._NF_GLYPHS
-            labels = [
-                self._loop_icon or g["loop"],
-                self._once_icon or g["once"],
-                self._next_icon or g["next"],
-            ]
-        else:
-            labels = ["Loop", "Once", "Next"]
+        labels = ["Loop", "Once", "Next"]
         self._loop_btn.setText(labels[self._loop_state])
         self._autoplay_btn.setVisible(self._loop_state == 2)
 
@@ -549,11 +485,7 @@ class VideoPlayer(QWidget):
 
     def _toggle_mute(self) -> None:
         self._audio.setMuted(not self._audio.isMuted())
-        g = self._NF_GLYPHS
-        if self._use_icons:
-            self._mute_btn.setText(self._unmute_icon or g["unmute"] if self._audio.isMuted() else self._mute_icon or g["mute"])
-        else:
-            self._mute_btn.setText("Unmute" if self._audio.isMuted() else "Mute")
+        self._mute_btn.setText("Unmute" if self._audio.isMuted() else "Mute")
 
     _last_pos = 0
 
@@ -577,11 +509,10 @@ class VideoPlayer(QWidget):
         self._duration_label.setText(self._fmt(dur))
 
     def _on_state(self, state) -> None:
-        g = self._NF_GLYPHS
         if state == QMediaPlayer.PlaybackState.PlayingState:
-            self._play_btn.setText(self._pause_icon or g["pause"] if self._use_icons else "Pause")
+            self._play_btn.setText("Pause")
         else:
-            self._play_btn.setText(self._play_icon or g["play"] if self._use_icons else "Play")
+            self._play_btn.setText("Play")
 
     def _on_media_status(self, status) -> None:
         pass
