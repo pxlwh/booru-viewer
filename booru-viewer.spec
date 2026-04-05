@@ -26,7 +26,7 @@ a = Analysis(
     ['booru_viewer/main_gui.py'],
     pathex=[],
     binaries=[],
-    datas=[('icon.png', '.'), ('booru_viewer/gui/custom_css_guide.txt', 'booru_viewer/gui')],
+    datas=[('icon.png', '.')],
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
