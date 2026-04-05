@@ -254,6 +254,10 @@ class SettingsDialog(QDialog):
         layout.addWidget(self._bl_post_list)
 
         bl_post_row = QHBoxLayout()
+        add_post_btn = QPushButton("Add...")
+        add_post_btn.clicked.connect(self._bl_add_post)
+        bl_post_row.addWidget(add_post_btn)
+
         remove_post_btn = QPushButton("Remove Selected")
         remove_post_btn.clicked.connect(self._bl_remove_post)
         bl_post_row.addWidget(remove_post_btn)
@@ -264,6 +268,20 @@ class SettingsDialog(QDialog):
 
         layout.addLayout(bl_post_row)
         return w
+
+    def _bl_add_post(self) -> None:
+        from PySide6.QtWidgets import QInputDialog
+        text, ok = QInputDialog.getMultiLineText(
+            self, "Add Blacklisted Posts",
+            "Paste URLs (one per line or space-separated):",
+        )
+        if ok and text.strip():
+            urls = text.replace("\n", " ").split()
+            for url in urls:
+                url = url.strip()
+                if url:
+                    self._db.add_blacklisted_post(url)
+                    self._bl_post_list.addItem(url)
 
     def _bl_remove_post(self) -> None:
         item = self._bl_post_list.currentItem()
