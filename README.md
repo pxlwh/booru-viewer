@@ -91,17 +91,17 @@ Requires Python 3.11+ and pip. Most distros ship Python but you may need to inst
 
 **Arch / CachyOS:**
 ```sh
-sudo pacman -S python python-pip qt6-base qt6-multimedia ffmpeg
+sudo pacman -S python python-pip qt6-base qt6-multimedia qt6-multimedia-ffmpeg ffmpeg
 ```
 
 **Ubuntu / Debian (24.04+):**
 ```sh
-sudo apt install python3 python3-pip python3-venv qt6-base-dev libqt6multimedia6 ffmpeg
+sudo apt install python3 python3-pip python3-venv libqt6multimedia6 gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav ffmpeg
 ```
 
 **Fedora:**
 ```sh
-sudo dnf install python3 python3-pip qt6-qtbase qt6-qtmultimedia ffmpeg
+sudo dnf install python3 python3-pip qt6-qtbase qt6-qtmultimedia gstreamer1-plugins-good gstreamer1-plugins-bad-free gstreamer1-libav ffmpeg
 ```
 
 Then clone and install:
