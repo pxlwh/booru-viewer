@@ -495,7 +495,9 @@ class VideoPlayer(QWidget):
             self._seek_slider.setValue(pos)
         self._time_label.setText(self._fmt(pos))
         # Detect loop restart: position jumps from near-end back to start
-        if self._last_pos > 500 and pos < 100 and not self._ended:
+        duration = self._player.duration()
+        if (self._last_pos > 500 and pos < 100 and not self._ended
+                and duration > 0 and self._last_pos > duration * 0.8):
             if self._loop_state == 1:  # Once
                 self._ended = True
                 self._player.pause()

@@ -1119,6 +1119,19 @@ class BooruApp(QMainWindow):
             self._fullscreen_window.save_toggle_requested.connect(self._save_toggle_from_slideshow)
         self._fullscreen_window.closed.connect(self._on_fullscreen_closed)
         self._fullscreen_window.privacy_requested.connect(self._toggle_privacy)
+        # Sync video player state from preview to slideshow
+        pv = self._preview._video_player
+        sv = self._fullscreen_window._video
+        sv._audio.setMuted(pv._audio.isMuted())
+        sv._audio.setVolume(pv._audio.volume())
+        sv._vol_slider.setValue(pv._vol_slider.value())
+        sv._mute_btn.setText(pv._mute_btn.text())
+        sv._autoplay = pv._autoplay
+        sv._autoplay_btn.setChecked(pv._autoplay_btn.isChecked())
+        sv._autoplay_btn.setText(pv._autoplay_btn.text())
+        sv._autoplay_btn.setVisible(pv._autoplay_btn.isVisible())
+        sv._loop_state = pv._loop_state
+        sv._loop_btn.setText(pv._loop_btn.text())
         self._fullscreen_window.set_media(path, info)
         # Seek to the position from the preview after media loads
         if video_pos > 0 and self._fullscreen_window._stack.currentIndex() == 1:
@@ -1141,6 +1154,20 @@ class BooruApp(QMainWindow):
             self._info_panel.hide()
         if hasattr(self, '_right_splitter_sizes'):
             self._right_splitter.setSizes(self._right_splitter_sizes)
+        # Sync video player state from slideshow back to preview
+        if self._fullscreen_window:
+            sv = self._fullscreen_window._video
+            pv = self._preview._video_player
+            pv._audio.setMuted(sv._audio.isMuted())
+            pv._audio.setVolume(sv._audio.volume())
+            pv._vol_slider.setValue(sv._vol_slider.value())
+            pv._mute_btn.setText(sv._mute_btn.text())
+            pv._autoplay = sv._autoplay
+            pv._autoplay_btn.setChecked(sv._autoplay_btn.isChecked())
+            pv._autoplay_btn.setText(sv._autoplay_btn.text())
+            pv._autoplay_btn.setVisible(sv._autoplay_btn.isVisible())
+            pv._loop_state = sv._loop_state
+            pv._loop_btn.setText(sv._loop_btn.text())
         # Grab video position before cleanup
         video_pos = 0
         if self._fullscreen_window and self._fullscreen_window._stack.currentIndex() == 1:
