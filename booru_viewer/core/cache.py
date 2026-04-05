@@ -4,12 +4,31 @@ from __future__ import annotations
 
 import hashlib
 import zipfile
+from collections import OrderedDict
+from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 from PIL import Image
 
 from .config import cache_dir, thumbnails_dir, USER_AGENT
+
+# Track all outgoing connections: {host: [timestamp, ...]}
+_connection_log: OrderedDict[str, list[str]] = OrderedDict()
+
+
+def log_connection(url: str) -> None:
+    host = urlparse(url).netloc
+    if host not in _connection_log:
+        _connection_log[host] = []
+    _connection_log[host].append(datetime.now().strftime("%H:%M:%S"))
+    # Keep last 50 entries per host
+    _connection_log[host] = _connection_log[host][-50:]
+
+
+def get_connection_log() -> dict[str, list[str]]:
+    return dict(_connection_log)
 
 
 def _url_hash(url: str) -> str:
@@ -110,7 +129,6 @@ async def download_image(
             local.unlink()  # Remove corrupt cache entry
 
     # Extract referer from URL domain (needed for Gelbooru CDN etc.)
-    from urllib.parse import urlparse
     parsed = urlparse(url)
     # Map CDN hostnames back to the main site
     referer_host = parsed.netloc
@@ -119,6 +137,8 @@ async def download_image(
     elif referer_host.startswith("cdn") and "donmai" in referer_host:
         referer_host = "danbooru.donmai.us"
     referer = f"{parsed.scheme}://{referer_host}/"
+
+    log_connection(url)
 
     own_client = client is None
     if own_client:

@@ -53,6 +53,7 @@ class SettingsDialog(QDialog):
         self._tabs.addTab(self._build_blacklist_tab(), "Blacklist")
         self._tabs.addTab(self._build_paths_tab(), "Paths")
         self._tabs.addTab(self._build_theme_tab(), "Theme")
+        self._tabs.addTab(self._build_network_tab(), "Network")
 
         # Bottom buttons
         btns = QHBoxLayout()
@@ -337,6 +338,39 @@ class SettingsDialog(QDialog):
 
         layout.addStretch()
         return w
+
+    # -- Network tab --
+
+    def _build_network_tab(self) -> QWidget:
+        from ..core.cache import get_connection_log
+        w = QWidget()
+        layout = QVBoxLayout(w)
+
+        layout.addWidget(QLabel(
+            "All hosts contacted this session. booru-viewer only connects\n"
+            "to the booru sites you configure — no telemetry or analytics."
+        ))
+
+        self._net_list = QListWidget()
+        self._net_list.setAlternatingRowColors(True)
+        layout.addWidget(self._net_list)
+
+        refresh_btn = QPushButton("Refresh")
+        refresh_btn.clicked.connect(self._refresh_network)
+        layout.addWidget(refresh_btn)
+
+        self._refresh_network()
+        return w
+
+    def _refresh_network(self) -> None:
+        from ..core.cache import get_connection_log
+        self._net_list.clear()
+        log = get_connection_log()
+        if not log:
+            self._net_list.addItem("No connections made yet")
+            return
+        for host, times in log.items():
+            self._net_list.addItem(f"{host}  ({len(times)} requests, last: {times[-1]})")
 
     def _edit_custom_css(self) -> None:
         from PySide6.QtGui import QDesktopServices

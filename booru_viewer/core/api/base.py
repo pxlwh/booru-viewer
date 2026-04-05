@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 import httpx
 
 from ..config import USER_AGENT, DEFAULT_PAGE_SIZE
+from ..cache import log_connection
 
 log = logging.getLogger("booru")
 
@@ -53,8 +54,13 @@ class BooruClient(ABC):
                 headers={"User-Agent": USER_AGENT},
                 follow_redirects=True,
                 timeout=20.0,
+                event_hooks={"request": [self._log_request]},
             )
         return self._client
+
+    @staticmethod
+    async def _log_request(request: httpx.Request) -> None:
+        log_connection(str(request.url))
 
     async def close(self) -> None:
         if self._client and not self._client.is_closed:
