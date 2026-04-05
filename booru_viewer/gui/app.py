@@ -217,7 +217,15 @@ class BooruApp(QMainWindow):
         self._status.showMessage(f"Error: {e}")
 
     def _run_async(self, coro_func, *args):
-        asyncio.run_coroutine_threadsafe(coro_func(*args), self._async_loop)
+        future = asyncio.run_coroutine_threadsafe(coro_func(*args), self._async_loop)
+        future.add_done_callback(self._on_async_done)
+
+    @staticmethod
+    def _on_async_done(future):
+        try:
+            future.result()
+        except Exception as e:
+            log.error(f"Async worker failed: {e}")
 
     def _setup_ui(self) -> None:
         central = QWidget()
@@ -303,6 +311,7 @@ class BooruApp(QMainWindow):
         self._preview.open_in_browser.connect(self._open_preview_in_browser)
         self._preview.favorite_requested.connect(self._favorite_from_preview)
         self._preview.save_to_folder.connect(self._save_from_preview)
+        self._preview.unsave_requested.connect(self._unsave_from_preview)
         self._preview.navigate.connect(self._navigate_preview)
         self._preview.fullscreen_requested.connect(self._open_fullscreen_preview)
         self._preview.set_folders_callback(self._db.get_folders)
@@ -841,6 +850,26 @@ class BooruApp(QMainWindow):
                 self._db.add_folder(folder)
             self._save_to_library(self._posts[idx], target)
 
+    def _unsave_from_preview(self) -> None:
+        idx = self._grid.selected_index
+        if 0 <= idx < len(self._posts):
+            post = self._posts[idx]
+            from ..core.cache import delete_from_library
+            site_id = self._site_combo.currentData()
+            folder = None
+            if site_id:
+                favs = self._db.get_favorites(site_id=site_id)
+                for f in favs:
+                    if f.post_id == post.id and f.folder:
+                        folder = f.folder
+                        break
+            if delete_from_library(post.id, folder):
+                self._status.showMessage(f"Removed #{post.id} from library")
+                if 0 <= idx < len(self._grid._thumbs):
+                    self._grid._thumbs[idx].set_saved_locally(False)
+            else:
+                self._status.showMessage(f"#{post.id} not in library")
+
     def _open_fullscreen_preview(self) -> None:
         path = self._preview._current_path
         if not path:
@@ -851,6 +880,9 @@ class BooruApp(QMainWindow):
         cols = self._grid._flow.columns
         self._fullscreen_window = FullscreenPreview(grid_cols=cols, parent=self)
         self._fullscreen_window.navigate.connect(self._navigate_fullscreen)
+        self._fullscreen_window.favorite_requested.connect(self._favorite_from_preview)
+        self._fullscreen_window.save_requested.connect(lambda: self._save_from_preview(""))
+        self._fullscreen_window.unsave_requested.connect(self._unsave_from_preview)
         self._fullscreen_window.destroyed.connect(self._on_fullscreen_closed)
         self._fullscreen_window.set_media(path, self._preview._info_label.text())
 
@@ -893,6 +925,7 @@ class BooruApp(QMainWindow):
         save_lib_menu.addSeparator()
         save_lib_new = save_lib_menu.addAction("+ New Folder...")
 
+        unsave_lib = menu.addAction("Unsave from Library")
         copy_url = menu.addAction("Copy Image URL")
         copy_tags = menu.addAction("Copy Tags")
         menu.addSeparator()
@@ -922,6 +955,22 @@ class BooruApp(QMainWindow):
                 self._save_to_library(post, name.strip())
         elif id(action) in save_lib_folders:
             self._save_to_library(post, save_lib_folders[id(action)])
+        elif action == unsave_lib:
+            from ..core.cache import delete_from_library
+            site_id = self._site_combo.currentData()
+            folder = None
+            if site_id:
+                favs = self._db.get_favorites(site_id=site_id)
+                for f in favs:
+                    if f.post_id == post.id and f.folder:
+                        folder = f.folder
+                        break
+            if delete_from_library(post.id, folder):
+                self._status.showMessage(f"Removed #{post.id} from library")
+                if 0 <= index < len(self._grid._thumbs):
+                    self._grid._thumbs[index].set_saved_locally(False)
+            else:
+                self._status.showMessage(f"#{post.id} not in library")
         elif action == copy_url:
             QApplication.clipboard().setText(post.file_url)
             self._status.showMessage("URL copied")
@@ -1376,6 +1425,7 @@ class BooruApp(QMainWindow):
 
     def closeEvent(self, event) -> None:
         self._async_loop.call_soon_threadsafe(self._async_loop.stop)
+        self._async_thread.join(timeout=2)
         if self._db.get_setting_bool("clear_cache_on_exit"):
             from ..core.cache import clear_cache
             clear_cache(clear_images=True, clear_thumbnails=True)

@@ -25,15 +25,50 @@ def _is_video(path: str) -> bool:
 class FullscreenPreview(QMainWindow):
     """Fullscreen media viewer with navigation — images, GIFs, and video."""
 
-    navigate = Signal(int)  # -1 = prev, +1 = next
+    navigate = Signal(int)  # direction: -1/+1 for left/right, -cols/+cols for up/down
+    favorite_requested = Signal()
+    save_requested = Signal()
+    unsave_requested = Signal()
 
     def __init__(self, grid_cols: int = 3, parent=None) -> None:
         super().__init__(parent, Qt.WindowType.Window)
         self.setWindowTitle("booru-viewer — Fullscreen")
         self._grid_cols = grid_cols
 
+        central = QWidget()
+        main_layout = QVBoxLayout(central)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # Top toolbar
+        toolbar = QHBoxLayout()
+        toolbar.setContentsMargins(8, 4, 8, 4)
+
+        self._fav_btn = QPushButton("Favorite")
+        self._fav_btn.setFixedWidth(80)
+        self._fav_btn.clicked.connect(self.favorite_requested)
+        toolbar.addWidget(self._fav_btn)
+
+        self._save_btn = QPushButton("Save")
+        self._save_btn.setFixedWidth(60)
+        self._save_btn.clicked.connect(self.save_requested)
+        toolbar.addWidget(self._save_btn)
+
+        self._unsave_btn = QPushButton("Unsave")
+        self._unsave_btn.setFixedWidth(70)
+        self._unsave_btn.clicked.connect(self.unsave_requested)
+        toolbar.addWidget(self._unsave_btn)
+
+        toolbar.addStretch()
+
+        self._info_label = QLabel()
+        toolbar.addWidget(self._info_label)
+
+        main_layout.addLayout(toolbar)
+
+        # Media stack
         self._stack = QStackedWidget()
-        self.setCentralWidget(self._stack)
+        main_layout.addWidget(self._stack, stretch=1)
 
         self._viewer = ImageViewer()
         self._viewer.close_requested.connect(self.close)
@@ -42,11 +77,14 @@ class FullscreenPreview(QMainWindow):
         self._video = VideoPlayer()
         self._stack.addWidget(self._video)
 
+        self.setCentralWidget(central)
+
         from PySide6.QtWidgets import QApplication
         QApplication.instance().installEventFilter(self)
         self.showFullScreen()
 
     def set_media(self, path: str, info: str = "") -> None:
+        self._info_label.setText(info)
         ext = Path(path).suffix.lower()
         if _is_video(path):
             self._viewer.clear()
@@ -402,6 +440,7 @@ class ImagePreview(QWidget):
     open_in_default = Signal()
     open_in_browser = Signal()
     save_to_folder = Signal(str)
+    unsave_requested = Signal()
     favorite_requested = Signal()
     navigate = Signal(int)  # -1 = prev, +1 = next
     fullscreen_requested = Signal()
@@ -511,6 +550,9 @@ class ImagePreview(QWidget):
         if self._stack.currentIndex() == 0:
             reset_action = menu.addAction("Reset View")
 
+        menu.addSeparator()
+        unsave_action = menu.addAction("Unsave from Library")
+
         slideshow_action = None
         if self._current_path:
             slideshow_action = menu.addAction("Slideshow Mode")
@@ -539,6 +581,8 @@ class ImagePreview(QWidget):
         elif action == reset_action:
             self._image_viewer._fit_to_view()
             self._image_viewer.update()
+        elif action == unsave_action:
+            self.unsave_requested.emit()
         elif action == slideshow_action:
             self.fullscreen_requested.emit()
         elif action == clear_action:
