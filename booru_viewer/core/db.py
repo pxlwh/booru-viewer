@@ -134,6 +134,7 @@ class Bookmark:
     cached_path: str | None
     folder: str | None
     bookmarked_at: str
+    tag_categories: dict = field(default_factory=dict)
 
 
 # Back-compat alias — will be removed in a future version.
@@ -168,10 +169,14 @@ class Database:
         tables = {r[0] for r in self._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
         if "library_meta" in tables:
             cur = self._conn.execute("PRAGMA table_info(library_meta)")
-            cols = {row[1] for row in cur.fetchall()}
-            if "tag_categories" not in cols:
+            meta_cols = {row[1] for row in cur.fetchall()}
+            if "tag_categories" not in meta_cols:
                 self._conn.execute("ALTER TABLE library_meta ADD COLUMN tag_categories TEXT DEFAULT ''")
                 self._conn.commit()
+        # Add tag_categories to favorites if missing
+        if "tag_categories" not in cols:
+            self._conn.execute("ALTER TABLE favorites ADD COLUMN tag_categories TEXT DEFAULT ''")
+            self._conn.commit()
 
     def close(self) -> None:
         if self._conn:
@@ -259,13 +264,16 @@ class Database:
         source: str | None = None,
         cached_path: str | None = None,
         folder: str | None = None,
+        tag_categories: dict | None = None,
     ) -> Bookmark:
+        import json
         now = datetime.now(timezone.utc).isoformat()
+        cats_json = json.dumps(tag_categories) if tag_categories else ""
         cur = self.conn.execute(
             "INSERT OR IGNORE INTO favorites "
-            "(site_id, post_id, file_url, preview_url, tags, rating, score, source, cached_path, folder, favorited_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (site_id, post_id, file_url, preview_url, tags, rating, score, source, cached_path, folder, now),
+            "(site_id, post_id, file_url, preview_url, tags, rating, score, source, cached_path, folder, favorited_at, tag_categories) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (site_id, post_id, file_url, preview_url, tags, rating, score, source, cached_path, folder, now, cats_json),
         )
         self.conn.commit()
         return Bookmark(
@@ -352,6 +360,9 @@ class Database:
 
     @staticmethod
     def _row_to_bookmark(r) -> Bookmark:
+        import json
+        cats_raw = r["tag_categories"] if "tag_categories" in r.keys() else ""
+        cats = json.loads(cats_raw) if cats_raw else {}
         return Bookmark(
             id=r["id"],
             site_id=r["site_id"],
@@ -365,6 +376,7 @@ class Database:
             cached_path=r["cached_path"],
             folder=r["folder"] if "folder" in r.keys() else None,
             bookmarked_at=r["favorited_at"],
+            tag_categories=cats,
         )
 
     # Back-compat shim

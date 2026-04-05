@@ -542,6 +542,8 @@ class BooruApp(QMainWindow):
             self._grid.setFocus()
 
     def _on_tag_clicked(self, tag: str) -> None:
+        self._preview.clear()
+        self._switch_view(0)
         self._search_bar.set_text(tag)
         self._on_search(tag)
 
@@ -1146,8 +1148,10 @@ class BooruApp(QMainWindow):
         self._status.showMessage(f"Bookmark #{fav.post_id}")
         # Show bookmark tags in info panel
         from ..core.api.base import Post
-        meta = self._db.get_library_meta(fav.post_id)
-        cats = meta.get("tag_categories", {}) if meta else {}
+        cats = fav.tag_categories or {}
+        if not cats:
+            meta = self._db.get_library_meta(fav.post_id)
+            cats = meta.get("tag_categories", {}) if meta else {}
         p = Post(
             id=fav.post_id, file_url=fav.file_url or "",
             preview_url=fav.preview_url, tags=fav.tags or "",
@@ -1672,6 +1676,7 @@ class BooruApp(QMainWindow):
                         file_url=post.file_url, preview_url=post.preview_url,
                         tags=post.tags, rating=post.rating, score=post.score,
                         source=post.source, cached_path=str(path),
+                        tag_categories=post.tag_categories,
                     )
                     self._signals.bookmark_done.emit(idx, f"Bookmarked {i+1}/{len(posts)}")
                 except Exception as e:
@@ -2054,6 +2059,7 @@ class BooruApp(QMainWindow):
                         score=post.score,
                         source=post.source,
                         cached_path=str(path),
+                        tag_categories=post.tag_categories,
                     )
                     self._signals.bookmark_done.emit(index, f"Bookmarked #{post.id}")
                 except Exception as e:
