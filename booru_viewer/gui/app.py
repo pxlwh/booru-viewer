@@ -123,10 +123,12 @@ class InfoPanel(QWidget):
 
     def set_post(self, post: Post) -> None:
         self._title.setText(f"Post #{post.id}")
+        filetype = Path(post.file_url.split("?")[0]).suffix.lstrip(".").upper() if post.file_url else "unknown"
         self._details.setText(
             f"Size: {post.width}x{post.height}\n"
             f"Score: {post.score}\n"
             f"Rating: {post.rating or 'unknown'}\n"
+            f"Filetype: {filetype}\n"
             f"Source: {post.source or 'none'}"
         )
         # Clear old tags

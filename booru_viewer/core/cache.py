@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import zipfile
 from pathlib import Path
 
 import httpx
+from PIL import Image
 
 from .config import cache_dir, thumbnails_dir, USER_AGENT
 
@@ -21,6 +23,7 @@ _IMAGE_MAGIC = {
     b'RIFF': True,  # WebP
     b'\x00\x00\x00': True,  # MP4/MOV
     b'\x1aE\xdf\xa3': True,  # WebM/MKV
+    b'PK\x03\x04': True,    # ZIP (ugoira)
 }
 
 
@@ -48,6 +51,27 @@ def _ext_from_url(url: str) -> str:
     return ".jpg"
 
 
+def _convert_ugoira_to_gif(zip_path: Path) -> Path:
+    """Convert a Pixiv ugoira zip (numbered JPEG/PNG frames) to an animated GIF."""
+    gif_path = zip_path.with_suffix(".gif")
+    if gif_path.exists():
+        return gif_path
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        names = sorted(zf.namelist())
+        frames = []
+        for name in names:
+            data = zf.read(name)
+            frames.append(Image.open(__import__("io").BytesIO(data)).convert("RGBA"))
+    if not frames:
+        raise ValueError("Zip contains no image frames")
+    frames[0].save(
+        gif_path, save_all=True, append_images=frames[1:],
+        duration=80, loop=0, disposal=2,
+    )
+    zip_path.unlink()
+    return gif_path
+
+
 async def download_image(
     url: str,
     client: httpx.AsyncClient | None = None,
@@ -61,6 +85,12 @@ async def download_image(
     dest_dir = dest_dir or cache_dir()
     filename = _url_hash(url) + _ext_from_url(url)
     local = dest_dir / filename
+
+    # Check if a ugoira zip was already converted to gif
+    if local.suffix.lower() == ".zip":
+        gif_path = local.with_suffix(".gif")
+        if gif_path.exists():
+            return gif_path
 
     # Validate cached file isn't corrupt (e.g. HTML error page saved as image)
     if local.exists():
@@ -119,6 +149,10 @@ async def download_image(
         if not _is_valid_media(local):
             local.unlink()
             raise ValueError("Downloaded file is not valid media")
+
+        # Convert ugoira zip to animated GIF
+        if local.suffix.lower() == ".zip" and zipfile.is_zipfile(local):
+            local = _convert_ugoira_to_gif(local)
     finally:
         if own_client:
             await client.aclose()
