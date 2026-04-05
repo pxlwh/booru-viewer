@@ -352,7 +352,7 @@ class SettingsDialog(QDialog):
         browse_lib_btn = QPushButton("Browse...")
         browse_lib_btn.clicked.connect(self._browse_library_dir)
         lib_row.addWidget(browse_lib_btn)
-        layout.addWidget(QLabel("Library directory (restart required):"))
+        layout.addWidget(QLabel("Library directory:"))
         layout.addLayout(lib_row)
 
         open_btn = QPushButton("Open Data Folder")
