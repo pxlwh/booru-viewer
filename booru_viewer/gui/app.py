@@ -616,11 +616,33 @@ class BooruApp(QMainWindow):
         page = self._current_page
         limit = self._db.get_setting_int("page_size") or 40
 
+        # Gather blacklist filters once on the main thread
+        bl_tags = set()
+        if self._db.get_setting_bool("blacklist_enabled"):
+            bl_tags = set(self._db.get_blacklisted_tags())
+        bl_posts = self._db.get_blacklisted_posts()
+
+        def _filter(posts):
+            if bl_tags:
+                posts = [p for p in posts if not bl_tags.intersection(p.tag_list)]
+            if bl_posts:
+                posts = [p for p in posts if p.file_url not in bl_posts]
+            return posts
+
         async def _search():
             client = self._make_client()
             try:
-                posts = await client.search(tags=search_tags, page=page, limit=limit)
-                self._signals.search_done.emit(posts)
+                collected = []
+                current_page = page
+                max_pages = 5  # safety cap to avoid infinite fetching
+                for _ in range(max_pages):
+                    batch = await client.search(tags=search_tags, page=current_page, limit=limit)
+                    filtered = _filter(batch)
+                    collected.extend(filtered)
+                    if len(collected) >= limit or len(batch) < limit:
+                        break
+                    current_page += 1
+                self._signals.search_done.emit(collected[:limit])
             except Exception as e:
                 self._signals.search_error.emit(str(e))
             finally:
@@ -629,15 +651,6 @@ class BooruApp(QMainWindow):
         self._run_async(_search)
 
     def _on_search_done(self, posts: list) -> None:
-        # Client-side blacklist filtering
-        if self._db.get_setting_bool("blacklist_enabled"):
-            bl_tags = set(self._db.get_blacklisted_tags())
-            if bl_tags:
-                posts = [p for p in posts if not bl_tags.intersection(p.tag_list)]
-        # Filter blacklisted posts by URL
-        bl_posts = self._db.get_blacklisted_posts()
-        if bl_posts:
-            posts = [p for p in posts if p.file_url not in bl_posts]
         self._posts = posts
         self._status.showMessage(f"{len(posts)} results")
         thumbs = self._grid.set_posts(len(posts))
