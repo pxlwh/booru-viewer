@@ -321,22 +321,14 @@ class LibraryView(QWidget):
         elif action == open_folder:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(filepath.parent)))
         elif action == copy_file:
-            import shutil, subprocess
-            if shutil.which("wl-copy"):
-                _MIMES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
-                          ".gif": "image/gif", ".webp": "image/webp", ".mp4": "video/mp4",
-                          ".webm": "video/webm"}
-                mime = _MIMES.get(filepath.suffix.lower(), "application/octet-stream")
-                try:
-                    with open(filepath, "rb") as f:
-                        subprocess.run(["wl-copy", "--type", mime], stdin=f, timeout=10)
-                except Exception as e:
-                    log.warning(f"wl-copy failed: {e}")
-            else:
-                from PySide6.QtGui import QPixmap as _QP
-                pix = _QP(str(filepath))
-                if not pix.isNull():
-                    QApplication.clipboard().setPixmap(pix)
+            from PySide6.QtCore import QMimeData
+            from PySide6.QtGui import QPixmap as _QP
+            mime_data = QMimeData()
+            mime_data.setUrls([QUrl.fromLocalFile(str(filepath.resolve()))])
+            pix = _QP(str(filepath))
+            if not pix.isNull():
+                mime_data.setImageData(pix.toImage())
+            QApplication.clipboard().setMimeData(mime_data)
         elif action == copy_path:
             QApplication.clipboard().setText(str(filepath))
         elif action == delete_action:
