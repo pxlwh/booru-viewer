@@ -547,7 +547,8 @@ class BooruApp(QMainWindow):
         self._current_tags = tags
         self._current_page = 1
         self._shown_post_ids = set()
-        self._page_cache = {}  # page_num -> list[Post]
+        self._page_cache = {}
+        self._infinite_exhausted = False  # page_num -> list[Post]
         self._min_score = self._score_spin.value()
         self._do_search()
 
@@ -569,16 +570,20 @@ class BooruApp(QMainWindow):
         self._do_search()
 
     def _on_nav_past_end(self) -> None:
+        if self._infinite_scroll:
+            return  # infinite scroll handles this via reached_bottom
         self._nav_page_turn = "first"
         self._next_page()
 
     def _on_nav_before_start(self) -> None:
+        if self._infinite_scroll:
+            return
         if self._current_page > 1:
             self._nav_page_turn = "last"
             self._prev_page()
 
     def _on_reached_bottom(self) -> None:
-        if not self._infinite_scroll or self._loading:
+        if not self._infinite_scroll or self._loading or getattr(self, '_infinite_exhausted', False):
             return
         self._loading = True
         self._current_page += 1
@@ -811,6 +816,8 @@ class BooruApp(QMainWindow):
         """Append more posts to the grid (infinite scroll)."""
         if not posts:
             self._loading = False
+            self._infinite_exhausted = True
+            self._status.showMessage(f"{len(self._posts)} results (end)")
             return
         self._shown_post_ids.update(p.id for p in posts)
         start = len(self._posts)
@@ -1180,10 +1187,10 @@ class BooruApp(QMainWindow):
             if 0 <= idx < len(self._posts):
                 self._grid._select(idx)
                 self._on_post_activated(idx)
-            elif idx >= len(self._posts) and direction > 0 and len(self._posts) > 0:
+            elif idx >= len(self._posts) and direction > 0 and len(self._posts) > 0 and not self._infinite_scroll:
                 self._nav_page_turn = "first"
                 self._next_page()
-            elif idx < 0 and direction < 0 and self._current_page > 1:
+            elif idx < 0 and direction < 0 and self._current_page > 1 and not self._infinite_scroll:
                 self._nav_page_turn = "last"
                 self._prev_page()
 
