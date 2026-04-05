@@ -1127,7 +1127,7 @@ class BooruApp(QMainWindow):
                     id=int(stem), file_url=meta.get("file_url", ""),
                     preview_url=None, tags=meta.get("tags", ""),
                     score=meta.get("score", 0), rating=meta.get("rating"),
-                    source=meta.get("source"), tag_categories={},
+                    source=meta.get("source"), tag_categories=meta.get("tag_categories", {}),
                 )
                 self._info_panel.set_post(p)
 
@@ -1143,7 +1143,7 @@ class BooruApp(QMainWindow):
                     id=int(stem), file_url=meta.get("file_url", ""),
                     preview_url=None, tags=meta.get("tags", ""),
                     score=meta.get("score", 0), rating=meta.get("rating"),
-                    source=meta.get("source"), tag_categories={},
+                    source=meta.get("source"), tag_categories=meta.get("tag_categories", {}),
                 )
                 self._info_panel.set_post(p)
 
@@ -1152,11 +1152,14 @@ class BooruApp(QMainWindow):
         # Show bookmark tags in info panel
         if self._info_panel.isVisible():
             from ..core.api.base import Post
+            # Try library metadata for categories
+            meta = self._db.get_library_meta(fav.post_id)
+            cats = meta.get("tag_categories", {}) if meta else {}
             p = Post(
                 id=fav.post_id, file_url=fav.file_url or "",
                 preview_url=fav.preview_url, tags=fav.tags or "",
                 score=fav.score or 0, rating=fav.rating,
-                source=fav.source, tag_categories={},
+                source=fav.source, tag_categories=cats,
             )
             self._info_panel.set_post(p)
         self._on_bookmark_activated(fav)
@@ -1818,8 +1821,10 @@ class BooruApp(QMainWindow):
 
                 # Store metadata for library search
                 self._db.save_library_meta(
-                    post_id=post.id, tags=post.tags, score=post.score,
-                    rating=post.rating, source=post.source, file_url=post.file_url,
+                    post_id=post.id, tags=post.tags,
+                    tag_categories=post.tag_categories,
+                    score=post.score, rating=post.rating,
+                    source=post.source, file_url=post.file_url,
                 )
 
                 where = folder or "Unsorted"

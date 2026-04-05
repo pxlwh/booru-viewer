@@ -60,13 +60,14 @@ CREATE TABLE IF NOT EXISTS blacklisted_posts (
 );
 
 CREATE TABLE IF NOT EXISTS library_meta (
-    post_id  INTEGER PRIMARY KEY,
-    tags     TEXT NOT NULL DEFAULT '',
-    score    INTEGER DEFAULT 0,
-    rating   TEXT,
-    source   TEXT,
-    file_url TEXT,
-    saved_at TEXT
+    post_id        INTEGER PRIMARY KEY,
+    tags           TEXT NOT NULL DEFAULT '',
+    tag_categories TEXT DEFAULT '',
+    score          INTEGER DEFAULT 0,
+    rating         TEXT,
+    source         TEXT,
+    file_url       TEXT,
+    saved_at       TEXT
 );
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -451,19 +452,30 @@ class Database:
 
     # -- Library Metadata --
 
-    def save_library_meta(self, post_id: int, tags: str = "", score: int = 0,
-                          rating: str = None, source: str = None, file_url: str = None) -> None:
+    def save_library_meta(self, post_id: int, tags: str = "", tag_categories: dict = None,
+                          score: int = 0, rating: str = None, source: str = None,
+                          file_url: str = None) -> None:
+        import json
         from datetime import datetime, timezone
+        cats_json = json.dumps(tag_categories) if tag_categories else ""
         self.conn.execute(
-            "INSERT OR REPLACE INTO library_meta (post_id, tags, score, rating, source, file_url, saved_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (post_id, tags, score, rating, source, file_url, datetime.now(timezone.utc).isoformat()),
+            "INSERT OR REPLACE INTO library_meta "
+            "(post_id, tags, tag_categories, score, rating, source, file_url, saved_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (post_id, tags, cats_json, score, rating, source, file_url,
+             datetime.now(timezone.utc).isoformat()),
         )
         self.conn.commit()
 
     def get_library_meta(self, post_id: int) -> dict | None:
+        import json
         row = self.conn.execute("SELECT * FROM library_meta WHERE post_id = ?", (post_id,)).fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        d = dict(row)
+        cats = d.get("tag_categories", "")
+        d["tag_categories"] = json.loads(cats) if cats else {}
+        return d
 
     def search_library_meta(self, query: str) -> set[int]:
         """Search library metadata by tags. Returns matching post IDs."""

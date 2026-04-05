@@ -230,6 +230,7 @@ class BookmarksView(QWidget):
         save_lib_menu.addSeparator()
         save_lib_new = save_lib_menu.addAction("+ New Folder...")
 
+        unsave_lib = menu.addAction("Unsave from Library")
         copy_file = menu.addAction("Copy File to Clipboard")
         copy_url = menu.addAction("Copy Image URL")
         copy_tags = menu.addAction("Copy Tags")
@@ -277,6 +278,10 @@ class BookmarksView(QWidget):
                 if dest:
                     import shutil
                     shutil.copy2(src, dest)
+        elif action == unsave_lib:
+            from ..core.cache import delete_from_library
+            if delete_from_library(fav.post_id, fav.folder):
+                self.refresh()
         elif action == copy_file:
             path = fav.cached_path
             if path and Path(path).exists():
