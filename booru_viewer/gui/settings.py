@@ -209,30 +209,25 @@ class SettingsDialog(QDialog):
     # -- Blacklist tab --
 
     def _build_blacklist_tab(self) -> QWidget:
+        from PySide6.QtWidgets import QTextEdit
         w = QWidget()
         layout = QVBoxLayout(w)
 
-        layout.addWidget(QLabel("Posts with these tags will be hidden from results:"))
+        self._bl_enabled = QCheckBox("Enable blacklist")
+        self._bl_enabled.setChecked(self._db.get_setting_bool("blacklist_enabled"))
+        layout.addWidget(self._bl_enabled)
 
-        self._bl_list = QListWidget()
-        self._refresh_blacklist()
-        layout.addWidget(self._bl_list)
+        layout.addWidget(QLabel(
+            "Posts containing these tags will be hidden from results.\n"
+            "Paste tags separated by spaces or newlines:"
+        ))
 
-        add_row = QHBoxLayout()
-        self._bl_input = QLineEdit()
-        self._bl_input.setPlaceholderText("Tag to blacklist...")
-        self._bl_input.returnPressed.connect(self._bl_add)
-        add_row.addWidget(self._bl_input, stretch=1)
-
-        add_btn = QPushButton("Add")
-        add_btn.clicked.connect(self._bl_add)
-        add_row.addWidget(add_btn)
-
-        remove_btn = QPushButton("Remove")
-        remove_btn.clicked.connect(self._bl_remove)
-        add_row.addWidget(remove_btn)
-
-        layout.addLayout(add_row)
+        self._bl_text = QTextEdit()
+        self._bl_text.setPlaceholderText("animated animated_gif hatsune_miku ...")
+        # Load existing tags into the text box
+        tags = self._db.get_blacklisted_tags()
+        self._bl_text.setPlainText(" ".join(tags))
+        layout.addWidget(self._bl_text)
 
         io_row = QHBoxLayout()
 
@@ -243,10 +238,6 @@ class SettingsDialog(QDialog):
         import_bl_btn = QPushButton("Import")
         import_bl_btn.clicked.connect(self._bl_import)
         io_row.addWidget(import_bl_btn)
-
-        clear_bl_btn = QPushButton("Clear All")
-        clear_bl_btn.clicked.connect(self._bl_clear)
-        io_row.addWidget(clear_bl_btn)
 
         layout.addLayout(io_row)
         return w
@@ -522,30 +513,12 @@ class SettingsDialog(QDialog):
         QMessageBox.information(self, "Done", f"Evicted {count} files.")
         self._refresh_stats()
 
-    def _refresh_blacklist(self) -> None:
-        self._bl_list.clear()
-        for tag in self._db.get_blacklisted_tags():
-            self._bl_list.addItem(tag)
-
-    def _bl_add(self) -> None:
-        tag = self._bl_input.text().strip()
-        if tag:
-            self._db.add_blacklisted_tag(tag)
-            self._bl_input.clear()
-            self._refresh_blacklist()
-
-    def _bl_remove(self) -> None:
-        item = self._bl_list.currentItem()
-        if item:
-            self._db.remove_blacklisted_tag(item.text())
-            self._refresh_blacklist()
-
     def _bl_export(self) -> None:
         from .dialogs import save_file
         path = save_file(self, "Export Blacklist", "blacklist.txt", "Text (*.txt)")
         if not path:
             return
-        tags = self._db.get_blacklisted_tags()
+        tags = self._bl_text.toPlainText().split()
         with open(path, "w") as f:
             f.write("\n".join(tags))
         QMessageBox.information(self, "Done", f"Exported {len(tags)} tags.")
@@ -558,24 +531,12 @@ class SettingsDialog(QDialog):
         try:
             with open(path) as f:
                 tags = [line.strip() for line in f if line.strip()]
-            count = 0
-            for tag in tags:
-                self._db.add_blacklisted_tag(tag)
-                count += 1
-            self._refresh_blacklist()
-            QMessageBox.information(self, "Done", f"Imported {count} tags.")
+            existing = self._bl_text.toPlainText().split()
+            merged = list(dict.fromkeys(existing + tags))
+            self._bl_text.setPlainText(" ".join(merged))
+            QMessageBox.information(self, "Done", f"Imported {len(tags)} tags.")
         except Exception as e:
             QMessageBox.warning(self, "Error", str(e))
-
-    def _bl_clear(self) -> None:
-        reply = QMessageBox.question(
-            self, "Confirm", "Remove all blacklisted tags?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply == QMessageBox.StandardButton.Yes:
-            for tag in self._db.get_blacklisted_tags():
-                self._db.remove_blacklisted_tag(tag)
-            self._refresh_blacklist()
 
     def _open_data_folder(self) -> None:
         from PySide6.QtGui import QDesktopServices
@@ -653,6 +614,14 @@ class SettingsDialog(QDialog):
         self._db.set_setting("max_cache_mb", str(self._max_cache.value()))
         self._db.set_setting("auto_evict", "1" if self._auto_evict.isChecked() else "0")
         self._db.set_setting("clear_cache_on_exit", "1" if self._clear_on_exit.isChecked() else "0")
+        self._db.set_setting("blacklist_enabled", "1" if self._bl_enabled.isChecked() else "0")
+        # Sync blacklist from text box
+        new_tags = set(self._bl_text.toPlainText().split())
+        old_tags = set(self._db.get_blacklisted_tags())
+        for tag in old_tags - new_tags:
+            self._db.remove_blacklisted_tag(tag)
+        for tag in new_tags - old_tags:
+            self._db.add_blacklisted_tag(tag)
         if self._file_dialog_combo is not None:
             self._db.set_setting("file_dialog_platform", self._file_dialog_combo.currentText())
         self.settings_changed.emit()

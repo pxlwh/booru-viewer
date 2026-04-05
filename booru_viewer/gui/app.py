@@ -558,10 +558,6 @@ class BooruApp(QMainWindow):
         if self._min_score > 0:
             parts.append(f"score:>={self._min_score}")
 
-        # Append blacklisted tags as negatives
-        for tag in self._db.get_blacklisted_tags():
-            parts.append(f"-{tag}")
-
         return " ".join(parts)
 
     def _do_search(self) -> None:
@@ -590,6 +586,11 @@ class BooruApp(QMainWindow):
         self._run_async(_search)
 
     def _on_search_done(self, posts: list) -> None:
+        # Client-side blacklist filtering
+        if self._db.get_setting_bool("blacklist_enabled"):
+            bl_tags = set(self._db.get_blacklisted_tags())
+            if bl_tags:
+                posts = [p for p in posts if not bl_tags.intersection(p.tag_list)]
         self._posts = posts
         self._status.showMessage(f"{len(posts)} results")
         thumbs = self._grid.set_posts(len(posts))
