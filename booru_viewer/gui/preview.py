@@ -84,6 +84,10 @@ class FullscreenPreview(QMainWindow):
 
         from PySide6.QtWidgets import QApplication
         QApplication.instance().installEventFilter(self)
+        # Show on the same monitor as the parent window
+        if parent and parent.screen():
+            self.setScreen(parent.screen())
+            self.setGeometry(parent.screen().geometry())
         self.showFullScreen()
 
     def update_state(self, bookmarked: bool, saved: bool) -> None:
