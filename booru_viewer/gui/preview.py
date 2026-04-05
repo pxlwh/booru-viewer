@@ -176,8 +176,8 @@ class FullscreenPreview(QMainWindow):
     def closeEvent(self, event) -> None:
         from PySide6.QtWidgets import QApplication
         QApplication.instance().removeEventFilter(self)
-        self._video.stop()
         self.closed.emit()
+        self._video.stop()
         super().closeEvent(event)
 
 
