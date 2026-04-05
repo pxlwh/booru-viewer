@@ -423,9 +423,7 @@ class VideoPlayer(QWidget):
     def play_file(self, path: str, info: str = "") -> None:
         self._current_file = path
         self._error_fired = False
-        self._player.setLoops(
-            QMediaPlayer.Loops.Infinite if self._loop_mode else 1
-        )
+        self._player.setLoops(1)
         self._player.setSource(QUrl.fromLocalFile(path))
         if self._autoplay:
             self._player.play()
@@ -439,9 +437,6 @@ class VideoPlayer(QWidget):
     def _toggle_loop(self) -> None:
         self._loop_mode = self._loop_btn.isChecked()
         self._loop_btn.setText("Loop" if self._loop_mode else "Next")
-        self._player.setLoops(
-            QMediaPlayer.Loops.Infinite if self._loop_mode else 1
-        )
 
     def stop(self) -> None:
         self._player.stop()
@@ -483,8 +478,12 @@ class VideoPlayer(QWidget):
             self._play_btn.setText("Play")
 
     def _on_media_status(self, status) -> None:
-        if status == QMediaPlayer.MediaStatus.EndOfMedia and not self._loop_mode:
-            self.play_next.emit()
+        if status == QMediaPlayer.MediaStatus.EndOfMedia:
+            if self._loop_mode:
+                self._player.setPosition(0)
+                self._player.play()
+            else:
+                self.play_next.emit()
 
     def _on_error(self, error, msg: str = "") -> None:
         if self._current_file and not self._error_fired:
