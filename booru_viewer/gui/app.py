@@ -536,19 +536,26 @@ class BooruApp(QMainWindow):
     def _on_search(self, tags: str) -> None:
         self._current_tags = tags
         self._current_page = 1
-        self._shown_post_ids = set()  # track shown posts across pages
+        self._shown_post_ids = set()
+        self._page_cache = {}  # page_num -> list[Post]
         self._min_score = self._score_spin.value()
         self._do_search()
 
     def _prev_page(self) -> None:
         if self._current_page > 1:
             self._current_page -= 1
-            self._do_search()
+            if self._current_page in self._page_cache:
+                self._signals.search_done.emit(self._page_cache[self._current_page])
+            else:
+                self._do_search()
 
     def _next_page(self) -> None:
         if self._loading:
             return
         self._current_page += 1
+        if self._current_page in getattr(self, '_page_cache', {}):
+            self._signals.search_done.emit(self._page_cache[self._current_page])
+            return
         self._do_search()
 
     def _on_nav_past_end(self) -> None:
@@ -677,10 +684,13 @@ class BooruApp(QMainWindow):
 
     def _on_search_done(self, posts: list) -> None:
         self._posts = posts
-        # Track shown post IDs to avoid duplicates on next/prev page
+        # Cache page results and track shown IDs
         if not hasattr(self, '_shown_post_ids'):
             self._shown_post_ids = set()
+        if not hasattr(self, '_page_cache'):
+            self._page_cache = {}
         self._shown_post_ids.update(p.id for p in posts)
+        self._page_cache[self._current_page] = posts
         self._status.showMessage(f"{len(posts)} results")
         thumbs = self._grid.set_posts(len(posts))
         self._grid.scroll_to_top()
