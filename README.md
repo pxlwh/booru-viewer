@@ -48,18 +48,26 @@ Supports custom styling via `custom.qss` — see [Theming](#theming).
 - Right-click preview → "Slideshow Mode" for fullscreen viewing
 - Arrow keys / `h`/`j`/`k`/`l` navigate posts (including during video playback)
 - `,` / `.` seek 5 seconds in videos, `Space` toggles play/pause
-- Toolbar with Favorite and Save/Unsave toggle buttons showing current state
+- Toolbar with Bookmark and Save/Unsave toggle buttons showing current state
 - `F11` toggles fullscreen/windowed, `Ctrl+H` hides all UI
 - Bidirectional sync — clicking posts in the main grid updates the slideshow
 - Page boundary navigation — past the last/first post loads next/prev page
 
-### Favorites & Library
-- Favorite posts, organize into folders
+### Bookmarks & Library
+- Bookmark posts, organize into folders
+- Three-tab layout: Browse, Bookmarks, and Library
 - Save to library (unsorted or per-folder), drag-and-drop thumbnails as files
 - Multi-select (Ctrl/Shift+Click, Ctrl+A) with bulk actions
-- Bulk context menus in both Browse and Favorites tabs
+- Bulk context menus in both Browse and Bookmarks tabs
 - Unsave from Library available in grid, preview, and slideshow
-- Import/export favorites as JSON
+- Import/export bookmarks as JSON
+
+### Library
+- Dedicated tab for browsing saved files on disk
+- Folder sidebar with configurable library directory
+- Sort by date, name, or size
+- FFmpeg-based video thumbnail generation
+- Missing file detection for removed or relocated media
 
 ### Search
 - Inline history dropdown inside the search bar
@@ -115,7 +123,7 @@ Windows 10 dark mode is automatically detected and applied.
 | Left / Right | Previous / next post |
 | `,` / `.` | Seek 5s back / forward (video) |
 | `Space` | Play / pause (video) |
-| Right click | Context menu (favorite, save, slideshow) |
+| Right click | Context menu (bookmark, save, slideshow) |
 
 ### Slideshow
 

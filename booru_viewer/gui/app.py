@@ -1023,6 +1023,14 @@ class BooruApp(QMainWindow):
             if 0 <= idx < len(favs):
                 grid._select(idx)
                 self._on_bookmark_activated(favs[idx])
+        elif self._stack.currentIndex() == 2:
+            # Library view
+            grid = self._library_view._grid
+            files = self._library_view._files
+            idx = grid.selected_index + direction
+            if 0 <= idx < len(files):
+                grid._select(idx)
+                self._library_view.file_activated.emit(str(files[idx]))
         else:
             idx = self._grid.selected_index + direction
             log.info(f"Navigate: direction={direction} current={self._grid.selected_index} next={idx} total={len(self._posts)}")
@@ -1328,7 +1336,7 @@ class BooruApp(QMainWindow):
         site_id = self._site_combo.currentData()
         if not site_id:
             return
-        self._status.showMessage(f"Favoriting {len(posts)}...")
+        self._status.showMessage(f"Bookmarking {len(posts)}...")
 
         async def _do():
             for i, (idx, post) in enumerate(zip(indices, posts)):
@@ -1544,7 +1552,7 @@ class BooruApp(QMainWindow):
         dlg = SettingsDialog(self._db, self)
         dlg.settings_changed.connect(self._apply_settings)
         self._bookmarks_imported = False
-        dlg.bookmarks_imported.connect(lambda: setattr(self, '_favorites_imported', True))
+        dlg.bookmarks_imported.connect(lambda: setattr(self, '_bookmarks_imported', True))
         dlg.exec()
         if self._bookmarks_imported:
             self._switch_view(1)

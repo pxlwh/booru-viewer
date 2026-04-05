@@ -30,7 +30,7 @@ from .grid import ThumbnailGrid
 log = logging.getLogger("booru")
 
 
-class FavThumbSignals(QObject):
+class BookmarkThumbSignals(QObject):
     thumb_ready = Signal(int, str)
 
 
@@ -44,7 +44,7 @@ class BookmarksView(QWidget):
         super().__init__(parent)
         self._db = db
         self._bookmarks: list[Bookmark] = []
-        self._signals = FavThumbSignals()
+        self._signals = BookmarkThumbSignals()
         self._signals.thumb_ready.connect(self._on_thumb_ready, Qt.ConnectionType.QueuedConnection)
 
         layout = QVBoxLayout(self)
@@ -156,7 +156,7 @@ class BookmarksView(QWidget):
                 path = await download_thumbnail(url)
                 self._signals.thumb_ready.emit(index, str(path))
             except Exception as e:
-                log.warning(f"Fav thumb {index} failed: {e}")
+                log.warning(f"Bookmark thumb {index} failed: {e}")
         threading.Thread(target=lambda: asyncio.run(_dl()), daemon=True).start()
 
     def _on_thumb_ready(self, index: int, path: str) -> None:
