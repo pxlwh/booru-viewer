@@ -1637,6 +1637,8 @@ def run() -> None:
     custom_css = data_dir() / "custom.qss"
     if custom_css.exists():
         try:
+            # Use Fusion style so QSS has full control over rendering
+            app.setStyle("Fusion")
             app.setStyleSheet(custom_css.read_text())
         except Exception:
             pass
