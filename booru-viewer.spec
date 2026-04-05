@@ -32,8 +32,8 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=[],
     excludes=['textual', 'tkinter', 'unittest'],
-    noarchive=False,
-    optimize=0,
+    noarchive=True,
+    optimize=2,
     cipher=block_cipher,
 )
 
@@ -48,7 +48,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     console=False,
     disable_windowed_traceback=False,
@@ -61,7 +61,7 @@ coll = COLLECT(
     a.binaries,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     name='booru-viewer',
 )
