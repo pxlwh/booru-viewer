@@ -423,7 +423,8 @@ class VideoPlayer(QWidget):
     def play_file(self, path: str, info: str = "") -> None:
         self._current_file = path
         self._error_fired = False
-        self._player.setLoops(1)
+        self._ended = False
+        self._player.setLoops(QMediaPlayer.Loops.Infinite)
         self._player.setSource(QUrl.fromLocalFile(path))
         if self._autoplay:
             self._player.play()
@@ -462,10 +463,18 @@ class VideoPlayer(QWidget):
         self._audio.setMuted(not self._audio.isMuted())
         self._mute_btn.setText("Unmute" if self._audio.isMuted() else "Mute")
 
+    _last_pos = 0
+
     def _on_position(self, pos: int) -> None:
         if not self._seek_slider.isSliderDown():
             self._seek_slider.setValue(pos)
         self._time_label.setText(self._fmt(pos))
+        # Detect loop restart: position jumps from near-end back to start
+        if self._last_pos > 500 and pos < 100 and not self._loop_mode and not self._ended:
+            self._ended = True
+            self._player.pause()
+            self.play_next.emit()
+        self._last_pos = pos
 
     def _on_duration(self, dur: int) -> None:
         self._seek_slider.setRange(0, dur)
@@ -478,12 +487,7 @@ class VideoPlayer(QWidget):
             self._play_btn.setText("Play")
 
     def _on_media_status(self, status) -> None:
-        if status == QMediaPlayer.MediaStatus.EndOfMedia:
-            if self._loop_mode:
-                self._player.setPosition(0)
-                self._player.play()
-            else:
-                self.play_next.emit()
+        pass
 
     def _on_error(self, error, msg: str = "") -> None:
         if self._current_file and not self._error_fired:
