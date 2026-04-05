@@ -37,6 +37,9 @@ class BooruClient(ABC):
 
     api_type: str = ""
 
+    # Shared client across all BooruClient instances for connection reuse
+    _shared_client: httpx.AsyncClient | None = None
+
     def __init__(
         self,
         base_url: str,
@@ -46,26 +49,25 @@ class BooruClient(ABC):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.api_user = api_user
-        self._client: httpx.AsyncClient | None = None
 
     @property
     def client(self) -> httpx.AsyncClient:
-        if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(
+        if BooruClient._shared_client is None or BooruClient._shared_client.is_closed:
+            BooruClient._shared_client = httpx.AsyncClient(
                 headers={"User-Agent": USER_AGENT},
                 follow_redirects=True,
                 timeout=20.0,
                 event_hooks={"request": [self._log_request]},
+                limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
             )
-        return self._client
+        return BooruClient._shared_client
 
     @staticmethod
     async def _log_request(request: httpx.Request) -> None:
         log_connection(str(request.url))
 
     async def close(self) -> None:
-        if self._client and not self._client.is_closed:
-            await self._client.aclose()
+        pass  # shared client stays open
 
     @abstractmethod
     async def search(

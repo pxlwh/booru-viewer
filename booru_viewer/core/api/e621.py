@@ -15,19 +15,23 @@ log = logging.getLogger("booru")
 class E621Client(BooruClient):
     api_type = "e621"
 
+    _e621_client: httpx.AsyncClient | None = None
+    _e621_ua: str = ""
+
     @property
     def client(self) -> httpx.AsyncClient:
-        if self._client is None or self._client.is_closed:
-            # e621 requires a descriptive User-Agent with username
-            ua = USER_AGENT
-            if self.api_user:
-                ua = f"{USER_AGENT} (by {self.api_user} on e621)"
-            self._client = httpx.AsyncClient(
+        ua = USER_AGENT
+        if self.api_user:
+            ua = f"{USER_AGENT} (by {self.api_user} on e621)"
+        if E621Client._e621_client is None or E621Client._e621_client.is_closed or E621Client._e621_ua != ua:
+            E621Client._e621_ua = ua
+            E621Client._e621_client = httpx.AsyncClient(
                 headers={"User-Agent": ua},
                 follow_redirects=True,
                 timeout=20.0,
+                limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
             )
-        return self._client
+        return E621Client._e621_client
 
     async def search(
         self, tags: str = "", page: int = 1, limit: int = DEFAULT_PAGE_SIZE

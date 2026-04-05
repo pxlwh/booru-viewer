@@ -23,11 +23,17 @@ async def detect_site_type(
     """
     url = url.rstrip("/")
 
-    async with httpx.AsyncClient(
-        headers={"User-Agent": USER_AGENT},
-        follow_redirects=True,
-        timeout=10.0,
-    ) as client:
+    from .base import BooruClient as _BC
+    # Reuse shared client for site detection
+    if _BC._shared_client is None or _BC._shared_client.is_closed:
+        _BC._shared_client = httpx.AsyncClient(
+            headers={"User-Agent": USER_AGENT},
+            follow_redirects=True,
+            timeout=20.0,
+            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+        )
+    client = _BC._shared_client
+    if True:  # keep indent level
         # Try Danbooru / e621 first — /posts.json is a definitive endpoint
         try:
             params: dict = {"limit": 1}
