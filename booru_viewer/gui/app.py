@@ -445,7 +445,7 @@ class BooruApp(QMainWindow):
         # Global shortcuts for preview navigation
         QShortcut(QKeySequence("Left"), self, lambda: self._navigate_preview(-1))
         QShortcut(QKeySequence("Right"), self, lambda: self._navigate_preview(1))
-        QShortcut(QKeySequence("Ctrl+C"), self, self._copy_preview_to_clipboard)
+        QShortcut(QKeySequence("Ctrl+C"), self, self._copy_file_to_clipboard)
 
     def _setup_menu(self) -> None:
         menu = self.menuBar()
@@ -1405,7 +1405,7 @@ class BooruApp(QMainWindow):
         save_lib_new = save_lib_menu.addAction("+ New Folder...")
 
         unsave_lib = menu.addAction("Unsave from Library")
-        copy_clipboard = menu.addAction("Copy Image to Clipboard")
+        copy_clipboard = menu.addAction("Copy File to Clipboard")
         copy_url = menu.addAction("Copy Image URL")
         copy_tags = menu.addAction("Copy Tags")
         menu.addSeparator()
@@ -1459,7 +1459,7 @@ class BooruApp(QMainWindow):
             else:
                 self._status.showMessage(f"#{post.id} not in library")
         elif action == copy_clipboard:
-            self._copy_preview_to_clipboard()
+            self._copy_file_to_clipboard()
         elif action == copy_url:
             QApplication.clipboard().setText(post.file_url)
             self._status.showMessage("URL copied")
@@ -1895,9 +1895,10 @@ class BooruApp(QMainWindow):
                 return
         super().keyPressEvent(event)
 
-    def _copy_preview_to_clipboard(self) -> None:
-        # Find the file path to copy
-        path = self._preview._current_path
+    def _copy_file_to_clipboard(self, path: str | None = None) -> None:
+        """Copy a file to clipboard. Tries wl-copy on Wayland, Qt fallback."""
+        if not path:
+            path = self._preview._current_path
         if not path:
             idx = self._grid.selected_index
             if 0 <= idx < len(self._posts):
@@ -1906,36 +1907,35 @@ class BooruApp(QMainWindow):
                 if cp.exists():
                     path = str(cp)
         if not path or not Path(path).exists():
-            self._status.showMessage(f"{len(self._posts)} results — Nothing to copy")
+            self._status.showMessage("Nothing to copy")
             return
 
-        # Try wl-copy on Wayland, fall back to Qt clipboard
         import shutil
         if shutil.which("wl-copy"):
             import subprocess
-            mime = "image/png"
-            ext = Path(path).suffix.lower()
-            if ext in (".jpg", ".jpeg"):
-                mime = "image/jpeg"
-            elif ext == ".gif":
-                mime = "image/gif"
-            elif ext == ".webp":
-                mime = "image/webp"
+            _MIMES = {
+                ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                ".png": "image/png", ".gif": "image/gif",
+                ".webp": "image/webp", ".mp4": "video/mp4",
+                ".webm": "video/webm", ".mkv": "video/x-matroska",
+                ".avi": "video/x-msvideo", ".mov": "video/quicktime",
+            }
+            mime = _MIMES.get(Path(path).suffix.lower(), "application/octet-stream")
             try:
                 with open(path, "rb") as f:
-                    subprocess.run(["wl-copy", "--type", mime], stdin=f, timeout=5)
-                self._status.showMessage(f"{len(self._posts)} results — Copied to clipboard")
+                    subprocess.run(["wl-copy", "--type", mime], stdin=f, timeout=10)
+                self._status.showMessage(f"Copied to clipboard: {Path(path).name}")
                 return
             except Exception as e:
                 log.warning(f"wl-copy failed: {e}")
 
-        # Qt fallback
+        # Qt fallback (images only)
         pix = QPixmap(path)
         if not pix.isNull():
             QApplication.clipboard().setPixmap(pix)
-            self._status.showMessage(f"{len(self._posts)} results — Copied to clipboard")
+            self._status.showMessage(f"Copied to clipboard: {Path(path).name}")
         else:
-            self._status.showMessage(f"{len(self._posts)} results — Nothing to copy")
+            self._status.showMessage("Nothing to copy")
 
     # -- Bookmarks --
 

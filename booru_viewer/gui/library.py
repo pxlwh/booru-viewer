@@ -307,6 +307,7 @@ class LibraryView(QWidget):
         open_default = menu.addAction("Open in Default App")
         open_folder = menu.addAction("Open Containing Folder")
         menu.addSeparator()
+        copy_file = menu.addAction("Copy File to Clipboard")
         copy_path = menu.addAction("Copy File Path")
         menu.addSeparator()
         delete_action = menu.addAction("Delete from Library")
@@ -319,6 +320,23 @@ class LibraryView(QWidget):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(filepath)))
         elif action == open_folder:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(filepath.parent)))
+        elif action == copy_file:
+            import shutil, subprocess
+            if shutil.which("wl-copy"):
+                _MIMES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+                          ".gif": "image/gif", ".webp": "image/webp", ".mp4": "video/mp4",
+                          ".webm": "video/webm"}
+                mime = _MIMES.get(filepath.suffix.lower(), "application/octet-stream")
+                try:
+                    with open(filepath, "rb") as f:
+                        subprocess.run(["wl-copy", "--type", mime], stdin=f, timeout=10)
+                except Exception as e:
+                    log.warning(f"wl-copy failed: {e}")
+            else:
+                from PySide6.QtGui import QPixmap as _QP
+                pix = _QP(str(filepath))
+                if not pix.isNull():
+                    QApplication.clipboard().setPixmap(pix)
         elif action == copy_path:
             QApplication.clipboard().setText(str(filepath))
         elif action == delete_action:

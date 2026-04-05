@@ -681,7 +681,7 @@ class ImagePreview(QWidget):
         save_new = save_menu.addAction("+ New Folder...")
 
         menu.addSeparator()
-        copy_image = menu.addAction("Copy Image to Clipboard")
+        copy_image = menu.addAction("Copy File to Clipboard")
         open_action = menu.addAction("Open in Default App")
         browser_action = menu.addAction("Open in Browser")
 

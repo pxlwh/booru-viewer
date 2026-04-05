@@ -230,6 +230,7 @@ class BookmarksView(QWidget):
         save_lib_menu.addSeparator()
         save_lib_new = save_lib_menu.addAction("+ New Folder...")
 
+        copy_file = menu.addAction("Copy File to Clipboard")
         copy_url = menu.addAction("Copy Image URL")
         copy_tags = menu.addAction("Copy Tags")
 
@@ -276,6 +277,22 @@ class BookmarksView(QWidget):
                 if dest:
                     import shutil
                     shutil.copy2(src, dest)
+        elif action == copy_file:
+            path = fav.cached_path
+            if path and Path(path).exists():
+                import shutil, subprocess
+                if shutil.which("wl-copy"):
+                    _MIMES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+                              ".gif": "image/gif", ".webp": "image/webp", ".mp4": "video/mp4",
+                              ".webm": "video/webm"}
+                    mime = _MIMES.get(Path(path).suffix.lower(), "application/octet-stream")
+                    with open(path, "rb") as f:
+                        subprocess.run(["wl-copy", "--type", mime], stdin=f, timeout=10)
+                else:
+                    from PySide6.QtGui import QPixmap
+                    pix = QPixmap(path)
+                    if not pix.isNull():
+                        QApplication.clipboard().setPixmap(pix)
         elif action == copy_url:
             QApplication.clipboard().setText(fav.file_url)
         elif action == copy_tags:
