@@ -64,6 +64,8 @@ class MoebooruClient(BooruClient):
             data = data.get("posts", data.get("post", []))
         if not data:
             return None
+        if not data:
+            return None
         item = data[0]
         file_url = item.get("file_url") or item.get("jpeg_url") or ""
         if not file_url:

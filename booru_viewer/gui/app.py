@@ -10,7 +10,7 @@ import sys
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, Signal, Slot, QObject, QUrl
+from PySide6.QtCore import Qt, QTimer, Signal, QObject, QUrl
 from PySide6.QtGui import QPixmap, QAction, QKeySequence, QDesktopServices, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -757,6 +757,10 @@ class BooruApp(QMainWindow):
             self._page_cache = {}
         self._shown_post_ids.update(p.id for p in posts)
         self._page_cache[self._current_page] = posts
+        # Cap page cache in pagination mode (infinite scroll needs all pages)
+        if not self._infinite_scroll and len(self._page_cache) > 10:
+            oldest = min(self._page_cache.keys())
+            del self._page_cache[oldest]
         self._status.showMessage(f"{len(posts)} results")
         thumbs = self._grid.set_posts(len(posts))
         self._grid.scroll_to_top()
@@ -834,7 +838,8 @@ class BooruApp(QMainWindow):
 
     def _drain_append_queue(self) -> None:
         """Add queued posts to the grid one at a time with thumbnail fetch."""
-        if not getattr(self, '_append_queue', None):
+        if not getattr(self, '_append_queue', None) or len(self._append_queue) == 0:
+            self._loading = False
             return
 
         from ..core.config import saved_dir

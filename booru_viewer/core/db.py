@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import sqlite3
-from contextlib import contextmanager
+import json
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -266,7 +267,6 @@ class Database:
         folder: str | None = None,
         tag_categories: dict | None = None,
     ) -> Bookmark:
-        import json
         now = datetime.now(timezone.utc).isoformat()
         cats_json = json.dumps(tag_categories) if tag_categories else ""
         cur = self.conn.execute(
@@ -360,7 +360,6 @@ class Database:
 
     @staticmethod
     def _row_to_bookmark(r) -> Bookmark:
-        import json
         cats_raw = r["tag_categories"] if "tag_categories" in r.keys() else ""
         cats = json.loads(cats_raw) if cats_raw else {}
         return Bookmark(
@@ -368,7 +367,7 @@ class Database:
             site_id=r["site_id"],
             post_id=r["post_id"],
             file_url=r["file_url"],
-            preview_url=r["preview_url"],
+            preview_url=r["preview_url"] if "preview_url" in r.keys() else None,
             tags=r["tags"],
             rating=r["rating"],
             score=r["score"],
@@ -475,8 +474,6 @@ class Database:
     def save_library_meta(self, post_id: int, tags: str = "", tag_categories: dict = None,
                           score: int = 0, rating: str = None, source: str = None,
                           file_url: str = None) -> None:
-        import json
-        from datetime import datetime, timezone
         cats_json = json.dumps(tag_categories) if tag_categories else ""
         self.conn.execute(
             "INSERT OR REPLACE INTO library_meta "
@@ -488,7 +485,6 @@ class Database:
         self.conn.commit()
 
     def get_library_meta(self, post_id: int) -> dict | None:
-        import json
         row = self.conn.execute("SELECT * FROM library_meta WHERE post_id = ?", (post_id,)).fetchone()
         if not row:
             return None
