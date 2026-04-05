@@ -1101,19 +1101,42 @@ class BooruApp(QMainWindow):
             self._fullscreen_window.save_toggle_requested.connect(self._save_toggle_from_slideshow)
         self._fullscreen_window.closed.connect(self._on_fullscreen_closed)
         self._fullscreen_window.set_media(path, info)
-        # Seek to the position from the preview
+        # Seek to the position from the preview after media loads
         if video_pos > 0 and self._fullscreen_window._stack.currentIndex() == 1:
-            self._fullscreen_window._video._player.setPosition(video_pos)
+            def _seek_when_ready(status):
+                from PySide6.QtMultimedia import QMediaPlayer
+                if status == QMediaPlayer.MediaStatus.BufferedMedia or status == QMediaPlayer.MediaStatus.LoadedMedia:
+                    self._fullscreen_window._video._player.setPosition(video_pos)
+                    try:
+                        self._fullscreen_window._video._player.mediaStatusChanged.disconnect(_seek_when_ready)
+                    except RuntimeError:
+                        pass
+            self._fullscreen_window._video._player.mediaStatusChanged.connect(_seek_when_ready)
         if show_actions:
             self._update_fullscreen_state()
 
     def _on_fullscreen_closed(self) -> None:
+        # Grab video position before cleanup
+        video_pos = 0
+        if self._fullscreen_window and self._fullscreen_window._stack.currentIndex() == 1:
+            video_pos = self._fullscreen_window._video._player.position()
         # Restore preview with current media
         path = self._preview._current_path
         info = self._preview._info_label.text()
         self._fullscreen_window = None
         if path:
             self._preview.set_media(path, info)
+            # Seek preview to slideshow position
+            if video_pos > 0 and self._preview._stack.currentIndex() == 1:
+                def _seek_preview(status):
+                    from PySide6.QtMultimedia import QMediaPlayer
+                    if status in (QMediaPlayer.MediaStatus.BufferedMedia, QMediaPlayer.MediaStatus.LoadedMedia):
+                        self._preview._video_player._player.setPosition(video_pos)
+                        try:
+                            self._preview._video_player._player.mediaStatusChanged.disconnect(_seek_preview)
+                        except RuntimeError:
+                            pass
+                self._preview._video_player._player.mediaStatusChanged.connect(_seek_preview)
 
     def _navigate_fullscreen(self, direction: int) -> None:
         self._navigate_preview(direction)
