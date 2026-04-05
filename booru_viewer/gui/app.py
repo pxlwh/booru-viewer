@@ -1896,14 +1896,28 @@ class BooruApp(QMainWindow):
         super().keyPressEvent(event)
 
     def _copy_preview_to_clipboard(self) -> None:
-        # Try image viewer pixmap first
+        # Try preview pixmap
         pix = self._preview._image_viewer._pixmap
         if pix and not pix.isNull():
             QApplication.clipboard().setPixmap(pix)
             self._status.showMessage(f"{len(self._posts)} results — Copied to clipboard")
             return
-        # Try loading from cached path
+        # Try slideshow pixmap
+        if self._fullscreen_window and self._fullscreen_window._viewer._pixmap:
+            pix = self._fullscreen_window._viewer._pixmap
+            if not pix.isNull():
+                QApplication.clipboard().setPixmap(pix)
+                self._status.showMessage(f"{len(self._posts)} results — Copied to clipboard")
+                return
+        # Try loading from preview path or selected post's cached file
         path = self._preview._current_path
+        if not path:
+            idx = self._grid.selected_index
+            if 0 <= idx < len(self._posts):
+                from ..core.cache import cached_path_for
+                cp = cached_path_for(self._posts[idx].file_url)
+                if cp.exists():
+                    path = str(cp)
         if path:
             pix = QPixmap(path)
             if not pix.isNull():
