@@ -28,6 +28,7 @@ class FullscreenPreview(QMainWindow):
     navigate = Signal(int)  # direction: -1/+1 for left/right, -cols/+cols for up/down
     bookmark_requested = Signal()
     save_toggle_requested = Signal()  # save or unsave depending on state
+    closed = Signal()
 
     def __init__(self, grid_cols: int = 3, show_actions: bool = True, parent=None) -> None:
         super().__init__(parent, Qt.WindowType.Window)
@@ -176,6 +177,7 @@ class FullscreenPreview(QMainWindow):
         from PySide6.QtWidgets import QApplication
         QApplication.instance().removeEventFilter(self)
         self._video.stop()
+        self.closed.emit()
         super().closeEvent(event)
 
 

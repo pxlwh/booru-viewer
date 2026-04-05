@@ -1082,21 +1082,28 @@ class BooruApp(QMainWindow):
         path = self._preview._current_path
         if not path:
             return
-        # Clear the main preview — slideshow takes over
         info = self._preview._info_label.text()
+        # Grab video position before clearing
+        video_pos = 0
+        if self._preview._stack.currentIndex() == 1:
+            video_pos = self._preview._video_player._player.position()
+        # Clear the main preview — slideshow takes over
         self._preview.clear()
         self._preview._info_label.setText(info)
         self._preview._current_path = path
         from .preview import FullscreenPreview
         cols = self._grid._flow.columns
-        show_actions = self._stack.currentIndex() != 2  # hide for Library tab
+        show_actions = self._stack.currentIndex() != 2
         self._fullscreen_window = FullscreenPreview(grid_cols=cols, show_actions=show_actions, parent=self)
         self._fullscreen_window.navigate.connect(self._navigate_fullscreen)
         if show_actions:
             self._fullscreen_window.bookmark_requested.connect(self._bookmark_from_preview)
             self._fullscreen_window.save_toggle_requested.connect(self._save_toggle_from_slideshow)
-        self._fullscreen_window.destroyed.connect(self._on_fullscreen_closed)
-        self._fullscreen_window.set_media(path, self._preview._info_label.text())
+        self._fullscreen_window.closed.connect(self._on_fullscreen_closed)
+        self._fullscreen_window.set_media(path, info)
+        # Seek to the position from the preview
+        if video_pos > 0 and self._fullscreen_window._stack.currentIndex() == 1:
+            self._fullscreen_window._video._player.setPosition(video_pos)
         if show_actions:
             self._update_fullscreen_state()
 
