@@ -109,6 +109,9 @@ class FullscreenPreview(QMainWindow):
         from PySide6.QtCore import QEvent
         from PySide6.QtWidgets import QLineEdit, QTextEdit, QSpinBox, QComboBox
         if event.type() == QEvent.Type.KeyPress:
+            # Only intercept when slideshow is the active window
+            if not self.isActiveWindow():
+                return super().eventFilter(obj, event)
             # Don't intercept keys when typing in text inputs
             if isinstance(obj, (QLineEdit, QTextEdit, QSpinBox, QComboBox)):
                 return super().eventFilter(obj, event)
@@ -480,8 +483,8 @@ class VideoPlayer(QWidget):
     def _on_error(self, error, msg: str = "") -> None:
         if self._current_file and not self._error_fired:
             self._error_fired = True
-            from PySide6.QtGui import QDesktopServices
-            QDesktopServices.openUrl(QUrl.fromLocalFile(self._current_file))
+            import logging
+            logging.getLogger("booru").warning(f"Video playback error: {error} {msg} ({self._current_file})")
 
     @staticmethod
     def _fmt(ms: int) -> str:
