@@ -1104,6 +1104,10 @@ class BooruApp(QMainWindow):
         self._info_panel.show()
         self._right_splitter.setSizes([0, 0, 1000])
         self._preview._current_path = path
+        # Populate info panel for the current post
+        idx = self._grid.selected_index
+        if 0 <= idx < len(self._posts):
+            self._info_panel.set_post(self._posts[idx])
         from .preview import FullscreenPreview
         cols = self._grid._flow.columns
         show_actions = self._stack.currentIndex() != 2
