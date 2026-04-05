@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal, QSize, QRect, QMimeData, QUrl, QPoint
-from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QKeyEvent, QDrag
+from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QKeyEvent, QWheelEvent, QDrag
 from PySide6.QtWidgets import (
     QWidget,
     QScrollArea,
@@ -398,6 +398,15 @@ class ThumbnailGrid(QScrollArea):
             self.reached_bottom.emit()
         if value <= 0 and sb.maximum() > 0:
             self.reached_top.emit()
+
+    def wheelEvent(self, event: QWheelEvent) -> None:
+        delta = event.angleDelta().x()
+        if delta > 30:
+            self.nav_before_start.emit()
+        elif delta < -30:
+            self.nav_past_end.emit()
+        else:
+            super().wheelEvent(event)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
