@@ -536,6 +536,7 @@ class BooruApp(QMainWindow):
     def _on_search(self, tags: str) -> None:
         self._current_tags = tags
         self._current_page = 1
+        self._shown_post_ids = set()  # track shown posts across pages
         self._min_score = self._score_spin.value()
         self._do_search()
 
@@ -641,12 +642,15 @@ class BooruApp(QMainWindow):
         if self._db.get_setting_bool("blacklist_enabled"):
             bl_tags = set(self._db.get_blacklisted_tags())
         bl_posts = self._db.get_blacklisted_posts()
+        shown_ids = getattr(self, '_shown_post_ids', set()).copy()
 
         def _filter(posts):
             if bl_tags:
                 posts = [p for p in posts if not bl_tags.intersection(p.tag_list)]
             if bl_posts:
                 posts = [p for p in posts if p.file_url not in bl_posts]
+            # Skip posts already shown on previous pages
+            posts = [p for p in posts if p.id not in shown_ids]
             return posts
 
         async def _search():
@@ -673,6 +677,10 @@ class BooruApp(QMainWindow):
 
     def _on_search_done(self, posts: list) -> None:
         self._posts = posts
+        # Track shown post IDs to avoid duplicates on next/prev page
+        if not hasattr(self, '_shown_post_ids'):
+            self._shown_post_ids = set()
+        self._shown_post_ids.update(p.id for p in posts)
         self._status.showMessage(f"{len(posts)} results")
         thumbs = self._grid.set_posts(len(posts))
         self._grid.scroll_to_top()
