@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS favorites (
 
 CREATE INDEX IF NOT EXISTS idx_favorites_tags ON favorites(tags);
 CREATE INDEX IF NOT EXISTS idx_favorites_site ON favorites(site_id);
+CREATE INDEX IF NOT EXISTS idx_favorites_folder ON favorites(folder);
+CREATE INDEX IF NOT EXISTS idx_favorites_favorited_at ON favorites(favorited_at DESC);
 
 CREATE TABLE IF NOT EXISTS favorite_folders (
     id   INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -246,6 +248,19 @@ class Database:
             folder=folder,
             favorited_at=now,
         )
+
+    def add_favorites_batch(self, favorites: list[dict]) -> None:
+        """Add multiple favorites in a single transaction."""
+        for fav in favorites:
+            self.conn.execute(
+                "INSERT OR IGNORE INTO favorites "
+                "(site_id, post_id, file_url, preview_url, tags, rating, score, source, cached_path, folder, favorited_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (fav['site_id'], fav['post_id'], fav['file_url'], fav.get('preview_url'),
+                 fav.get('tags', ''), fav.get('rating'), fav.get('score'), fav.get('source'),
+                 fav.get('cached_path'), fav.get('folder'), fav.get('favorited_at', datetime.now(timezone.utc).isoformat())),
+            )
+        self.conn.commit()
 
     def remove_favorite(self, site_id: int, post_id: int) -> None:
         self.conn.execute(

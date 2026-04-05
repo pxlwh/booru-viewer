@@ -178,6 +178,10 @@ class BooruApp(QMainWindow):
         self._last_scroll_page = 0
         self._signals = AsyncSignals()
 
+        self._async_loop = asyncio.new_event_loop()
+        self._async_thread = threading.Thread(target=self._async_loop.run_forever, daemon=True)
+        self._async_thread.start()
+
         self._setup_signals()
         self._setup_ui()
         self._setup_menu()
@@ -213,12 +217,7 @@ class BooruApp(QMainWindow):
         self._status.showMessage(f"Error: {e}")
 
     def _run_async(self, coro_func, *args):
-        def _worker():
-            try:
-                asyncio.run(coro_func(*args))
-            except Exception as e:
-                log.error(f"Async worker failed: {e}")
-        threading.Thread(target=_worker, daemon=True).start()
+        asyncio.run_coroutine_threadsafe(coro_func(*args), self._async_loop)
 
     def _setup_ui(self) -> None:
         central = QWidget()
@@ -591,23 +590,31 @@ class BooruApp(QMainWindow):
 
         from ..core.config import saved_dir, saved_folder_dir
         site_id = self._site_combo.currentData()
+
+        # Pre-scan saved directories once instead of per-post exists() calls
+        _sd = saved_dir()
+        _saved_ids: set[int] = set()
+        if _sd.exists():
+            _saved_ids = {int(f.stem) for f in _sd.iterdir() if f.is_file() and f.stem.isdigit()}
+        _folder_saved: dict[str, set[int]] = {}
+        for folder in self._db.get_folders():
+            d = saved_folder_dir(folder)
+            if d.exists():
+                _folder_saved[folder] = {int(f.stem) for f in d.iterdir() if f.is_file() and f.stem.isdigit()}
+
+        # Pre-fetch favorites for the site once (used for folder checks)
+        _favs = self._db.get_favorites(site_id=site_id) if site_id else []
+
         for i, (post, thumb) in enumerate(zip(posts, thumbs)):
             if site_id and self._db.is_favorited(site_id, post.id):
                 thumb.set_favorited(True)
                 # Check if saved to library (not just cached)
-                saved = any(
-                    (saved_dir() / f"{post.id}{ext}").exists()
-                    for ext in MEDIA_EXTENSIONS
-                )
+                saved = post.id in _saved_ids
                 if not saved:
                     # Check folders
-                    favs = self._db.get_favorites(site_id=site_id)
-                    for f in favs:
-                        if f.post_id == post.id and f.folder:
-                            saved = any(
-                                (saved_folder_dir(f.folder) / f"{post.id}{ext}").exists()
-                                for ext in MEDIA_EXTENSIONS
-                            )
+                    for f in _favs:
+                        if f.post_id == post.id and f.folder and f.folder in _folder_saved:
+                            saved = post.id in _folder_saved[f.folder]
                             break
                 thumb.set_saved_locally(saved)
             # Set drag path from cache
@@ -1368,6 +1375,7 @@ class BooruApp(QMainWindow):
                 thumbs[index].set_saved_locally(True)
 
     def closeEvent(self, event) -> None:
+        self._async_loop.call_soon_threadsafe(self._async_loop.stop)
         if self._db.get_setting_bool("clear_cache_on_exit"):
             from ..core.cache import clear_cache
             clear_cache(clear_images=True, clear_thumbnails=True)
