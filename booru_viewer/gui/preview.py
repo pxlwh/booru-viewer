@@ -378,14 +378,9 @@ class VideoPlayer(QWidget):
         controls = QHBoxLayout()
         controls.setContentsMargins(4, 2, 4, 2)
 
-        # Nerd Font glyphs with text fallback
-        self._use_icons = self._has_nerd_font()
-        _play = "\uf04b" if self._use_icons else "Play"
-        _mute = "\uf026" if self._use_icons else "Mute"
-        _auto = "\uf01d" if self._use_icons else "Auto"
-        _loop = "\uf01e" if self._use_icons else "Loop"
+        self._use_icons = None  # lazy detection
 
-        self._play_btn = QPushButton(_play)
+        self._play_btn = QPushButton("Play")
         self._play_btn.clicked.connect(self._toggle_play)
         controls.addWidget(self._play_btn)
 
@@ -410,12 +405,12 @@ class VideoPlayer(QWidget):
         self._vol_slider.valueChanged.connect(self._set_volume)
         controls.addWidget(self._vol_slider)
 
-        self._mute_btn = QPushButton(_mute)
+        self._mute_btn = QPushButton("Mute")
         self._mute_btn.clicked.connect(self._toggle_mute)
         controls.addWidget(self._mute_btn)
 
         self._autoplay = True
-        self._autoplay_btn = QPushButton(_auto)
+        self._autoplay_btn = QPushButton("Auto")
         self._autoplay_btn.setCheckable(True)
         self._autoplay_btn.setChecked(True)
         self._autoplay_btn.setToolTip("Auto-play videos when selected")
@@ -424,7 +419,7 @@ class VideoPlayer(QWidget):
         controls.addWidget(self._autoplay_btn)
 
         self._loop_state = 0  # 0=Loop, 1=Once, 2=Next
-        self._loop_btn = QPushButton(_loop)
+        self._loop_btn = QPushButton("Loop")
         self._loop_btn.setToolTip("Loop: repeat / Once: stop at end / Next: advance")
         self._loop_btn.clicked.connect(self._cycle_loop)
         controls.addWidget(self._loop_btn)
@@ -441,6 +436,7 @@ class VideoPlayer(QWidget):
         self._error_fired = False
 
     def play_file(self, path: str, info: str = "") -> None:
+        self._detect_icons()
         self._current_file = path
         self._error_fired = False
         self._ended = False
@@ -451,16 +447,18 @@ class VideoPlayer(QWidget):
         else:
             self._player.pause()
 
-    @staticmethod
-    def _has_nerd_font() -> bool:
-        """Check if the app font can render Nerd Font glyphs."""
-        from PySide6.QtGui import QFontMetrics, QFont
-        from PySide6.QtWidgets import QApplication
-        app = QApplication.instance()
-        if not app:
-            return False
-        fm = QFontMetrics(app.font())
-        return fm.inFont("\uf04b")  # Nerd Font play icon
+    def _detect_icons(self) -> None:
+        """Detect Nerd Font support and swap button labels if available."""
+        if self._use_icons is not None:
+            return
+        from PySide6.QtGui import QFontMetrics
+        fm = QFontMetrics(self._play_btn.font())
+        self._use_icons = fm.inFont("\uf04b")
+        if self._use_icons:
+            self._play_btn.setText("\uf04b")
+            self._mute_btn.setText("\uf026")
+            labels = ["\uf01e", "\uf0e2", "\uf051"]
+            self._loop_btn.setText(labels[self._loop_state])
 
     def _toggle_autoplay(self, checked: bool = True) -> None:
         self._autoplay = self._autoplay_btn.isChecked()
