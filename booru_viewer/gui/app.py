@@ -840,6 +840,10 @@ class BooruApp(QMainWindow):
             if post.preview_url:
                 self._fetch_thumbnail(start + i, post.preview_url)
 
+        # Prefetch new posts
+        if self._db.get_setting_bool("prefetch_adjacent") and posts:
+            self._prefetch_adjacent(start)
+
     def _fetch_thumbnail(self, index: int, url: str) -> None:
         async def _download():
             try:
