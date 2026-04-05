@@ -77,22 +77,60 @@ Supports custom styling via `custom.qss` — see [Theming](#theming).
 
 ## Install
 
-### Linux
-
-```sh
-pip install -e .
-booru-viewer
-```
-
-Or run directly: `python -m booru_viewer.main_gui`
-
 ### Windows
 
-Download `booru-viewer.exe` from [Releases](https://git.pax.moe/pax/booru-viewer/releases).
+Download `booru-viewer.exe` from [Releases](https://git.pax.moe/pax/booru-viewer/releases). No installation required — just run it.
 
 For WebM video playback, install [VP9 Video Extensions](https://apps.microsoft.com/detail/9n4d0msmp0pt) from the Microsoft Store.
 
 Windows 10 dark mode is automatically detected and applied.
+
+### Linux
+
+Requires Python 3.11+ and pip. Most distros ship Python but you may need to install pip and the Qt6 system libraries.
+
+**Arch / CachyOS:**
+```sh
+sudo pacman -S python python-pip qt6-base qt6-multimedia ffmpeg
+```
+
+**Ubuntu / Debian (24.04+):**
+```sh
+sudo apt install python3 python3-pip python3-venv qt6-base-dev libqt6multimedia6 ffmpeg
+```
+
+**Fedora:**
+```sh
+sudo dnf install python3 python3-pip qt6-qtbase qt6-qtmultimedia ffmpeg
+```
+
+Then clone and install:
+```sh
+git clone https://git.pax.moe/pax/booru-viewer.git
+cd booru-viewer
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
+
+Run it:
+```sh
+booru-viewer
+```
+
+Or without installing: `python3 -m booru_viewer.main_gui`
+
+**Optional:** `ffmpeg` is recommended for video thumbnail generation in the Library tab. The app works without it but video files won't have thumbnails.
+
+**Desktop entry:** To add booru-viewer to your app launcher, create `~/.local/share/applications/booru-viewer.desktop`:
+```ini
+[Desktop Entry]
+Name=booru-viewer
+Exec=/path/to/booru-viewer/.venv/bin/booru-viewer
+Icon=/path/to/booru-viewer/icon.png
+Type=Application
+Categories=Graphics;
+```
 
 ### Dependencies
 
@@ -100,6 +138,7 @@ Windows 10 dark mode is automatically detected and applied.
 - PySide6 (Qt6)
 - httpx
 - Pillow
+- ffmpeg (optional, for video thumbnails in Library)
 
 ## Keybinds
 
