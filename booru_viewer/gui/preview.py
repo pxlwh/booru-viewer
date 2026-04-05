@@ -83,6 +83,12 @@ class FullscreenPreview(QMainWindow):
             elif key in (Qt.Key.Key_Down, Qt.Key.Key_J):
                 self.navigate.emit(self._grid_cols)
                 return True
+            elif key == Qt.Key.Key_F11:
+                if self.isFullScreen():
+                    self.showNormal()
+                else:
+                    self.showFullScreen()
+                return True
             elif key == Qt.Key.Key_Space and self._stack.currentIndex() == 1:
                 self._video._toggle_play()
                 return True
