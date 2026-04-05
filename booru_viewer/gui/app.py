@@ -884,6 +884,25 @@ class BooruApp(QMainWindow):
         if 0 <= idx < len(self._grid._thumbs):
             self._grid._thumbs[idx]._cached_path = path
         self._update_fullscreen(path, info)
+        # Auto-evict if over cache limit
+        self._auto_evict_cache()
+
+    def _auto_evict_cache(self) -> None:
+        if not self._db.get_setting_bool("auto_evict"):
+            return
+        max_mb = self._db.get_setting_int("max_cache_mb")
+        if max_mb <= 0:
+            return
+        max_bytes = max_mb * 1024 * 1024
+        current = cache_size_bytes(include_thumbnails=False)
+        if current > max_bytes:
+            protected = set()
+            for fav in self._db.get_favorites(limit=999999):
+                if fav.cached_path:
+                    protected.add(fav.cached_path)
+            evicted = evict_oldest(max_bytes, protected)
+            if evicted:
+                log.info(f"Auto-evicted {evicted} cached files")
 
     def _on_favorite_selected(self, fav) -> None:
         self._status.showMessage(f"Favorite #{fav.post_id}")
