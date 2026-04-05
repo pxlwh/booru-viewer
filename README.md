@@ -166,8 +166,10 @@ Categories=Graphics;
 | Arrow keys / `h`/`j`/`k`/`l` | Navigate posts |
 | `,` / `.` | Seek 5s (video) |
 | `Space` | Play / pause (video) |
+| Scroll wheel | Volume up / down (video) |
 | `F11` | Toggle fullscreen / windowed |
 | `Ctrl+H` | Hide / show UI |
+| `Ctrl+P` | Privacy screen |
 | `Escape` / `Q` | Close slideshow |
 
 ### Global
