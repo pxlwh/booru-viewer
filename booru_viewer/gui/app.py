@@ -844,7 +844,12 @@ class BooruApp(QMainWindow):
         if self._fullscreen_window and self._fullscreen_window.isVisible():
             self._preview._video_player.stop()
             self._fullscreen_window.set_media(path, info)
-            self._update_fullscreen_state()
+            # Show/hide action buttons based on current tab
+            show = self._stack.currentIndex() != 2
+            self._fullscreen_window._bookmark_btn.setVisible(show)
+            self._fullscreen_window._save_btn.setVisible(show)
+            if show:
+                self._update_fullscreen_state()
 
     def _update_fullscreen_state(self) -> None:
         """Update slideshow button states for the current post."""
