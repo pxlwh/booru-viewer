@@ -441,6 +441,7 @@ class VideoPlayer(QWidget):
         self._current_file = path
         self._error_fired = False
         self._ended = False
+        self._last_pos = 0
         self._player.setLoops(QMediaPlayer.Loops.Infinite)
         self._player.setSource(QUrl.fromLocalFile(path))
         if self._autoplay:
