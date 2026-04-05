@@ -71,6 +71,7 @@ class FullscreenPreview(QMainWindow):
         self._stack.addWidget(self._viewer)
 
         self._video = VideoPlayer()
+        self._video.play_next.connect(lambda: self.navigate.emit(1))
         self._stack.addWidget(self._video)
 
         self.setCentralWidget(central)
@@ -326,6 +327,8 @@ class _ClickSeekSlider(QSlider):
 class VideoPlayer(QWidget):
     """Video player with transport controls."""
 
+    play_next = Signal()  # emitted when video ends in "next" mode
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         layout = QVBoxLayout(self)
@@ -388,6 +391,15 @@ class VideoPlayer(QWidget):
         self._autoplay_btn.clicked.connect(self._toggle_autoplay)
         controls.addWidget(self._autoplay_btn)
 
+        self._loop_mode = True
+        self._loop_btn = QPushButton("Loop")
+        self._loop_btn.setFixedWidth(55)
+        self._loop_btn.setCheckable(True)
+        self._loop_btn.setChecked(True)
+        self._loop_btn.setToolTip("Loop: replay video / Next: play next post")
+        self._loop_btn.clicked.connect(self._toggle_loop)
+        controls.addWidget(self._loop_btn)
+
         layout.addLayout(controls)
 
         # Signals
@@ -402,7 +414,9 @@ class VideoPlayer(QWidget):
     def play_file(self, path: str, info: str = "") -> None:
         self._current_file = path
         self._error_fired = False
-        self._player.setLoops(QMediaPlayer.Loops.Infinite)
+        self._player.setLoops(
+            QMediaPlayer.Loops.Infinite if self._loop_mode else 1
+        )
         self._player.setSource(QUrl.fromLocalFile(path))
         if self._autoplay:
             self._player.play()
@@ -412,6 +426,13 @@ class VideoPlayer(QWidget):
     def _toggle_autoplay(self, checked: bool = True) -> None:
         self._autoplay = self._autoplay_btn.isChecked()
         self._autoplay_btn.setText("Auto" if self._autoplay else "Man.")
+
+    def _toggle_loop(self) -> None:
+        self._loop_mode = self._loop_btn.isChecked()
+        self._loop_btn.setText("Loop" if self._loop_mode else "Next")
+        self._player.setLoops(
+            QMediaPlayer.Loops.Infinite if self._loop_mode else 1
+        )
 
     def stop(self) -> None:
         self._player.stop()
@@ -453,7 +474,8 @@ class VideoPlayer(QWidget):
             self._play_btn.setText("Play")
 
     def _on_media_status(self, status) -> None:
-        pass  # Looping handled by QMediaPlayer.Loops.Infinite
+        if status == QMediaPlayer.MediaStatus.EndOfMedia and not self._loop_mode:
+            self.play_next.emit()
 
     def _on_error(self, error, msg: str = "") -> None:
         if self._current_file and not self._error_fired:
@@ -503,6 +525,7 @@ class ImagePreview(QWidget):
         # Video player (index 1)
         self._video_player = VideoPlayer()
         self._video_player.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._video_player.play_next.connect(lambda: self.navigate.emit(1))
         self._stack.addWidget(self._video_player)
 
         # Info label
