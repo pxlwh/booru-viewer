@@ -1268,11 +1268,15 @@ class BooruApp(QMainWindow):
             tag = action.text()
             self._db.add_blacklisted_tag(tag)
             self._db.set_setting("blacklist_enabled", "1")
+            self._preview.clear()
             self._status.showMessage(f"Blacklisted: {tag}")
+            self._last_activated_index = -1
             self._do_search()
         elif action == bl_post_action:
             self._db.add_blacklisted_post(post.file_url)
+            self._preview.clear()
             self._status.showMessage(f"Post #{post.id} blacklisted")
+            self._last_activated_index = -1
             self._do_search()
 
     @staticmethod

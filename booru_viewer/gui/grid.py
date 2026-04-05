@@ -374,10 +374,8 @@ class ThumbnailGrid(QScrollArea):
 
     def _on_thumb_right_click(self, index: int, pos) -> None:
         if self._multi_selected and index in self._multi_selected:
-            # Right-click on multi-selected: bulk context menu
             self.multi_context_requested.emit(sorted(self._multi_selected), pos)
         else:
-            self._select(index)
             self.context_requested.emit(index, pos)
 
     def select_all(self) -> None:
