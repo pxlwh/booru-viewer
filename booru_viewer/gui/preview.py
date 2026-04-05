@@ -447,30 +447,77 @@ class VideoPlayer(QWidget):
         else:
             self._player.pause()
 
+    # Glyph map — override via QSS: qproperty-playIcon etc.
+    _play_icon = ""
+    _pause_icon = ""
+    _mute_icon = ""
+    _unmute_icon = ""
+    _loop_icon = ""
+    _once_icon = ""
+    _next_icon = ""
+    _auto_icon = ""
+    _manual_icon = ""
+
+    # Default Nerd Font codicon glyphs
+    _NF_GLYPHS = {
+        "play": "\ueb7c", "pause": "\ueb7e",
+        "mute": "\ueb80", "unmute": "\ueb7f",
+        "loop": "\ueb82", "once": "\ueba2", "next": "\uea9c",
+        "auto": "\ueb96", "manual": "\ueb84",
+    }
+
+    def _get_play_icon(self): return self._play_icon
+    def _set_play_icon(self, v): self._play_icon = v
+    playIcon = Property(str, _get_play_icon, _set_play_icon)
+
+    def _get_pause_icon(self): return self._pause_icon
+    def _set_pause_icon(self, v): self._pause_icon = v
+    pauseIcon = Property(str, _get_pause_icon, _set_pause_icon)
+
+    def _get_mute_icon(self): return self._mute_icon
+    def _set_mute_icon(self, v): self._mute_icon = v
+    muteIcon = Property(str, _get_mute_icon, _set_mute_icon)
+
+    def _get_unmute_icon(self): return self._unmute_icon
+    def _set_unmute_icon(self, v): self._unmute_icon = v
+    unmuteIcon = Property(str, _get_unmute_icon, _set_unmute_icon)
+
     def _detect_icons(self) -> None:
-        """Detect Nerd Font support and swap button labels if available."""
+        """Detect Nerd Font support and swap button labels."""
         if self._use_icons is not None:
             return
+        self.ensurePolished()
         from PySide6.QtGui import QFontMetrics
         fm = QFontMetrics(self._play_btn.font())
-        self._use_icons = fm.inFont("\uf04b")
+        self._use_icons = fm.inFont("\ueb7c")  # codicon play
         if self._use_icons:
-            self._play_btn.setText("\uf04b")
-            self._mute_btn.setText("\uf026")
-            labels = ["\uf01e", "\uf0e2", "\uf051"]
+            self._play_btn.setText(self._play_icon or self._NF_GLYPHS["play"])
+            self._mute_btn.setText(self._mute_icon or self._NF_GLYPHS["mute"])
+            g = self._NF_GLYPHS
+            labels = [
+                self._loop_icon or g["loop"],
+                self._once_icon or g["once"],
+                self._next_icon or g["next"],
+            ]
             self._loop_btn.setText(labels[self._loop_state])
 
     def _toggle_autoplay(self, checked: bool = True) -> None:
         self._autoplay = self._autoplay_btn.isChecked()
         if self._use_icons:
-            self._autoplay_btn.setText("\uf01d" if self._autoplay else "\uf04d")
+            g = self._NF_GLYPHS
+            self._autoplay_btn.setText(self._auto_icon or g["auto"] if self._autoplay else self._manual_icon or g["manual"])
         else:
             self._autoplay_btn.setText("Autoplay" if self._autoplay else "Manual")
 
     def _cycle_loop(self) -> None:
         self._loop_state = (self._loop_state + 1) % 3
         if self._use_icons:
-            labels = ["\uf01e", "\uf0e2", "\uf051"]  # repeat, once, next
+            g = self._NF_GLYPHS
+            labels = [
+                self._loop_icon or g["loop"],
+                self._once_icon or g["once"],
+                self._next_icon or g["next"],
+            ]
         else:
             labels = ["Loop", "Once", "Next"]
         self._loop_btn.setText(labels[self._loop_state])
@@ -502,8 +549,9 @@ class VideoPlayer(QWidget):
 
     def _toggle_mute(self) -> None:
         self._audio.setMuted(not self._audio.isMuted())
+        g = self._NF_GLYPHS
         if self._use_icons:
-            self._mute_btn.setText("\uf028" if self._audio.isMuted() else "\uf026")
+            self._mute_btn.setText(self._unmute_icon or g["unmute"] if self._audio.isMuted() else self._mute_icon or g["mute"])
         else:
             self._mute_btn.setText("Unmute" if self._audio.isMuted() else "Mute")
 
@@ -529,10 +577,11 @@ class VideoPlayer(QWidget):
         self._duration_label.setText(self._fmt(dur))
 
     def _on_state(self, state) -> None:
+        g = self._NF_GLYPHS
         if state == QMediaPlayer.PlaybackState.PlayingState:
-            self._play_btn.setText("\uf04c" if self._use_icons else "Pause")
+            self._play_btn.setText(self._pause_icon or g["pause"] if self._use_icons else "Pause")
         else:
-            self._play_btn.setText("\uf04b" if self._use_icons else "Play")
+            self._play_btn.setText(self._play_icon or g["play"] if self._use_icons else "Play")
 
     def _on_media_status(self, status) -> None:
         pass
