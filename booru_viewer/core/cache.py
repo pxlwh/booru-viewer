@@ -159,12 +159,14 @@ async def download_image(
 
     log_connection(url)
 
+    req_headers = {"Referer": referer}
+
     own_client = client is None
     if own_client:
         client = _get_shared_client()
     try:
         if progress_callback:
-            async with client.stream("GET", url) as resp:
+            async with client.stream("GET", url, headers=req_headers) as resp:
                 resp.raise_for_status()
                 content_type = resp.headers.get("content-type", "")
                 if "text/html" in content_type:
@@ -179,7 +181,7 @@ async def download_image(
                 data = b"".join(chunks)
                 local.write_bytes(data)
         else:
-            resp = await client.get(url)
+            resp = await client.get(url, headers=req_headers)
             resp.raise_for_status()
             content_type = resp.headers.get("content-type", "")
             if "text/html" in content_type:
