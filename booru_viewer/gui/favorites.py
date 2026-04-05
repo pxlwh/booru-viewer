@@ -86,6 +86,7 @@ class FavoritesView(QWidget):
         self._grid.post_selected.connect(self._on_selected)
         self._grid.post_activated.connect(self._on_activated)
         self._grid.context_requested.connect(self._on_context_menu)
+        self._grid.multi_context_requested.connect(self._on_multi_context_menu)
         layout.addWidget(self._grid)
 
     def _refresh_folders(self) -> None:
@@ -298,4 +299,58 @@ class FavoritesView(QWidget):
             from ..core.cache import delete_from_library
             delete_from_library(fav.post_id, fav.folder)
             self._db.remove_favorite(fav.site_id, fav.post_id)
+            self.refresh()
+
+    def _on_multi_context_menu(self, indices: list, pos) -> None:
+        favs = [self._favorites[i] for i in indices if 0 <= i < len(self._favorites)]
+        if not favs:
+            return
+
+        menu = QMenu(self)
+        save_all = menu.addAction(f"Save All ({len(favs)}) to Library")
+        unsave_all = menu.addAction(f"Unsave All ({len(favs)}) from Library")
+        menu.addSeparator()
+
+        move_menu = menu.addMenu(f"Move All ({len(favs)}) to Folder")
+        move_none = move_menu.addAction("Unfiled")
+        move_menu.addSeparator()
+        folder_actions = {}
+        for folder in self._db.get_folders():
+            a = move_menu.addAction(folder)
+            folder_actions[id(a)] = folder
+
+        menu.addSeparator()
+        unfav_all = menu.addAction(f"Unfavorite All ({len(favs)})")
+
+        action = menu.exec(pos)
+        if not action:
+            return
+
+        if action == save_all:
+            for fav in favs:
+                if fav.folder:
+                    self._copy_to_library(fav, fav.folder)
+                else:
+                    self._copy_to_library_unsorted(fav)
+            self.refresh()
+        elif action == unsave_all:
+            from ..core.cache import delete_from_library
+            for fav in favs:
+                delete_from_library(fav.post_id, fav.folder)
+            self.refresh()
+        elif action == move_none:
+            for fav in favs:
+                self._db.move_favorite_to_folder(fav.id, None)
+            self.refresh()
+        elif id(action) in folder_actions:
+            folder_name = folder_actions[id(action)]
+            for fav in favs:
+                self._db.move_favorite_to_folder(fav.id, folder_name)
+                self._copy_to_library(fav, folder_name)
+            self.refresh()
+        elif action == unfav_all:
+            from ..core.cache import delete_from_library
+            for fav in favs:
+                delete_from_library(fav.post_id, fav.folder)
+                self._db.remove_favorite(fav.site_id, fav.post_id)
             self.refresh()

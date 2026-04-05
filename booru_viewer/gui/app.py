@@ -740,6 +740,23 @@ class BooruApp(QMainWindow):
         if self._fullscreen_window and self._fullscreen_window.isVisible():
             self._preview._video_player.stop()
             self._fullscreen_window.set_media(path, info)
+            self._update_fullscreen_state()
+
+    def _update_fullscreen_state(self) -> None:
+        """Update slideshow button states for the current post."""
+        if not self._fullscreen_window:
+            return
+        idx = self._grid.selected_index
+        site_id = self._site_combo.currentData()
+        if 0 <= idx < len(self._posts) and site_id:
+            post = self._posts[idx]
+            favorited = self._db.is_favorited(site_id, post.id)
+            saved = False
+            if 0 <= idx < len(self._grid._thumbs):
+                saved = self._grid._thumbs[idx]._saved_locally
+            self._fullscreen_window.update_state(favorited, saved)
+        else:
+            self._fullscreen_window.update_state(False, False)
 
     def _on_image_done(self, path: str, info: str) -> None:
         self._dl_progress.hide()
@@ -841,6 +858,7 @@ class BooruApp(QMainWindow):
         idx = self._grid.selected_index
         if 0 <= idx < len(self._posts):
             self._toggle_favorite(idx)
+            self._update_fullscreen_state()
 
     def _save_from_preview(self, folder: str) -> None:
         idx = self._grid.selected_index
@@ -849,6 +867,7 @@ class BooruApp(QMainWindow):
             if folder and folder not in self._db.get_folders():
                 self._db.add_folder(folder)
             self._save_to_library(self._posts[idx], target)
+            self._update_fullscreen_state()
 
     def _unsave_from_preview(self) -> None:
         idx = self._grid.selected_index
@@ -869,6 +888,7 @@ class BooruApp(QMainWindow):
                     self._grid._thumbs[idx].set_saved_locally(False)
             else:
                 self._status.showMessage(f"#{post.id} not in library")
+            self._update_fullscreen_state()
 
     def _open_fullscreen_preview(self) -> None:
         path = self._preview._current_path
@@ -885,6 +905,7 @@ class BooruApp(QMainWindow):
         self._fullscreen_window.unsave_requested.connect(self._unsave_from_preview)
         self._fullscreen_window.destroyed.connect(self._on_fullscreen_closed)
         self._fullscreen_window.set_media(path, self._preview._info_label.text())
+        self._update_fullscreen_state()
 
     def _on_fullscreen_closed(self) -> None:
         self._fullscreen_window = None

@@ -83,6 +83,12 @@ class FullscreenPreview(QMainWindow):
         QApplication.instance().installEventFilter(self)
         self.showFullScreen()
 
+    def update_state(self, favorited: bool, saved: bool) -> None:
+        self._fav_btn.setText("Unfavorite" if favorited else "Favorite")
+        self._fav_btn.setFixedWidth(90 if favorited else 80)
+        self._save_btn.setEnabled(not saved)
+        self._unsave_btn.setEnabled(saved)
+
     def set_media(self, path: str, info: str = "") -> None:
         self._info_label.setText(info)
         ext = Path(path).suffix.lower()
