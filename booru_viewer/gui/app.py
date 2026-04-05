@@ -1810,14 +1810,27 @@ def run() -> None:
             app.setStyle("Fusion")
             css_text = custom_css.read_text()
             app.setStyleSheet(css_text)
-            # Extract selection color from QSS and apply to palette
+            # Extract colors from QSS and apply to palette for Fusion
             import re
+            from PySide6.QtGui import QPalette, QColor
+            pal = app.palette()
             m = re.search(r'selection-background-color\s*:\s*(#[0-9a-fA-F]{3,8})', css_text)
             if m:
-                from PySide6.QtGui import QPalette, QColor
-                pal = app.palette()
                 pal.setColor(QPalette.ColorRole.Highlight, QColor(m.group(1)))
-                app.setPalette(pal)
+            # Set text color for spinbox/combobox arrows
+            m = re.search(r'QWidget\s*\{[^}]*?(?:^|\s)color\s*:\s*(#[0-9a-fA-F]{3,8})', css_text, re.MULTILINE)
+            if m:
+                text_color = QColor(m.group(1))
+                pal.setColor(QPalette.ColorRole.ButtonText, text_color)
+                pal.setColor(QPalette.ColorRole.WindowText, text_color)
+                pal.setColor(QPalette.ColorRole.Text, text_color)
+            m = re.search(r'QWidget\s*\{[^}]*?background-color\s*:\s*(#[0-9a-fA-F]{3,8})', css_text, re.MULTILINE)
+            if m:
+                bg_color = QColor(m.group(1))
+                pal.setColor(QPalette.ColorRole.Window, bg_color)
+                pal.setColor(QPalette.ColorRole.Base, bg_color)
+                pal.setColor(QPalette.ColorRole.Button, bg_color.lighter(120))
+            app.setPalette(pal)
         except Exception as e:
             log.warning(f"Operation failed: {e}")
 
