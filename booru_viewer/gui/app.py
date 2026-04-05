@@ -1548,10 +1548,12 @@ def _apply_windows_dark_mode(app: QApplication) -> None:
                     border: 1px solid #555;
                     border-radius: 2px;
                 }
-                QLineEdit {
+                QLineEdit, QTextEdit {
                     border: 1px solid #555;
                     border-radius: 2px;
                     padding: 3px;
+                    color: #fff;
+                    background-color: #191919;
                 }
                 QScrollBar:vertical {
                     background: #252525;
