@@ -155,7 +155,7 @@ class FullscreenPreview(QMainWindow):
             elif key == Qt.Key.Key_Comma and self._stack.currentIndex() == 1:
                 self._video._seek_relative(-5000)
                 return True
-        if event.type() == QEvent.Type.Wheel and self._stack.currentIndex() == 1:
+        if event.type() == QEvent.Type.Wheel and self._stack.currentIndex() == 1 and self.isActiveWindow():
             delta = event.angleDelta().y()
             if delta:
                 vol = self._video._audio.volume()
