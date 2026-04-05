@@ -82,6 +82,7 @@ class LibraryView(QWidget):
         self._grid.post_selected.connect(self._on_selected)
         self._grid.post_activated.connect(self._on_activated)
         self._grid.context_requested.connect(self._on_context_menu)
+        self._grid.multi_context_requested.connect(self._on_multi_context_menu)
         layout.addWidget(self._grid)
 
     # ------------------------------------------------------------------
@@ -112,10 +113,23 @@ class LibraryView(QWidget):
             if filepath.suffix.lower() not in self._VIDEO_EXTS:
                 self._generate_thumb_async(i, filepath, cached_thumb)
             else:
-                # Try loading first frame via QPixmap (works for some formats)
-                pix = QPixmap(str(filepath))
-                if not pix.isNull():
-                    thumb.set_pixmap(pix)
+                # Video placeholder with play triangle
+                from PySide6.QtGui import QPainter, QColor, QFont
+                pix = QPixmap(LIBRARY_THUMB_SIZE - 4, LIBRARY_THUMB_SIZE - 4)
+                pix.fill(QColor(40, 40, 40))
+                painter = QPainter(pix)
+                painter.setPen(QColor(180, 180, 180))
+                painter.setFont(QFont(painter.font().family(), 9))
+                painter.drawText(pix.rect(), Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter, filepath.suffix.upper().lstrip("."))
+                # Draw play triangle
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(QColor(180, 180, 180, 150))
+                cx, cy = pix.width() // 2, pix.height() // 2 - 10
+                from PySide6.QtGui import QPolygon
+                from PySide6.QtCore import QPoint as QP
+                painter.drawPolygon(QPolygon([QP(cx - 15, cy - 20), QP(cx - 15, cy + 20), QP(cx + 20, cy)]))
+                painter.end()
+                thumb.set_pixmap(pix)
 
     # ------------------------------------------------------------------
     # Folder list
@@ -277,4 +291,28 @@ class LibraryView(QWidget):
                 # Also remove cached thumbnail
                 lib_thumb = thumbnails_dir() / "library" / f"{filepath.stem}.jpg"
                 lib_thumb.unlink(missing_ok=True)
+                self.refresh()
+
+    def _on_multi_context_menu(self, indices: list, pos) -> None:
+        files = [self._files[i] for i in indices if 0 <= i < len(self._files)]
+        if not files:
+            return
+
+        menu = QMenu(self)
+        delete_all = menu.addAction(f"Delete {len(files)} files from Library")
+
+        action = menu.exec(pos)
+        if not action:
+            return
+
+        if action == delete_all:
+            reply = QMessageBox.question(
+                self, "Confirm", f"Delete {len(files)} files from library?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                for f in files:
+                    f.unlink(missing_ok=True)
+                    lib_thumb = thumbnails_dir() / "library" / f"{f.stem}.jpg"
+                    lib_thumb.unlink(missing_ok=True)
                 self.refresh()
