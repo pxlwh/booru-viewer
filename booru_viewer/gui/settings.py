@@ -223,7 +223,7 @@ class SettingsDialog(QDialog):
         ))
 
         self._bl_text = QTextEdit()
-        self._bl_text.setPlaceholderText("animated animated_gif hatsune_miku ...")
+        self._bl_text.setPlaceholderText("tag1 tag2 tag3 ...")
         # Load existing tags into the text box
         tags = self._db.get_blacklisted_tags()
         self._bl_text.setPlainText(" ".join(tags))
