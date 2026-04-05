@@ -110,6 +110,11 @@ class SettingsDialog(QDialog):
         self._preload.setChecked(self._db.get_setting_bool("preload_thumbnails"))
         form.addRow("", self._preload)
 
+        # Prefetch adjacent posts
+        self._prefetch = QCheckBox("Prefetch adjacent posts for faster navigation")
+        self._prefetch.setChecked(self._db.get_setting_bool("prefetch_adjacent"))
+        form.addRow("", self._prefetch)
+
         # File dialog platform (Linux only)
         self._file_dialog_combo = None
         if not IS_WINDOWS:
@@ -372,37 +377,14 @@ class SettingsDialog(QDialog):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(css_path)))
 
     def _create_css_template(self) -> None:
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+        # Open themes reference online and create a blank custom.qss for editing
+        QDesktopServices.openUrl(QUrl("https://git.pax.moe/pax/booru-viewer/src/branch/main/themes"))
         css_path = data_dir() / "custom.qss"
-        if css_path.exists():
-            reply = QMessageBox.question(
-                self, "Confirm", "Overwrite existing custom.qss with template?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            if reply != QMessageBox.StandardButton.Yes:
-                return
-        template = (
-            "/* booru-viewer custom stylesheet */\n"
-            "/* Edit and restart the app to apply changes */\n\n"
-            "/* -- Accent color -- */\n"
-            "/* QWidget { color: #00ff00; } */\n\n"
-            "/* -- Background -- */\n"
-            "/* QWidget { background-color: #000000; } */\n\n"
-            "/* -- Font -- */\n"
-            "/* QWidget { font-family: monospace; font-size: 13px; } */\n\n"
-            "/* -- Buttons -- */\n"
-            "/* QPushButton { padding: 6px 16px; border-radius: 4px; } */\n"
-            "/* QPushButton:hover { border-color: #00ff00; } */\n\n"
-            "/* -- Inputs -- */\n"
-            "/* QLineEdit { padding: 6px 10px; border-radius: 4px; } */\n"
-            "/* QLineEdit:focus { border-color: #00ff00; } */\n\n"
-            "/* -- Scrollbar -- */\n"
-            "/* QScrollBar:vertical { width: 10px; } */\n\n"
-            "/* -- Video seek bar -- */\n"
-            "/* QSlider::groove:horizontal { background: #333; height: 6px; } */\n"
-            "/* QSlider::handle:horizontal { background: #00ff00; width: 14px; } */\n"
-        )
-        css_path.write_text(template)
-        QMessageBox.information(self, "Done", f"Template created at:\n{css_path}")
+        if not css_path.exists():
+            css_path.write_text("/* booru-viewer custom stylesheet */\n/* See themes reference for examples */\n\n")
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(css_path)))
 
     def _view_css_guide(self) -> None:
         from PySide6.QtGui import QDesktopServices
@@ -611,6 +593,7 @@ class SettingsDialog(QDialog):
         self._db.set_setting("default_rating", self._default_rating.currentText())
         self._db.set_setting("default_score", str(self._default_score.value()))
         self._db.set_setting("preload_thumbnails", "1" if self._preload.isChecked() else "0")
+        self._db.set_setting("prefetch_adjacent", "1" if self._prefetch.isChecked() else "0")
         self._db.set_setting("max_cache_mb", str(self._max_cache.value()))
         self._db.set_setting("auto_evict", "1" if self._auto_evict.isChecked() else "0")
         self._db.set_setting("clear_cache_on_exit", "1" if self._clear_on_exit.isChecked() else "0")

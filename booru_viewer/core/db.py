@@ -54,6 +54,11 @@ CREATE TABLE IF NOT EXISTS blacklisted_tags (
     tag  TEXT NOT NULL UNIQUE
 );
 
+CREATE TABLE IF NOT EXISTS blacklisted_posts (
+    id   INTEGER PRIMARY KEY AUTOINCREMENT,
+    url  TEXT NOT NULL UNIQUE
+);
+
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -383,6 +388,20 @@ class Database:
     def get_blacklisted_tags(self) -> list[str]:
         rows = self.conn.execute("SELECT tag FROM blacklisted_tags ORDER BY tag").fetchall()
         return [r["tag"] for r in rows]
+
+    # -- Blacklisted Posts --
+
+    def add_blacklisted_post(self, url: str) -> None:
+        self.conn.execute("INSERT OR IGNORE INTO blacklisted_posts (url) VALUES (?)", (url,))
+        self.conn.commit()
+
+    def remove_blacklisted_post(self, url: str) -> None:
+        self.conn.execute("DELETE FROM blacklisted_posts WHERE url = ?", (url,))
+        self.conn.commit()
+
+    def get_blacklisted_posts(self) -> set[str]:
+        rows = self.conn.execute("SELECT url FROM blacklisted_posts").fetchall()
+        return {r["url"] for r in rows}
 
     # -- Settings --
 

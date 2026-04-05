@@ -84,6 +84,7 @@ class AsyncSignals(QObject):
     batch_progress = Signal(int, int)      # current, total
     batch_done = Signal(str)
     download_progress = Signal(int, int)  # bytes_downloaded, total_bytes
+    prefetch_progress = Signal(int, float)  # index, progress (0-1 or -1 to hide)
 
 
 # -- Info Panel --
@@ -236,6 +237,11 @@ class BooruApp(QMainWindow):
         s.batch_progress.connect(self._on_batch_progress, Q)
         s.batch_done.connect(lambda m: self._status.showMessage(m), Q)
         s.download_progress.connect(self._on_download_progress, Q)
+        s.prefetch_progress.connect(self._on_prefetch_progress, Q)
+
+    def _on_prefetch_progress(self, index: int, progress: float) -> None:
+        if 0 <= index < len(self._grid._thumbs):
+            self._grid._thumbs[index].set_prefetch_progress(progress)
 
     def _clear_loading(self) -> None:
         self._loading = False
@@ -628,6 +634,10 @@ class BooruApp(QMainWindow):
             bl_tags = set(self._db.get_blacklisted_tags())
             if bl_tags:
                 posts = [p for p in posts if not bl_tags.intersection(p.tag_list)]
+        # Filter blacklisted posts by URL
+        bl_posts = self._db.get_blacklisted_posts()
+        if bl_posts:
+            posts = [p for p in posts if p.file_url not in bl_posts]
         self._posts = posts
         self._status.showMessage(f"{len(posts)} results")
         thumbs = self._grid.set_posts(len(posts))
@@ -762,7 +772,8 @@ class BooruApp(QMainWindow):
             self._run_async(_load)
 
             # Prefetch adjacent posts
-            self._prefetch_adjacent(index)
+            if self._db.get_setting_bool("prefetch_adjacent"):
+                self._prefetch_adjacent(index)
 
     def _prefetch_adjacent(self, index: int) -> None:
         """Prefetch posts in all 4 directions (left, right, up, down)."""
@@ -772,10 +783,15 @@ class BooruApp(QMainWindow):
             for offset in offsets:
                 adj = index + offset
                 if 0 <= adj < len(self._posts) and self._posts[adj].file_url:
+                    self._signals.prefetch_progress.emit(adj, 0.0)
                     try:
-                        await download_image(self._posts[adj].file_url)
+                        def _progress(dl, total, idx=adj):
+                            if total > 0:
+                                self._signals.prefetch_progress.emit(idx, dl / total)
+                        await download_image(self._posts[adj].file_url, progress_callback=_progress)
                     except Exception:
                         pass
+                    self._signals.prefetch_progress.emit(adj, -1)
         self._run_async(_prefetch_batch)
 
     def _on_download_progress(self, downloaded: int, total: int) -> None:
@@ -1054,6 +1070,7 @@ class BooruApp(QMainWindow):
         else:
             for tag in post.tag_list[:30]:
                 bl_menu.addAction(tag)
+        bl_post_action = menu.addAction("Blacklist Post")
 
         action = menu.exec(pos)
         if not action:
@@ -1104,6 +1121,10 @@ class BooruApp(QMainWindow):
             self._db.add_blacklisted_tag(tag)
             self._db.set_setting("blacklist_enabled", "1")
             self._status.showMessage(f"Blacklisted: {tag}")
+            self._do_search()
+        elif action == bl_post_action:
+            self._db.add_blacklisted_post(post.file_url)
+            self._status.showMessage(f"Post #{post.id} blacklisted")
             self._do_search()
 
     @staticmethod

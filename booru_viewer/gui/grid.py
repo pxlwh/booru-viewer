@@ -38,6 +38,7 @@ class ThumbnailWidget(QWidget):
         self._hover = False
         self._drag_start: QPoint | None = None
         self._cached_path: str | None = None
+        self._prefetch_progress: float = -1  # -1 = not prefetching, 0-1 = progress
         self.setFixedSize(THUMB_SIZE, THUMB_SIZE)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setMouseTracking(True)
@@ -64,6 +65,11 @@ class ThumbnailWidget(QWidget):
 
     def set_saved_locally(self, saved: bool) -> None:
         self._saved_locally = saved
+        self.update()
+
+    def set_prefetch_progress(self, progress: float) -> None:
+        """Set prefetch progress: -1 = hide, 0.0-1.0 = progress."""
+        self._prefetch_progress = progress
         self.update()
 
     def paintEvent(self, event) -> None:
@@ -119,6 +125,17 @@ class ThumbnailWidget(QWidget):
             p.setPen(QPen(base, 2))
             p.drawLine(7, 10, 9, 13)
             p.drawLine(9, 13, 14, 7)
+
+        # Prefetch progress bar
+        if self._prefetch_progress >= 0:
+            bar_h = 3
+            bar_y = self.height() - bar_h - 2
+            bar_w = int((self.width() - 8) * self._prefetch_progress)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(100, 100, 100, 120))
+            p.drawRect(4, bar_y, self.width() - 8, bar_h)
+            p.setBrush(highlight)
+            p.drawRect(4, bar_y, bar_w, bar_h)
 
         p.end()
 
