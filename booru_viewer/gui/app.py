@@ -875,6 +875,11 @@ class BooruApp(QMainWindow):
             self._loading = False
             if self._db.get_setting_bool("prefetch_adjacent"):
                 self._prefetch_adjacent(idx)
+            # Check if still at bottom — trigger next load
+            sb = self._grid.verticalScrollBar()
+            from .grid import THUMB_SIZE, THUMB_SPACING
+            if sb.maximum() > 0 and sb.value() >= sb.maximum() - (THUMB_SIZE + THUMB_SPACING * 2):
+                self._on_reached_bottom()
 
     def _fetch_thumbnail(self, index: int, url: str) -> None:
         async def _download():
