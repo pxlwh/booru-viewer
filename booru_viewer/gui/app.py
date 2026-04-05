@@ -845,7 +845,7 @@ class BooruApp(QMainWindow):
             self._preview._info_label.setText(info)
             self._preview._current_path = path
         else:
-            self._set_preview_media(path, info)
+            self._preview.set_media(path, info)
 
     def _update_fullscreen(self, path: str, info: str) -> None:
         """Sync the fullscreen window with the current preview media."""
