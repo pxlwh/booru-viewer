@@ -122,6 +122,7 @@ class InfoPanel(QWidget):
         layout.addWidget(self._tags_scroll, stretch=1)
 
     def set_post(self, post: Post) -> None:
+        log.debug(f"InfoPanel: tag_categories={list(post.tag_categories.keys()) if post.tag_categories else 'empty'}")
         self._title.setText(f"Post #{post.id}")
         filetype = Path(post.file_url.split("?")[0]).suffix.lstrip(".").upper() if post.file_url else "unknown"
         self._details.setText(
