@@ -719,6 +719,12 @@ class BooruApp(QMainWindow):
             self._dl_progress.setRange(0, 0)  # indeterminate
             self._dl_progress.show()
 
+    def _update_fullscreen(self, path: str, info: str) -> None:
+        """Sync the fullscreen window with the current preview media."""
+        if self._fullscreen_window and self._fullscreen_window.isVisible():
+            self._preview._video_player.stop()
+            self._fullscreen_window.set_media(path, info)
+
     def _on_image_done(self, path: str, info: str) -> None:
         self._dl_progress.hide()
         self._preview.set_media(path, info)
@@ -727,10 +733,7 @@ class BooruApp(QMainWindow):
         idx = self._grid.selected_index
         if 0 <= idx < len(self._grid._thumbs):
             self._grid._thumbs[idx]._cached_path = path
-        # Update fullscreen if open, and mute the main player
-        if self._fullscreen_window and self._fullscreen_window.isVisible():
-            self._preview._video_player.stop()
-            self._fullscreen_window.set_media(path, info)
+        self._update_fullscreen(path, info)
 
     def _on_favorite_selected(self, fav) -> None:
         self._status.showMessage(f"Favorite #{fav.post_id}")
@@ -742,6 +745,7 @@ class BooruApp(QMainWindow):
         # Try local cache first
         if fav.cached_path and Path(fav.cached_path).exists():
             self._preview.set_media(fav.cached_path, info)
+            self._update_fullscreen(fav.cached_path, info)
             return
 
         # Try saved library
@@ -754,6 +758,7 @@ class BooruApp(QMainWindow):
                 path = d / f"{fav.post_id}{ext}"
                 if path.exists():
                     self._preview.set_media(str(path), info)
+                    self._update_fullscreen(str(path), info)
                     return
 
         # Download it
@@ -847,9 +852,8 @@ class BooruApp(QMainWindow):
     def _navigate_fullscreen(self, direction: int) -> None:
         self._navigate_preview(direction)
         # For synchronous loads (cached/favorites), update immediately
-        if self._fullscreen_window and self._preview._current_path:
-            self._preview._video_player.stop()
-            self._fullscreen_window.set_media(
+        if self._preview._current_path:
+            self._update_fullscreen(
                 self._preview._current_path,
                 self._preview._info_label.text(),
             )
