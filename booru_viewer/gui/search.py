@@ -50,10 +50,6 @@ class SearchBar(QWidget):
         self._history_action.setToolTip("Search history & saved searches")
         self._history_action.triggered.connect(self._show_history_menu)
 
-        # Show history when focusing empty input
-        self._input.mousePressEvent = self._on_input_click
-        self._original_mouse_press = QLineEdit.mousePressEvent
-
         layout.addWidget(self._input, stretch=1)
 
         # Save search button
@@ -80,11 +76,6 @@ class SearchBar(QWidget):
         self._ac_timer.setInterval(300)
         self._ac_timer.timeout.connect(self._request_autocomplete)
         self._input.textChanged.connect(self._on_text_changed)
-
-    def _on_input_click(self, event) -> None:
-        self._original_mouse_press(self._input, event)
-        if not self._input.text().strip():
-            self._show_history_menu()
 
     def _on_text_changed(self, text: str) -> None:
         self._ac_timer.start()
