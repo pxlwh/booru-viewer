@@ -242,14 +242,22 @@ class LibraryView(QWidget):
 
     def _capture_video_thumb(self, index: int, source: str, dest: str) -> None:
         """Grab first frame from video using Qt's QMediaPlayer + QVideoSink."""
+        from PySide6.QtMultimedia import QAudioOutput
         player = QMediaPlayer()
+        audio = QAudioOutput()
+        audio.setVolume(0)
+        player.setAudioOutput(audio)
         sink = QVideoSink()
         player.setVideoSink(sink)
+        captured = [False]
 
         def _on_frame(frame: QVideoFrame):
+            if captured[0]:
+                return
             if frame.isValid():
                 img = frame.toImage()
                 if not img.isNull():
+                    captured[0] = True
                     scaled = img.scaled(
                         LIBRARY_THUMB_SIZE, LIBRARY_THUMB_SIZE,
                         Qt.AspectRatioMode.KeepAspectRatio,
@@ -257,15 +265,19 @@ class LibraryView(QWidget):
                     )
                     scaled.save(dest, "JPEG", 85)
                     self._signals.thumb_ready.emit(index, dest)
-                sink.videoFrameChanged.disconnect(_on_frame)
+                    player.stop()
+                    player.deleteLater()
+
+        def _cleanup():
+            if not captured[0]:
                 player.stop()
                 player.deleteLater()
 
         sink.videoFrameChanged.connect(_on_frame)
         player.setSource(QUrl.fromLocalFile(source))
         player.play()
-        # Pause immediately — we just need one frame
-        QTimer.singleShot(100, player.pause)
+        # Timeout cleanup if no frame arrives
+        QTimer.singleShot(5000, _cleanup)
 
     def _on_thumb_ready(self, index: int, path: str) -> None:
         thumbs = self._grid._thumbs
