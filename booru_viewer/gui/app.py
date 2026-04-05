@@ -814,43 +814,57 @@ class BooruApp(QMainWindow):
             self._prefetch_adjacent(0)
 
     def _on_search_append(self, posts: list) -> None:
-        """Append more posts to the grid (infinite scroll)."""
+        """Queue posts and add them one at a time as thumbnails arrive."""
         if not posts:
             self._loading = False
             self._infinite_exhausted = True
             self._status.showMessage(f"{len(self._posts)} results (end)")
             return
         self._shown_post_ids.update(p.id for p in posts)
-        start = len(self._posts)
-        self._posts.extend(posts)
-        self._page_label.setText(f"Page {self._current_page}")
-        self._status.showMessage(f"{len(self._posts)} results")
-
-        thumbs = self._grid.append_posts(len(posts))
         QTimer.singleShot(100, self._clear_loading)
 
-        from ..core.config import saved_dir, saved_folder_dir
+        if not hasattr(self, '_append_queue'):
+            self._append_queue = []
+        self._append_queue.extend(posts)
+        self._drain_append_queue()
+
+    def _drain_append_queue(self) -> None:
+        """Add queued posts to the grid one at a time with thumbnail fetch."""
+        if not getattr(self, '_append_queue', None):
+            return
+
+        from ..core.config import saved_dir
+        from ..core.cache import cached_path_for
         site_id = self._site_combo.currentData()
         _sd = saved_dir()
         _saved_ids: set[int] = set()
         if _sd.exists():
             _saved_ids = {int(f.stem) for f in _sd.iterdir() if f.is_file() and f.stem.isdigit()}
 
-        for i, (post, thumb) in enumerate(zip(posts, thumbs)):
-            if site_id and self._db.is_bookmarked(site_id, post.id):
-                thumb.set_bookmarked(True)
-            saved = post.id in _saved_ids
-            thumb.set_saved_locally(saved)
-            from ..core.cache import cached_path_for
-            cached = cached_path_for(post.file_url)
-            if cached.exists():
-                thumb._cached_path = str(cached)
-            if post.preview_url:
-                self._fetch_thumbnail(start + i, post.preview_url)
+        post = self._append_queue.pop(0)
+        idx = len(self._posts)
+        self._posts.append(post)
+        thumbs = self._grid.append_posts(1)
+        thumb = thumbs[0]
 
-        # Prefetch new posts
-        if self._db.get_setting_bool("prefetch_adjacent") and posts:
-            self._prefetch_adjacent(start)
+        if site_id and self._db.is_bookmarked(site_id, post.id):
+            thumb.set_bookmarked(True)
+        thumb.set_saved_locally(post.id in _saved_ids)
+        cached = cached_path_for(post.file_url)
+        if cached.exists():
+            thumb._cached_path = str(cached)
+        if post.preview_url:
+            self._fetch_thumbnail(idx, post.preview_url)
+
+        self._status.showMessage(f"{len(self._posts)} results")
+
+        # Schedule next post
+        if self._append_queue:
+            QTimer.singleShot(50, self._drain_append_queue)
+        else:
+            # All done — prefetch
+            if self._db.get_setting_bool("prefetch_adjacent"):
+                self._prefetch_adjacent(idx)
 
     def _fetch_thumbnail(self, index: int, url: str) -> None:
         async def _download():
