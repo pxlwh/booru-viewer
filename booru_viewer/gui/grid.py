@@ -67,6 +67,8 @@ class ThumbnailWidget(QWidget):
         self.update()
 
     def paintEvent(self, event) -> None:
+        # Ensure QSS is applied so palette picks up custom colors
+        self.ensurePolished()
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         pal = self.palette()

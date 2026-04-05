@@ -1639,7 +1639,16 @@ def run() -> None:
         try:
             # Use Fusion style so QSS has full control over rendering
             app.setStyle("Fusion")
-            app.setStyleSheet(custom_css.read_text())
+            css_text = custom_css.read_text()
+            app.setStyleSheet(css_text)
+            # Extract selection color from QSS and apply to palette
+            import re
+            m = re.search(r'selection-background-color\s*:\s*(#[0-9a-fA-F]{3,8})', css_text)
+            if m:
+                from PySide6.QtGui import QPalette, QColor
+                pal = app.palette()
+                pal.setColor(QPalette.ColorRole.Highlight, QColor(m.group(1)))
+                app.setPalette(pal)
         except Exception:
             pass
 
