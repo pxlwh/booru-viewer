@@ -222,6 +222,8 @@ class ThumbnailGrid(QScrollArea):
     reached_top = Signal()     # emitted when scrolled to the top
     nav_past_end = Signal()    # keyboard nav past last post
     nav_before_start = Signal()  # keyboard nav before first post
+    page_forward = Signal()    # scroll tilt right
+    page_back = Signal()       # scroll tilt left
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -402,9 +404,9 @@ class ThumbnailGrid(QScrollArea):
     def wheelEvent(self, event: QWheelEvent) -> None:
         delta = event.angleDelta().x()
         if delta > 30:
-            self.nav_before_start.emit()
+            self.page_back.emit()
         elif delta < -30:
-            self.nav_past_end.emit()
+            self.page_forward.emit()
         else:
             super().wheelEvent(event)
 
