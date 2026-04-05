@@ -470,10 +470,14 @@ class VideoPlayer(QWidget):
             self._seek_slider.setValue(pos)
         self._time_label.setText(self._fmt(pos))
         # Detect loop restart: position jumps from near-end back to start
-        if self._last_pos > 500 and pos < 100 and not self._loop_mode and not self._ended:
-            self._ended = True
-            self._player.pause()
-            self.play_next.emit()
+        if self._last_pos > 500 and pos < 100 and not self._ended:
+            if not self._loop_mode:
+                self._ended = True
+                self._player.pause()
+                self.play_next.emit()
+            elif not self._autoplay:
+                self._ended = True
+                self._player.pause()
         self._last_pos = pos
 
     def _on_duration(self, dur: int) -> None:
