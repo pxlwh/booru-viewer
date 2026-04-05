@@ -68,12 +68,14 @@ def _convert_ugoira_to_gif(zip_path: Path) -> Path:
             except Exception:
                 continue
     if not frames:
-        raise ValueError("Zip contains no image frames")
+        # Can't convert — just return the zip path as-is
+        return zip_path
     frames[0].save(
         gif_path, save_all=True, append_images=frames[1:],
         duration=80, loop=0, disposal=2,
     )
-    zip_path.unlink()
+    if gif_path.exists():
+        zip_path.unlink()
     return gif_path
 
 

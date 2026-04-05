@@ -166,6 +166,10 @@ class SettingsDialog(QDialog):
         self._auto_evict.setChecked(self._db.get_setting_bool("auto_evict"))
         limits_layout.addRow("", self._auto_evict)
 
+        self._clear_on_exit = QCheckBox("Clear cache on exit (session-only cache)")
+        self._clear_on_exit.setChecked(self._db.get_setting_bool("clear_cache_on_exit"))
+        limits_layout.addRow("", self._clear_on_exit)
+
         layout.addWidget(limits_group)
 
         # Cache actions
@@ -614,6 +618,7 @@ class SettingsDialog(QDialog):
         self._db.set_setting("preload_thumbnails", "1" if self._preload.isChecked() else "0")
         self._db.set_setting("max_cache_mb", str(self._max_cache.value()))
         self._db.set_setting("auto_evict", "1" if self._auto_evict.isChecked() else "0")
+        self._db.set_setting("clear_cache_on_exit", "1" if self._clear_on_exit.isChecked() else "0")
         if self._file_dialog_combo is not None:
             self._db.set_setting("file_dialog_platform", self._file_dialog_combo.currentText())
         self.settings_changed.emit()

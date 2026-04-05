@@ -787,6 +787,10 @@ class BooruApp(QMainWindow):
             if 0 <= idx < len(self._posts):
                 self._grid._select(idx)
                 self._on_post_activated(idx)
+            elif idx >= len(self._posts) and direction == 1 and len(self._posts) > 0:
+                self._next_page()
+            elif idx < 0 and direction == -1 and self._current_page > 1:
+                self._prev_page()
 
     def _favorite_from_preview(self) -> None:
         idx = self._grid.selected_index
@@ -1335,6 +1339,9 @@ class BooruApp(QMainWindow):
                 thumbs[index].set_saved_locally(True)
 
     def closeEvent(self, event) -> None:
+        if self._db.get_setting_bool("clear_cache_on_exit"):
+            from ..core.cache import clear_cache
+            clear_cache(clear_images=True, clear_thumbnails=True)
         self._db.close()
         super().closeEvent(event)
 
