@@ -1809,28 +1809,6 @@ def run() -> None:
             # Use Fusion style so QSS has full control over rendering
             app.setStyle("Fusion")
             css_text = custom_css.read_text()
-            # Inject spinbox arrow fix if not already styled
-            if "QSpinBox::up-button" not in css_text:
-                css_text += """
-                QSpinBox::up-button, QSpinBox::down-button {
-                    width: 16px;
-                    border: none;
-                }
-                QSpinBox::up-arrow {
-                    image: none;
-                    border-left: 4px solid transparent;
-                    border-right: 4px solid transparent;
-                    border-bottom: 5px solid palette(text);
-                    width: 0; height: 0;
-                }
-                QSpinBox::down-arrow {
-                    image: none;
-                    border-left: 4px solid transparent;
-                    border-right: 4px solid transparent;
-                    border-top: 5px solid palette(text);
-                    width: 0; height: 0;
-                }
-                """
             app.setStyleSheet(css_text)
             # Extract selection color from QSS and apply to palette
             import re
