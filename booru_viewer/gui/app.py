@@ -1481,6 +1481,7 @@ class BooruApp(QMainWindow):
             # Only green if actually saved to library, not just cached
             if "Saved" in msg:
                 thumbs[index].set_saved_locally(True)
+        self._update_fullscreen_state()
 
     def closeEvent(self, event) -> None:
         self._async_loop.call_soon_threadsafe(self._async_loop.stop)
