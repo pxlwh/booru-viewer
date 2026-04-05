@@ -761,6 +761,23 @@ class BooruApp(QMainWindow):
 
             self._run_async(_load)
 
+            # Prefetch adjacent posts
+            self._prefetch_adjacent(index)
+
+    def _prefetch_adjacent(self, index: int) -> None:
+        """Silently download the next and previous posts in the background."""
+        for offset in (1, -1, 2):
+            adj = index + offset
+            if 0 <= adj < len(self._posts):
+                url = self._posts[adj].file_url
+                if url:
+                    async def _prefetch(u=url):
+                        try:
+                            await download_image(u)
+                        except Exception:
+                            pass
+                    self._run_async(_prefetch)
+
     def _on_download_progress(self, downloaded: int, total: int) -> None:
         if total > 0:
             self._dl_progress.setRange(0, total)
