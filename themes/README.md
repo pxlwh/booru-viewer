@@ -220,6 +220,15 @@ QLabel {
 }
 ```
 
+### Thumbnail Indicator Dots
+
+```css
+ThumbnailWidget {
+    qproperty-savedColor: #22cc22;      /* green dot: saved to library */
+    qproperty-favoritedColor: #ff4444;  /* red dot: favorited but not saved */
+}
+```
+
 ## States
 
 | State | Description |
@@ -236,5 +245,5 @@ QLabel {
 - `selection-background-color` on `QWidget` controls the **grid thumbnail selection highlight**
 - Setting a custom QSS automatically switches to the Fusion Qt style for consistent rendering
 - Tag category colors (Artist, Character, etc.) in the info panel are set in code, not via QSS
-- The favorite/saved dot indicators on thumbnails are painted in code
+- Favorite/saved dots are QSS-controllable via `qproperty-savedColor` and `qproperty-favoritedColor` on `ThumbnailWidget`
 - Use `QLabel { background: transparent; }` to prevent labels from getting opaque backgrounds

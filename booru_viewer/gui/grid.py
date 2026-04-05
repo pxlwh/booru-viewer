@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal, QSize, QRect, QMimeData, QUrl, QPoint
+from PySide6.QtCore import Qt, Signal, QSize, QRect, QMimeData, QUrl, QPoint, Property
 from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QKeyEvent, QWheelEvent, QDrag
 from PySide6.QtWidgets import (
     QWidget,
@@ -26,6 +26,18 @@ class ThumbnailWidget(QWidget):
     clicked = Signal(int, object)  # index, QMouseEvent
     double_clicked = Signal(int)
     right_clicked = Signal(int, object)  # index, QPoint
+
+    # QSS-controllable dot colors: qproperty-savedColor / qproperty-favoritedColor
+    _saved_color = QColor("#22cc22")
+    _favorited_color = QColor("#ff4444")
+
+    def _get_saved_color(self): return self._saved_color
+    def _set_saved_color(self, c): self._saved_color = QColor(c) if isinstance(c, str) else c
+    savedColor = Property(QColor, _get_saved_color, _set_saved_color)
+
+    def _get_favorited_color(self): return self._favorited_color
+    def _set_favorited_color(self, c): self._favorited_color = QColor(c) if isinstance(c, str) else c
+    favoritedColor = Property(QColor, _get_favorited_color, _set_favorited_color)
 
     def __init__(self, index: int, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -111,10 +123,7 @@ class ThumbnailWidget(QWidget):
         # Favorite/saved indicator
         if self._favorited:
             p.setPen(Qt.PenStyle.NoPen)
-            if self._saved_locally:
-                p.setBrush(QColor("#22cc22"))
-            else:
-                p.setBrush(QColor("#ff4444"))
+            p.setBrush(self._saved_color if self._saved_locally else self._favorited_color)
             p.drawEllipse(self.width() - 14, 4, 10, 10)
 
         # Multi-select checkmark
