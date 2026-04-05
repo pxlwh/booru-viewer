@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt, QPoint, QPointF, Signal, QUrl
 from PySide6.QtGui import QPixmap, QPainter, QWheelEvent, QMouseEvent, QKeyEvent, QColor, QMovie
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QMainWindow,
-    QStackedWidget, QPushButton, QSlider, QMenu, QInputDialog,
+    QStackedWidget, QPushButton, QSlider, QMenu, QInputDialog, QStyle,
 )
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PySide6.QtMultimediaWidgets import QVideoWidget
@@ -153,6 +153,14 @@ class FullscreenPreview(QMainWindow):
                 return True
             elif key == Qt.Key.Key_Comma and self._stack.currentIndex() == 1:
                 self._video._seek_relative(-5000)
+                return True
+        if event.type() == QEvent.Type.Wheel and self._stack.currentIndex() == 1:
+            delta = event.angleDelta().y()
+            if delta:
+                vol = self._video._audio.volume()
+                vol = max(0.0, min(1.0, vol + (0.05 if delta > 0 else -0.05)))
+                self._video._audio.setVolume(vol)
+                self._video._vol_slider.setValue(int(vol * 100))
                 return True
         return super().eventFilter(obj, event)
 
@@ -299,6 +307,20 @@ class ImageViewer(QWidget):
             self.update()
 
 
+class _ClickSeekSlider(QSlider):
+    """Slider that jumps to the clicked position instead of page-stepping."""
+    clicked_position = Signal(int)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            val = QStyle.sliderValueFromPosition(
+                self.minimum(), self.maximum(), int(event.position().x()), self.width()
+            )
+            self.setValue(val)
+            self.clicked_position.emit(val)
+        super().mousePressEvent(event)
+
+
 # -- Video Player --
 
 class VideoPlayer(QWidget):
@@ -335,9 +357,10 @@ class VideoPlayer(QWidget):
         self._time_label.setFixedWidth(45)
         controls.addWidget(self._time_label)
 
-        self._seek_slider = QSlider(Qt.Orientation.Horizontal)
+        self._seek_slider = _ClickSeekSlider(Qt.Orientation.Horizontal)
         self._seek_slider.setRange(0, 0)
         self._seek_slider.sliderMoved.connect(self._seek)
+        self._seek_slider.clicked_position.connect(self._seek)
         controls.addWidget(self._seek_slider, stretch=1)
 
         self._duration_label = QLabel("0:00")
@@ -609,6 +632,16 @@ class ImagePreview(QWidget):
             event.ignore()
         else:
             super().mousePressEvent(event)
+
+    def wheelEvent(self, event) -> None:
+        if self._stack.currentIndex() == 1:
+            delta = event.angleDelta().y()
+            vol = self._video_player._audio.volume()
+            vol = max(0.0, min(1.0, vol + (0.05 if delta > 0 else -0.05)))
+            self._video_player._audio.setVolume(vol)
+            self._video_player._vol_slider.setValue(int(vol * 100))
+        else:
+            super().wheelEvent(event)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if self._stack.currentIndex() == 0:

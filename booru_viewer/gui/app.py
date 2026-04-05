@@ -733,7 +733,7 @@ class BooruApp(QMainWindow):
         if 0 <= index < len(self._posts):
             post = self._posts[index]
             self._status.showMessage(
-                f"#{post.id}  {post.width}x{post.height}  score:{post.score}  [{post.rating}]"
+                f"#{post.id}  {post.width}x{post.height}  score:{post.score}  [{post.rating}]  {Path(post.file_url.split('?')[0]).suffix.lstrip('.').upper() if post.file_url else ''}"
             )
             if self._info_panel.isVisible():
                 self._info_panel.set_post(post)
@@ -753,7 +753,7 @@ class BooruApp(QMainWindow):
             async def _load():
                 try:
                     path = await download_image(post.file_url, progress_callback=_progress)
-                    info = f"#{post.id}  {post.width}x{post.height}  score:{post.score}  [{post.rating}]"
+                    info = f"#{post.id}  {post.width}x{post.height}  score:{post.score}  [{post.rating}]  {Path(post.file_url.split('?')[0]).suffix.lstrip('.').upper() if post.file_url else ''}"
                     self._signals.image_done.emit(str(path), info)
                 except Exception as e:
                     log.error(f"Image download failed: {e}")
