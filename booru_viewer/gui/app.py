@@ -729,6 +729,10 @@ class BooruApp(QMainWindow):
 
         self._grid.setFocus()
 
+        # Start prefetching from top of page
+        if self._db.get_setting_bool("prefetch_adjacent") and posts:
+            self._prefetch_adjacent(0)
+
     def _fetch_thumbnail(self, index: int, url: str) -> None:
         async def _download():
             try:
