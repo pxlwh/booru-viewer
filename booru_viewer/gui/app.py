@@ -839,6 +839,14 @@ class BooruApp(QMainWindow):
             self._dl_progress.setRange(0, 0)  # indeterminate
             self._dl_progress.show()
 
+    def _set_preview_media(self, path: str, info: str) -> None:
+        """Set media on preview or just info if slideshow is open."""
+        if self._fullscreen_window and self._fullscreen_window.isVisible():
+            self._preview._info_label.setText(info)
+            self._preview._current_path = path
+        else:
+            self._set_preview_media(path, info)
+
     def _update_fullscreen(self, path: str, info: str) -> None:
         """Sync the fullscreen window with the current preview media."""
         if self._fullscreen_window and self._fullscreen_window.isVisible():
@@ -902,7 +910,12 @@ class BooruApp(QMainWindow):
 
     def _on_image_done(self, path: str, info: str) -> None:
         self._dl_progress.hide()
-        self._preview.set_media(path, info)
+        if self._fullscreen_window and self._fullscreen_window.isVisible():
+            # Slideshow is open — only show there, keep preview clear
+            self._preview._info_label.setText(info)
+            self._preview._current_path = path
+        else:
+            self._set_preview_media(path, info)
         self._status.showMessage("Loaded")
         # Update drag path on the selected thumbnail
         idx = self._grid.selected_index
@@ -930,11 +943,11 @@ class BooruApp(QMainWindow):
                 log.info(f"Auto-evicted {evicted} cached files")
 
     def _on_library_selected(self, path: str) -> None:
-        self._preview.set_media(path, Path(path).name)
+        self._set_preview_media(path, Path(path).name)
         self._update_fullscreen(path, Path(path).name)
 
     def _on_library_activated(self, path: str) -> None:
-        self._preview.set_media(path, Path(path).name)
+        self._set_preview_media(path, Path(path).name)
         self._update_fullscreen(path, Path(path).name)
 
     def _on_bookmark_selected(self, fav) -> None:
@@ -946,7 +959,7 @@ class BooruApp(QMainWindow):
 
         # Try local cache first
         if fav.cached_path and Path(fav.cached_path).exists():
-            self._preview.set_media(fav.cached_path, info)
+            self._set_preview_media(fav.cached_path, info)
             self._update_fullscreen(fav.cached_path, info)
             return
 
@@ -959,7 +972,7 @@ class BooruApp(QMainWindow):
             for ext in MEDIA_EXTENSIONS:
                 path = d / f"{fav.post_id}{ext}"
                 if path.exists():
-                    self._preview.set_media(str(path), info)
+                    self._set_preview_media(str(path), info)
                     self._update_fullscreen(str(path), info)
                     return
 
@@ -1069,8 +1082,11 @@ class BooruApp(QMainWindow):
         path = self._preview._current_path
         if not path:
             return
-        # Pause the main preview's video player
-        self._preview._video_player.stop()
+        # Clear the main preview — slideshow takes over
+        info = self._preview._info_label.text()
+        self._preview.clear()
+        self._preview._info_label.setText(info)
+        self._preview._current_path = path
         from .preview import FullscreenPreview
         cols = self._grid._flow.columns
         show_actions = self._stack.currentIndex() != 2  # hide for Library tab
@@ -1085,7 +1101,12 @@ class BooruApp(QMainWindow):
             self._update_fullscreen_state()
 
     def _on_fullscreen_closed(self) -> None:
+        # Restore preview with current media
+        path = self._preview._current_path
+        info = self._preview._info_label.text()
         self._fullscreen_window = None
+        if path:
+            self._preview.set_media(path, info)
 
     def _navigate_fullscreen(self, direction: int) -> None:
         self._navigate_preview(direction)
