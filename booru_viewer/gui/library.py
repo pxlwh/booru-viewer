@@ -16,6 +16,9 @@ from PySide6.QtWidgets import (
     QPushButton,
     QLabel,
     QComboBox,
+    QMenu,
+    QMessageBox,
+    QApplication,
 )
 
 from ..core.config import saved_dir, saved_folder_dir, MEDIA_EXTENSIONS, thumbnails_dir
@@ -78,6 +81,7 @@ class LibraryView(QWidget):
         self._grid = ThumbnailGrid()
         self._grid.post_selected.connect(self._on_selected)
         self._grid.post_activated.connect(self._on_activated)
+        self._grid.context_requested.connect(self._on_context_menu)
         layout.addWidget(self._grid)
 
     # ------------------------------------------------------------------
@@ -98,13 +102,20 @@ class LibraryView(QWidget):
 
         for i, (filepath, thumb) in enumerate(zip(self._files, thumbs)):
             thumb._cached_path = str(filepath)
+            thumb.setToolTip(filepath.name)
             cached_thumb = lib_thumb_dir / f"{filepath.stem}.jpg"
             if cached_thumb.exists():
                 pix = QPixmap(str(cached_thumb))
                 if not pix.isNull():
                     thumb.set_pixmap(pix)
-            else:
+                    continue
+            if filepath.suffix.lower() not in self._VIDEO_EXTS:
                 self._generate_thumb_async(i, filepath, cached_thumb)
+            else:
+                # Try loading first frame via QPixmap (works for some formats)
+                pix = QPixmap(str(filepath))
+                if not pix.isNull():
+                    thumb.set_pixmap(pix)
 
     # ------------------------------------------------------------------
     # Folder list
@@ -229,3 +240,41 @@ class LibraryView(QWidget):
     def _on_activated(self, index: int) -> None:
         if 0 <= index < len(self._files):
             self.file_activated.emit(str(self._files[index]))
+
+    def _on_context_menu(self, index: int, pos) -> None:
+        if index < 0 or index >= len(self._files):
+            return
+        filepath = self._files[index]
+
+        from PySide6.QtGui import QDesktopServices
+        from PySide6.QtCore import QUrl
+
+        menu = QMenu(self)
+        open_default = menu.addAction("Open in Default App")
+        open_folder = menu.addAction("Open Containing Folder")
+        menu.addSeparator()
+        copy_path = menu.addAction("Copy File Path")
+        menu.addSeparator()
+        delete_action = menu.addAction("Delete from Library")
+
+        action = menu.exec(pos)
+        if not action:
+            return
+
+        if action == open_default:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(filepath)))
+        elif action == open_folder:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(filepath.parent)))
+        elif action == copy_path:
+            QApplication.clipboard().setText(str(filepath))
+        elif action == delete_action:
+            reply = QMessageBox.question(
+                self, "Confirm", f"Delete {filepath.name} from library?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply == QMessageBox.StandardButton.Yes:
+                filepath.unlink(missing_ok=True)
+                # Also remove cached thumbnail
+                lib_thumb = thumbnails_dir() / "library" / f"{filepath.stem}.jpg"
+                lib_thumb.unlink(missing_ok=True)
+                self.refresh()
