@@ -29,7 +29,7 @@ class ThumbnailWidget(QWidget):
 
     # QSS-controllable dot colors: qproperty-savedColor / qproperty-bookmarkedColor
     _saved_color = QColor("#22cc22")
-    _bookmarked_color = QColor("#ff4444")
+    _bookmarked_color = QColor("#ffcc00")
 
     def _get_saved_color(self): return self._saved_color
     def _set_saved_color(self, c): self._saved_color = QColor(c) if isinstance(c, str) else c
@@ -120,20 +120,19 @@ class ThumbnailWidget(QWidget):
             y = (self.height() - self._pixmap.height()) // 2
             p.drawPixmap(x, y, self._pixmap)
 
-        # Bookmark/saved indicators (independent dots)
-        dot_x = self.width() - 14
+        # Saved dot + bookmark star (right-aligned, star right of dot)
+        indicator_x = self.width() - 4
+        if self._bookmarked:
+            from PySide6.QtGui import QFont
+            p.setPen(self._bookmarked_color)
+            p.setFont(QFont(p.font().family(), 8))
+            indicator_x -= 11
+            p.drawText(indicator_x, 12, "\u2605")
         if self._saved_locally:
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(self._saved_color)
-            p.drawEllipse(dot_x, 4, 10, 10)
-            dot_x -= 14
-        if self._bookmarked:
-            from PySide6.QtGui import QFont
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(self._bookmarked_color)
-            p.setFont(QFont(p.font().family(), 10))
-            p.setPen(self._bookmarked_color)
-            p.drawText(dot_x - 2, 14, "\u2605")
+            indicator_x -= 9
+            p.drawEllipse(indicator_x, 4, 7, 7)
 
         # Multi-select checkmark
         if self._multi_selected:

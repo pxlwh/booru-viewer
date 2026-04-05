@@ -350,7 +350,7 @@ class BooruApp(QMainWindow):
         self._bookmarks_view.bookmark_activated.connect(self._on_bookmark_activated)
         self._stack.addWidget(self._bookmarks_view)
 
-        self._library_view = LibraryView(self._db)
+        self._library_view = LibraryView()
         self._library_view.file_selected.connect(self._on_library_selected)
         self._library_view.file_activated.connect(self._on_library_activated)
         self._stack.addWidget(self._library_view)
@@ -1594,10 +1594,10 @@ class BooruApp(QMainWindow):
         self._status.showMessage(msg)
         thumbs = self._grid._thumbs
         if 0 <= index < len(thumbs):
-            thumbs[index].set_bookmarked(True)
-            # Only green if actually saved to library, not just cached
             if "Saved" in msg:
                 thumbs[index].set_saved_locally(True)
+            elif "Bookmarked" in msg:
+                thumbs[index].set_bookmarked(True)
         self._update_fullscreen_state()
 
     def closeEvent(self, event) -> None:

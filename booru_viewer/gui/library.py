@@ -184,9 +184,16 @@ class LibraryView(QWidget):
     # Async thumbnail generation
     # ------------------------------------------------------------------
 
+    _VIDEO_EXTS = {".mp4", ".webm", ".mkv", ".avi", ".mov"}
+
     def _generate_thumb_async(
         self, index: int, source: Path, dest: Path
     ) -> None:
+        if source.suffix.lower() in self._VIDEO_EXTS:
+            # Can't thumbnail videos with PIL — just show the file directly
+            # and let QPixmap try (it won't work for video, but that's OK)
+            return
+
         def _work() -> None:
             try:
                 from PIL import Image
