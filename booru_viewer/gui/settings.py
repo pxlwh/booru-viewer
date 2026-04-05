@@ -115,6 +115,11 @@ class SettingsDialog(QDialog):
         self._prefetch.setChecked(self._db.get_setting_bool("prefetch_adjacent"))
         form.addRow("", self._prefetch)
 
+        # Infinite scroll
+        self._infinite_scroll = QCheckBox("Infinite scroll (replaces page buttons)")
+        self._infinite_scroll.setChecked(self._db.get_setting_bool("infinite_scroll"))
+        form.addRow("", self._infinite_scroll)
+
         # Slideshow monitor
         from PySide6.QtWidgets import QApplication
         self._monitor_combo = QComboBox()
@@ -677,6 +682,7 @@ class SettingsDialog(QDialog):
         self._db.set_setting("default_score", str(self._default_score.value()))
         self._db.set_setting("preload_thumbnails", "1" if self._preload.isChecked() else "0")
         self._db.set_setting("prefetch_adjacent", "1" if self._prefetch.isChecked() else "0")
+        self._db.set_setting("infinite_scroll", "1" if self._infinite_scroll.isChecked() else "0")
         self._db.set_setting("slideshow_monitor", self._monitor_combo.currentText())
         self._db.set_setting("library_dir", self._library_dir.text().strip())
         self._db.set_setting("max_cache_mb", str(self._max_cache.value()))

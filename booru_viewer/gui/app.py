@@ -75,6 +75,7 @@ class LogHandler(logging.Handler, QObject):
 class AsyncSignals(QObject):
     """Signals for async worker results."""
     search_done = Signal(list)
+    search_append = Signal(list)
     search_error = Signal(str)
     thumb_done = Signal(int, str)
     image_done = Signal(str, str)
@@ -233,6 +234,7 @@ class BooruApp(QMainWindow):
         Q = Qt.ConnectionType.QueuedConnection
         s = self._signals
         s.search_done.connect(self._on_search_done, Q)
+        s.search_append.connect(self._on_search_append, Q)
         s.search_error.connect(self._on_search_error, Q)
         s.thumb_done.connect(self._on_thumb_done, Q)
         s.image_done.connect(self._on_image_done, Q)
@@ -398,7 +400,9 @@ class BooruApp(QMainWindow):
         layout.addWidget(self._splitter, stretch=1)
 
         # Bottom page nav (centered)
-        bottom_nav = QHBoxLayout()
+        self._bottom_nav = QWidget()
+        bottom_nav = QHBoxLayout(self._bottom_nav)
+        bottom_nav.setContentsMargins(0, 4, 0, 4)
         bottom_nav.addStretch()
         self._page_label = QLabel("Page 1")
         bottom_nav.addWidget(self._page_label)
@@ -411,7 +415,13 @@ class BooruApp(QMainWindow):
         bottom_next.clicked.connect(self._next_page)
         bottom_nav.addWidget(bottom_next)
         bottom_nav.addStretch()
-        layout.addLayout(bottom_nav)
+        layout.addWidget(self._bottom_nav)
+
+        # Infinite scroll
+        self._infinite_scroll = self._db.get_setting_bool("infinite_scroll")
+        if self._infinite_scroll:
+            self._bottom_nav.hide()
+        self._grid.reached_bottom.connect(self._on_reached_bottom)
 
         # Log panel
         self._log_text = QTextEdit()
@@ -566,6 +576,50 @@ class BooruApp(QMainWindow):
         if self._current_page > 1:
             self._nav_page_turn = "last"
             self._prev_page()
+
+    def _on_reached_bottom(self) -> None:
+        if not self._infinite_scroll or self._loading:
+            return
+        self._loading = True
+        self._current_page += 1
+
+        search_tags = self._build_search_tags()
+        page = self._current_page
+        limit = self._db.get_setting_int("page_size") or 40
+
+        bl_tags = set()
+        if self._db.get_setting_bool("blacklist_enabled"):
+            bl_tags = set(self._db.get_blacklisted_tags())
+        bl_posts = self._db.get_blacklisted_posts()
+        shown_ids = getattr(self, '_shown_post_ids', set()).copy()
+
+        def _filter(posts):
+            if bl_tags:
+                posts = [p for p in posts if not bl_tags.intersection(p.tag_list)]
+            if bl_posts:
+                posts = [p for p in posts if p.file_url not in bl_posts]
+            posts = [p for p in posts if p.id not in shown_ids]
+            return posts
+
+        async def _search():
+            client = self._make_client()
+            try:
+                collected = []
+                current_page = page
+                for _ in range(5):
+                    batch = await client.search(tags=search_tags, page=current_page, limit=limit)
+                    filtered = _filter(batch)
+                    collected.extend(filtered)
+                    if len(collected) >= limit or len(batch) < limit:
+                        break
+                    current_page += 1
+                self._signals.search_append.emit(collected[:limit])
+            except Exception as e:
+                log.warning(f"Operation failed: {e}")
+            finally:
+                await client.close()
+
+        self._run_async(_search)
 
     def _scroll_next_page(self) -> None:
         if self._loading:
@@ -752,6 +806,39 @@ class BooruApp(QMainWindow):
         # Start prefetching from top of page
         if self._db.get_setting_bool("prefetch_adjacent") and posts:
             self._prefetch_adjacent(0)
+
+    def _on_search_append(self, posts: list) -> None:
+        """Append more posts to the grid (infinite scroll)."""
+        if not posts:
+            self._loading = False
+            return
+        self._shown_post_ids.update(p.id for p in posts)
+        start = len(self._posts)
+        self._posts.extend(posts)
+        self._page_label.setText(f"Page {self._current_page}")
+        self._status.showMessage(f"{len(self._posts)} results")
+
+        thumbs = self._grid.append_posts(len(posts))
+        QTimer.singleShot(100, self._clear_loading)
+
+        from ..core.config import saved_dir, saved_folder_dir
+        site_id = self._site_combo.currentData()
+        _sd = saved_dir()
+        _saved_ids: set[int] = set()
+        if _sd.exists():
+            _saved_ids = {int(f.stem) for f in _sd.iterdir() if f.is_file() and f.stem.isdigit()}
+
+        for i, (post, thumb) in enumerate(zip(posts, thumbs)):
+            if site_id and self._db.is_bookmarked(site_id, post.id):
+                thumb.set_bookmarked(True)
+            saved = post.id in _saved_ids
+            thumb.set_saved_locally(saved)
+            from ..core.cache import cached_path_for
+            cached = cached_path_for(post.file_url)
+            if cached.exists():
+                thumb._cached_path = str(cached)
+            if post.preview_url:
+                self._fetch_thumbnail(start + i, post.preview_url)
 
     def _fetch_thumbnail(self, index: int, url: str) -> None:
         async def _download():

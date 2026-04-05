@@ -319,6 +319,20 @@ class ThumbnailGrid(QScrollArea):
 
         return self._thumbs
 
+    def append_posts(self, count: int) -> list[ThumbnailWidget]:
+        """Add more thumbnails to the existing grid."""
+        start = len(self._thumbs)
+        new_thumbs = []
+        for i in range(start, start + count):
+            thumb = ThumbnailWidget(i)
+            thumb.clicked.connect(self._on_thumb_click)
+            thumb.double_clicked.connect(self._on_thumb_double_click)
+            thumb.right_clicked.connect(self._on_thumb_right_click)
+            self._flow.add_widget(thumb)
+            self._thumbs.append(thumb)
+            new_thumbs.append(thumb)
+        return new_thumbs
+
     def _clear_multi(self) -> None:
         for idx in self._multi_selected:
             if 0 <= idx < len(self._thumbs):

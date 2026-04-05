@@ -94,6 +94,7 @@ _DEFAULTS = {
     "clear_cache_on_exit": "0",
     "slideshow_monitor": "",
     "library_dir": "",
+    "infinite_scroll": "0",
 }
 
 
