@@ -45,7 +45,7 @@ QPushButton {
 }
 QPushButton:hover { background-color: #444; }
 QPushButton:pressed { background-color: #555; }
-QPushButton:checked { background-color: #0078d7; }  /* Browse/Favorites active tab */
+QPushButton:checked { background-color: #0078d7; }  /* Active tab (Browse/Bookmarks/Library), Autoplay, Loop toggles */
 ```
 
 ### Text Inputs

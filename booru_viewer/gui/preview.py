@@ -393,20 +393,18 @@ class VideoPlayer(QWidget):
 
         self._autoplay = True
         self._autoplay_btn = QPushButton("Auto")
-        self._autoplay_btn.setFixedWidth(50)
+        self._autoplay_btn.setFixedWidth(70)
         self._autoplay_btn.setCheckable(True)
         self._autoplay_btn.setChecked(True)
         self._autoplay_btn.setToolTip("Auto-play videos when selected")
         self._autoplay_btn.clicked.connect(self._toggle_autoplay)
         controls.addWidget(self._autoplay_btn)
 
-        self._loop_mode = True
+        self._loop_state = 0  # 0=Loop, 1=Once, 2=Next
         self._loop_btn = QPushButton("Loop")
         self._loop_btn.setFixedWidth(55)
-        self._loop_btn.setCheckable(True)
-        self._loop_btn.setChecked(True)
-        self._loop_btn.setToolTip("Loop: replay video / Next: play next post")
-        self._loop_btn.clicked.connect(self._toggle_loop)
+        self._loop_btn.setToolTip("Loop: repeat / Once: stop at end / Next: advance")
+        self._loop_btn.clicked.connect(self._cycle_loop)
         controls.addWidget(self._loop_btn)
 
         layout.addLayout(controls)
@@ -433,11 +431,17 @@ class VideoPlayer(QWidget):
 
     def _toggle_autoplay(self, checked: bool = True) -> None:
         self._autoplay = self._autoplay_btn.isChecked()
-        self._autoplay_btn.setText("Auto" if self._autoplay else "Man.")
+        self._autoplay_btn.setText("Autoplay" if self._autoplay else "Manual")
+        # If turning off autoplay mid-playback, let current video finish then stop
 
-    def _toggle_loop(self) -> None:
-        self._loop_mode = self._loop_btn.isChecked()
-        self._loop_btn.setText("Loop" if self._loop_mode else "Next")
+    def _cycle_loop(self) -> None:
+        self._loop_state = (self._loop_state + 1) % 3
+        labels = ["Loop", "Once", "Next"]
+        self._loop_btn.setText(labels[self._loop_state])
+
+    @property
+    def _loop_mode(self):
+        return self._loop_state == 0
 
     def stop(self) -> None:
         self._player.stop()
@@ -471,13 +475,13 @@ class VideoPlayer(QWidget):
         self._time_label.setText(self._fmt(pos))
         # Detect loop restart: position jumps from near-end back to start
         if self._last_pos > 500 and pos < 100 and not self._ended:
-            if not self._loop_mode:
+            if self._loop_state == 1:  # Once
+                self._ended = True
+                self._player.pause()
+            elif self._loop_state == 2:  # Next
                 self._ended = True
                 self._player.pause()
                 self.play_next.emit()
-            elif not self._autoplay:
-                self._ended = True
-                self._player.pause()
         self._last_pos = pos
 
     def _on_duration(self, dur: int) -> None:
