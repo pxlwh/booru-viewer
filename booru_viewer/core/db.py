@@ -90,6 +90,10 @@ _DEFAULTS = {
     "preload_thumbnails": "1",
     "file_dialog_platform": "qt",
     "blacklist_enabled": "1",
+    "prefetch_adjacent": "0",
+    "clear_cache_on_exit": "0",
+    "slideshow_monitor": "",
+    "library_dir": "",
 }
 
 

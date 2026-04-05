@@ -756,8 +756,8 @@ class BooruApp(QMainWindow):
             try:
                 results = await client.autocomplete(query)
                 self._signals.autocomplete_done.emit(results)
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning(f"Operation failed: {e}")
             finally:
                 await client.close()
 
@@ -822,8 +822,8 @@ class BooruApp(QMainWindow):
                             if total > 0:
                                 self._signals.prefetch_progress.emit(idx, dl / total)
                         await download_image(self._posts[adj].file_url, progress_callback=_progress)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log.warning(f"Operation failed: {e}")
                     self._signals.prefetch_progress.emit(adj, -1)
         self._run_async(_prefetch_batch)
 
@@ -1367,8 +1367,8 @@ class BooruApp(QMainWindow):
                         source=post.source, cached_path=str(path),
                     )
                     self._signals.bookmark_done.emit(idx, f"Bookmarked {i+1}/{len(posts)}")
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning(f"Operation failed: {e}")
             self._signals.batch_done.emit(f"Bookmarked {len(posts)} posts")
 
         self._run_async(_do)
@@ -1397,8 +1397,8 @@ class BooruApp(QMainWindow):
                             source=post.source, cached_path=str(path), folder=folder,
                         )
                     self._signals.bookmark_done.emit(idx, f"Saved {i+1}/{len(posts)} to {where}")
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning(f"Operation failed: {e}")
             self._signals.batch_done.emit(f"Saved {len(posts)} to {where}")
 
         self._run_async(_do)
@@ -1423,8 +1423,8 @@ class BooruApp(QMainWindow):
                     source=post.source,
                     cached_path=str(path),
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning(f"Operation failed: {e}")
 
         self._run_async(_fav)
 
@@ -1776,8 +1776,8 @@ def _apply_windows_dark_mode(app: QApplication) -> None:
                     height: 0;
                 }
             """)
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning(f"Operation failed: {e}")
 
 
 def run() -> None:
@@ -1805,8 +1805,8 @@ def run() -> None:
                 pal = app.palette()
                 pal.setColor(QPalette.ColorRole.Highlight, QColor(m.group(1)))
                 app.setPalette(pal)
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning(f"Operation failed: {e}")
 
     # Set app icon (works in taskbar on all platforms)
     from PySide6.QtGui import QIcon
