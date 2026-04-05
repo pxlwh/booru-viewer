@@ -1898,9 +1898,21 @@ class BooruApp(QMainWindow):
         super().keyPressEvent(event)
 
     def _copy_preview_to_clipboard(self) -> None:
-        if self._preview._image_viewer._pixmap and not self._preview._image_viewer._pixmap.isNull():
-            QApplication.clipboard().setPixmap(self._preview._image_viewer._pixmap)
-            self._status.showMessage("Image copied to clipboard")
+        # Try image viewer pixmap first
+        pix = self._preview._image_viewer._pixmap
+        if pix and not pix.isNull():
+            QApplication.clipboard().setPixmap(pix)
+            self._status.showMessage(f"{len(self._posts)} results — Copied to clipboard")
+            return
+        # Try loading from cached path
+        path = self._preview._current_path
+        if path:
+            pix = QPixmap(path)
+            if not pix.isNull():
+                QApplication.clipboard().setPixmap(pix)
+                self._status.showMessage(f"{len(self._posts)} results — Copied to clipboard")
+                return
+        self._status.showMessage(f"{len(self._posts)} results — Nothing to copy")
 
     # -- Bookmarks --
 
