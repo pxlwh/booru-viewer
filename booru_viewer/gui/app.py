@@ -1746,6 +1746,20 @@ class BooruApp(QMainWindow):
             self._rating_combo.setCurrentIndex(idx)
         self._score_spin.setValue(self._db.get_setting_int("default_score"))
         self._bookmarks_view.refresh()
+        # Apply infinite scroll toggle live
+        self._infinite_scroll = self._db.get_setting_bool("infinite_scroll")
+        self._bottom_nav.setVisible(not self._infinite_scroll)
+        # Apply library dir
+        lib_dir = self._db.get_setting("library_dir")
+        if lib_dir:
+            from ..core.config import set_library_dir
+            set_library_dir(Path(lib_dir))
+        # Apply thumbnail size
+        from .grid import THUMB_SIZE
+        new_size = self._db.get_setting_int("thumbnail_size")
+        if new_size and new_size != THUMB_SIZE:
+            import booru_viewer.gui.grid as grid_mod
+            grid_mod.THUMB_SIZE = new_size
         self._status.showMessage("Settings applied")
 
     # -- Fullscreen & Privacy --
