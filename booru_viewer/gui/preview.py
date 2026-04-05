@@ -399,6 +399,7 @@ class VideoPlayer(QWidget):
         self._autoplay_btn.setChecked(True)
         self._autoplay_btn.setToolTip("Auto-play videos when selected")
         self._autoplay_btn.clicked.connect(self._toggle_autoplay)
+        self._autoplay_btn.hide()
         controls.addWidget(self._autoplay_btn)
 
         self._loop_state = 0  # 0=Loop, 1=Once, 2=Next
@@ -439,6 +440,7 @@ class VideoPlayer(QWidget):
         self._loop_state = (self._loop_state + 1) % 3
         labels = ["Loop", "Once", "Next"]
         self._loop_btn.setText(labels[self._loop_state])
+        self._autoplay_btn.setVisible(self._loop_state == 2)
 
     @property
     def _loop_mode(self):
