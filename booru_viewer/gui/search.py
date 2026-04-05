@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal, QTimer, QStringListModel
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QWidget,
     QHBoxLayout,
@@ -11,6 +12,7 @@ from PySide6.QtWidgets import (
     QCompleter,
     QMenu,
     QInputDialog,
+    QWidgetAction,
 )
 
 from ..core.db import Database
@@ -29,16 +31,30 @@ class SearchBar(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
 
-        # History button
-        self._history_btn = QPushButton("v")
-        self._history_btn.setFixedWidth(30)
-        self._history_btn.setToolTip("Search history & saved searches")
-        self._history_btn.clicked.connect(self._show_history_menu)
-        layout.addWidget(self._history_btn)
-
         self._input = QLineEdit()
         self._input.setPlaceholderText("Search tags... (supports -negatives)")
         self._input.returnPressed.connect(self._do_search)
+
+        # Dropdown arrow inside search bar
+        from PySide6.QtGui import QPixmap, QPainter, QFont
+        pixmap = QPixmap(16, 16)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        painter.setPen(self._input.palette().color(self._input.palette().ColorRole.Text))
+        painter.setFont(QFont(self._input.font().family(), 8))
+        painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "\u25BC")
+        painter.end()
+        self._history_action = self._input.addAction(
+            QIcon(pixmap),
+            QLineEdit.ActionPosition.TrailingPosition,
+        )
+        self._history_action.setToolTip("Search history & saved searches")
+        self._history_action.triggered.connect(self._show_history_menu)
+
+        # Show history when focusing empty input
+        self._input.mousePressEvent = self._on_input_click
+        self._original_mouse_press = QLineEdit.mousePressEvent
+
         layout.addWidget(self._input, stretch=1)
 
         # Save search button
@@ -65,6 +81,11 @@ class SearchBar(QWidget):
         self._ac_timer.setInterval(300)
         self._ac_timer.timeout.connect(self._request_autocomplete)
         self._input.textChanged.connect(self._on_text_changed)
+
+    def _on_input_click(self, event) -> None:
+        self._original_mouse_press(self._input, event)
+        if not self._input.text().strip():
+            self._show_history_menu()
 
     def _on_text_changed(self, text: str) -> None:
         self._ac_timer.start()
@@ -150,7 +171,7 @@ class SearchBar(QWidget):
             empty = menu.addAction("No history yet")
             empty.setEnabled(False)
 
-        action = menu.exec(self._history_btn.mapToGlobal(self._history_btn.rect().bottomLeft()))
+        action = menu.exec(self._input.mapToGlobal(self._input.rect().bottomLeft()))
         if not action:
             return
 
