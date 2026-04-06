@@ -909,11 +909,9 @@ class BooruApp(QMainWindow):
         if self._append_queue:
             QTimer.singleShot(50, self._drain_append_queue)
         else:
-            # All done — unlock loading, evict, prefetch
+            # All done — unlock loading, evict
             self._loading = False
             self._auto_evict_cache()
-            if self._db.get_setting("prefetch_mode") in ("Adjacent", "Full page"):
-                self._prefetch_adjacent(idx)
             # Check if still at bottom or content doesn't fill viewport
             sb = self._grid.verticalScrollBar()
             from .grid import THUMB_SIZE, THUMB_SPACING
