@@ -105,16 +105,26 @@ class ThumbnailWidget(QWidget):
         mid = pal.color(pal.ColorRole.Mid)
         window = pal.color(pal.ColorRole.Window)
 
-        # Background
-        if self._multi_selected:
-            bg = highlight.darker(200)
-        elif self._hover:
-            bg = window.lighter(130)
-        else:
-            bg = window
-        p.fillRect(self.rect(), bg)
+        # Fill entire cell with window color
+        p.fillRect(self.rect(), window)
 
-        # Border
+        # Content rect hugs the pixmap
+        if self._pixmap:
+            pw, ph = self._pixmap.width(), self._pixmap.height()
+            cx = (self.width() - pw) // 2
+            cy = (self.height() - ph) // 2
+            content = QRect(cx - BORDER_WIDTH, cy - BORDER_WIDTH,
+                            pw + BORDER_WIDTH * 2, ph + BORDER_WIDTH * 2)
+        else:
+            content = self.rect()
+
+        # Background (content area only)
+        if self._multi_selected:
+            p.fillRect(content, highlight.darker(200))
+        elif self._hover:
+            p.fillRect(content, window.lighter(130))
+
+        # Border (content area only)
         if self._selected:
             pen = QPen(highlight, BORDER_WIDTH)
         elif self._multi_selected:
@@ -124,7 +134,7 @@ class ThumbnailWidget(QWidget):
         else:
             pen = QPen(mid, 1)
         p.setPen(pen)
-        p.drawRect(self.rect().adjusted(0, 0, -1, -1))
+        p.drawRect(content.adjusted(0, 0, -1, -1))
 
         # Thumbnail
         if self._pixmap:
@@ -132,44 +142,45 @@ class ThumbnailWidget(QWidget):
             y = (self.height() - self._pixmap.height()) // 2
             p.drawPixmap(x, y, self._pixmap)
 
-        # Indicators: missing (red) / saved (green) dot + bookmark star
-        indicator_x = self.width() - 4
+        # Indicators relative to content rect
+        indicator_x = content.right() - 2
         if self._bookmarked:
             from PySide6.QtGui import QFont
             p.setPen(self._bookmarked_color)
             p.setFont(QFont(p.font().family(), 8))
             indicator_x -= 11
-            p.drawText(indicator_x, 12, "\u2605")
+            p.drawText(indicator_x, content.top() + 14, "\u2605")
         if self._missing:
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(self._missing_color)
             indicator_x -= 9
-            p.drawEllipse(indicator_x, 4, 7, 7)
+            p.drawEllipse(indicator_x, content.top() + 4, 7, 7)
         elif self._saved_locally:
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(self._saved_color)
             indicator_x -= 9
-            p.drawEllipse(indicator_x, 4, 7, 7)
+            p.drawEllipse(indicator_x, content.top() + 4, 7, 7)
 
         # Multi-select checkmark
         if self._multi_selected:
+            cx, cy = content.left() + 4, content.top() + 4
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(highlight)
-            p.drawEllipse(4, 4, 12, 12)
+            p.drawEllipse(cx, cy, 12, 12)
             p.setPen(QPen(base, 2))
-            p.drawLine(7, 10, 9, 13)
-            p.drawLine(9, 13, 14, 7)
+            p.drawLine(cx + 3, cy + 6, cx + 5, cy + 9)
+            p.drawLine(cx + 5, cy + 9, cx + 10, cy + 3)
 
         # Prefetch progress bar
         if self._prefetch_progress >= 0:
             bar_h = 3
-            bar_y = self.height() - bar_h - 2
-            bar_w = int((self.width() - 8) * self._prefetch_progress)
+            bar_y = content.bottom() - bar_h - 1
+            bar_w = int((content.width() - 8) * self._prefetch_progress)
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QColor(100, 100, 100, 120))
-            p.drawRect(4, bar_y, self.width() - 8, bar_h)
+            p.drawRect(content.left() + 4, bar_y, content.width() - 8, bar_h)
             p.setBrush(highlight)
-            p.drawRect(4, bar_y, bar_w, bar_h)
+            p.drawRect(content.left() + 4, bar_y, bar_w, bar_h)
 
         p.end()
 
