@@ -316,12 +316,15 @@ class BooruApp(QMainWindow):
         self._score_spin.setFixedWidth(50)
         self._score_spin.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
         top.addWidget(self._score_spin)
+        _btn_style = "padding: 2px 6px;"
         score_down = QPushButton("-")
         score_down.setFixedWidth(25)
+        score_down.setStyleSheet(_btn_style)
         score_down.clicked.connect(lambda: self._score_spin.setValue(max(0, self._score_spin.value() - 1)))
         top.addWidget(score_down)
         score_up = QPushButton("+")
         score_up.setFixedWidth(25)
+        score_up.setStyleSheet(_btn_style)
         score_up.clicked.connect(lambda: self._score_spin.setValue(self._score_spin.value() + 1))
         top.addWidget(score_up)
 
