@@ -341,7 +341,16 @@ class FullscreenPreview(QMainWindow):
                 self._show_overlay()
                 return True
         if event.type() == QEvent.Type.MouseMove and self.isActiveWindow():
-            self._show_overlay()
+            y = event.position().y() if hasattr(event, 'position') else event.pos().y()
+            h = self.centralWidget().height()
+            toolbar_zone = 60  # px from top/bottom edge to trigger
+            if y < toolbar_zone:
+                self._toolbar.show()
+                self._hide_timer.start()
+            elif y > h - toolbar_zone and self._stack.currentIndex() == 1:
+                self._video._controls_bar.show()
+                self._hide_timer.start()
+            self._ui_visible = self._toolbar.isVisible() or self._video._controls_bar.isVisible()
         return super().eventFilter(obj, event)
 
     def _hyprctl_get_window(self) -> dict | None:
