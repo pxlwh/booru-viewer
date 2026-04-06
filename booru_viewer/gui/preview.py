@@ -403,7 +403,7 @@ class VideoPlayer(QWidget):
         # Video surface
         self._video_widget = QVideoWidget()
         self._video_widget.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
-        layout.addWidget(self._video_widget, stretch=1)
+        layout.addWidget(self._video_widget, stretch=1, alignment=Qt.AlignmentFlag.AlignCenter)
 
         # Player
         self._player = QMediaPlayer()
