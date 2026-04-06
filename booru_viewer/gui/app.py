@@ -638,21 +638,29 @@ class BooruApp(QMainWindow):
 
         async def _search():
             client = self._make_client()
+            collected = []
+            last_page = page
+            api_exhausted = False
             try:
-                collected = []
                 current_page = page
                 max_pages = 5
                 for _ in range(max_pages):
                     batch = await client.search(tags=search_tags, page=current_page, limit=limit)
+                    last_page = current_page
                     filtered = _filter(batch)
                     collected.extend(filtered)
-                    if len(collected) >= limit or len(batch) < limit:
+                    if len(batch) < limit:
+                        api_exhausted = True
+                        break
+                    if len(collected) >= limit:
                         break
                     current_page += 1
-                self._signals.search_append.emit(collected[:limit])
             except Exception as e:
-                log.warning(f"Operation failed: {e}")
+                log.warning(f"Infinite scroll fetch failed: {e}")
             finally:
+                self._infinite_last_page = last_page
+                self._infinite_api_exhausted = api_exhausted
+                self._signals.search_append.emit(collected[:limit])
                 await client.close()
 
         self._run_async(_search)
@@ -865,10 +873,18 @@ class BooruApp(QMainWindow):
 
     def _on_search_append(self, posts: list) -> None:
         """Queue posts and add them one at a time as thumbnails arrive."""
+        # Advance page counter past pages consumed by backfill
+        last_page = getattr(self, '_infinite_last_page', self._current_page)
+        if last_page > self._current_page:
+            self._current_page = last_page
+
         if not posts:
             self._loading = False
-            self._infinite_exhausted = True
-            self._status.showMessage(f"{len(self._posts)} results (end)")
+            # Only mark exhausted if the API itself returned a short page,
+            # not just because blacklist/dedup filtering emptied the results
+            if getattr(self, '_infinite_api_exhausted', False):
+                self._infinite_exhausted = True
+                self._status.showMessage(f"{len(self._posts)} results (end)")
             return
         self._shown_post_ids.update(p.id for p in posts)
 
