@@ -876,8 +876,11 @@ class BooruApp(QMainWindow):
         """If content doesn't fill the viewport, trigger infinite scroll."""
         if not self._infinite_scroll or self._loading or getattr(self, '_infinite_exhausted', False):
             return
+        # Force layout update so scrollbar range is current
+        self._grid.widget().updateGeometry()
+        QApplication.processEvents()
         sb = self._grid.verticalScrollBar()
-        if sb.maximum() == 0:
+        if sb.maximum() == 0 and self._posts:
             self._on_reached_bottom()
 
     def _on_search_append(self, posts: list) -> None:
@@ -894,6 +897,9 @@ class BooruApp(QMainWindow):
             if getattr(self, '_infinite_api_exhausted', False):
                 self._infinite_exhausted = True
                 self._status.showMessage(f"{len(self._posts)} results (end)")
+            else:
+                # Viewport still not full — keep loading
+                QTimer.singleShot(100, self._check_viewport_fill)
             return
         self._shown_post_ids.update(p.id for p in posts)
 
