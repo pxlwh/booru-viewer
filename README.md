@@ -35,17 +35,20 @@ Supports custom styling via `custom.qss` — see [Theming](#theming).
 - Auto-detect site API type — just paste the URL
 - Tag search with autocomplete, history dropdown, and saved searches
 - Rating and score filtering (server-side `score:>=N`)
+- **Animated filter** — checkbox to only show video/gif/animated posts
 - Blacklisted tags and posts (client-side filtering with backfill)
 - Thumbnail grid with keyboard navigation
 - **Infinite scroll** — optional, auto-loads more posts at bottom
+- **Start from page** — jump to any page number on search
 - **Page cache** — prev/next loads from memory, no duplicates
 - **Copy File to Clipboard** — Ctrl+C, works for images and videos
 
 ### Preview
 - Image viewer with zoom (scroll wheel), pan (drag), and reset (middle click)
 - GIF animation, Pixiv ugoira auto-conversion (zip to animated GIF)
+- Animated PNG/WebP auto-conversion to GIF
 - Video playback (MP4, WebM) with play/pause, seek, volume, mute, and seamless looping
-- Info panel with post details, clickable tags, and filetype
+- Info panel with post details, date, clickable tags, and filetype
 
 ### Slideshow Mode
 - Right-click preview → "Slideshow Mode" for fullscreen viewing
@@ -211,11 +214,12 @@ A template is also available in Settings > Theme > Create from Template.
 
 ## Settings
 
-- **General** — page size, thumbnail size, default rating/score, file dialog platform
+- **General** — page size, thumbnail size, default rating/score, prefetch mode (Off / Nearby / Aggressive), infinite scroll, slideshow monitor, file dialog platform
 - **Cache** — max cache size, auto-evict, clear cache on exit (session-only mode)
-- **Blacklist** — tag blacklist with import/export
-- **Paths** — data directory, cache, database locations
+- **Blacklist** — tag blacklist with toggle, post URL blacklist
+- **Paths** — data directory, cache, database, configurable library directory
 - **Theme** — custom.qss editor, template generator, CSS guide
+- **Network** — connection log showing all hosts contacted this session
 
 ## Data Locations
 
@@ -230,7 +234,7 @@ A template is also available in Settings > Theme > Create from Template.
 
 booru-viewer makes **no connections** except to the booru sites you configure. There is no telemetry, analytics, update checking, or phoning home. All data stays local on your machine.
 
-Every outgoing request is logged in the debug panel (View > Log) so you can verify this yourself — you will only see requests to the booru API endpoints and CDNs you chose to connect to.
+Every outgoing request is logged in Settings > Network so you can verify this yourself — you will only see requests to the booru API endpoints and CDNs you chose to connect to.
 
 ## License
 
