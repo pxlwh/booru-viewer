@@ -845,7 +845,7 @@ class BooruApp(QMainWindow):
         self._grid.setFocus()
 
         # Start prefetching from top of page
-        if self._db.get_setting_bool("prefetch_adjacent") and posts:
+        if self._db.get_setting("prefetch_mode") in ("Adjacent", "Full page") and posts:
             self._prefetch_adjacent(0)
 
         # Infinite scroll: if first page doesn't fill viewport, load more
@@ -912,7 +912,7 @@ class BooruApp(QMainWindow):
             # All done — unlock loading, evict, prefetch
             self._loading = False
             self._auto_evict_cache()
-            if self._db.get_setting_bool("prefetch_adjacent"):
+            if self._db.get_setting("prefetch_mode") in ("Adjacent", "Full page"):
                 self._prefetch_adjacent(idx)
             # Check if still at bottom or content doesn't fill viewport
             sb = self._grid.verticalScrollBar()
@@ -1000,37 +1000,45 @@ class BooruApp(QMainWindow):
             self._run_async(_load)
 
             # Prefetch adjacent posts
-            if self._db.get_setting_bool("prefetch_adjacent"):
+            if self._db.get_setting("prefetch_mode") in ("Adjacent", "Full page"):
                 self._prefetch_adjacent(index)
 
     def _prefetch_adjacent(self, index: int) -> None:
-        """Prefetch outward from clicked post in all directions, covering the whole page."""
+        """Prefetch posts around the given index."""
         total = len(self._posts)
         if total == 0:
             return
         cols = self._grid._flow.columns
+        mode = self._db.get_setting("prefetch_mode")
 
-        # Build ring order: at each distance, grab all 8 directions
-        seen = {index}
-        order = []
-        for dist in range(1, total):
-            ring = set()
-            for dy in (-dist, 0, dist):
-                for dx in (-dist, 0, dist):
-                    if dy == 0 and dx == 0:
-                        continue
-                    adj = index + dy * cols + dx
+        if mode == "Adjacent":
+            # Just 4 cardinals: left, right, up, down
+            order = []
+            for offset in [1, -1, cols, -cols]:
+                adj = index + offset
+                if 0 <= adj < total:
+                    order.append(adj)
+        else:
+            # Full page: ring expansion in all 8 directions
+            seen = {index}
+            order = []
+            for dist in range(1, total):
+                ring = set()
+                for dy in (-dist, 0, dist):
+                    for dx in (-dist, 0, dist):
+                        if dy == 0 and dx == 0:
+                            continue
+                        adj = index + dy * cols + dx
+                        if 0 <= adj < total and adj not in seen:
+                            ring.add(adj)
+                for adj in (index + dist, index - dist):
                     if 0 <= adj < total and adj not in seen:
                         ring.add(adj)
-            # Also add pure linear neighbors for non-grid nav
-            for adj in (index + dist, index - dist):
-                if 0 <= adj < total and adj not in seen:
-                    ring.add(adj)
-            for adj in sorted(ring):
-                seen.add(adj)
-                order.append(adj)
-            if len(order) >= total - 1:
-                break
+                for adj in sorted(ring):
+                    seen.add(adj)
+                    order.append(adj)
+                if len(order) >= total - 1:
+                    break
 
         async def _prefetch_spiral():
             for adj in order:

@@ -111,9 +111,13 @@ class SettingsDialog(QDialog):
         form.addRow("", self._preload)
 
         # Prefetch adjacent posts
-        self._prefetch = QCheckBox("Prefetch whole page over time")
-        self._prefetch.setChecked(self._db.get_setting_bool("prefetch_adjacent"))
-        form.addRow("", self._prefetch)
+        self._prefetch_combo = QComboBox()
+        self._prefetch_combo.addItems(["Off", "Adjacent", "Full page"])
+        prefetch_mode = self._db.get_setting("prefetch_mode") or "Off"
+        idx = self._prefetch_combo.findText(prefetch_mode)
+        if idx >= 0:
+            self._prefetch_combo.setCurrentIndex(idx)
+        form.addRow("Prefetch:", self._prefetch_combo)
 
         # Infinite scroll
         self._infinite_scroll = QCheckBox("Infinite scroll (replaces page buttons)")
@@ -681,7 +685,7 @@ class SettingsDialog(QDialog):
         self._db.set_setting("default_rating", self._default_rating.currentText())
         self._db.set_setting("default_score", str(self._default_score.value()))
         self._db.set_setting("preload_thumbnails", "1" if self._preload.isChecked() else "0")
-        self._db.set_setting("prefetch_adjacent", "1" if self._prefetch.isChecked() else "0")
+        self._db.set_setting("prefetch_mode", self._prefetch_combo.currentText())
         self._db.set_setting("infinite_scroll", "1" if self._infinite_scroll.isChecked() else "0")
         self._db.set_setting("slideshow_monitor", self._monitor_combo.currentText())
         self._db.set_setting("library_dir", self._library_dir.text().strip())
