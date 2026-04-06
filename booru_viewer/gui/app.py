@@ -642,7 +642,8 @@ class BooruApp(QMainWindow):
             try:
                 collected = []
                 current_page = page
-                for _ in range(5):
+                max_pages = 20 if animated_only else 5
+                for _ in range(max_pages):
                     batch = await client.search(tags=search_tags, page=current_page, limit=limit)
                     filtered = _filter(batch)
                     collected.extend(filtered)
@@ -719,10 +720,6 @@ class BooruApp(QMainWindow):
         if self._min_score > 0:
             parts.append(f"score:>={self._min_score}")
 
-        # Animated filter — server-side tag
-        if self._animated_only.isChecked():
-            parts.append("animated")
-
         return " ".join(parts)
 
     def _do_search(self) -> None:
@@ -763,7 +760,7 @@ class BooruApp(QMainWindow):
             try:
                 collected = []
                 current_page = page
-                max_pages = 5  # safety cap to avoid infinite fetching
+                max_pages = 20 if animated_only else 5
                 for _ in range(max_pages):
                     batch = await client.search(tags=search_tags, page=current_page, limit=limit)
                     filtered = _filter(batch)
