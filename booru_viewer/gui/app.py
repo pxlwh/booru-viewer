@@ -909,8 +909,9 @@ class BooruApp(QMainWindow):
         if self._append_queue:
             QTimer.singleShot(50, self._drain_append_queue)
         else:
-            # All done — unlock loading and prefetch
+            # All done — unlock loading, evict, prefetch
             self._loading = False
+            self._auto_evict_cache()
             if self._db.get_setting_bool("prefetch_adjacent"):
                 self._prefetch_adjacent(idx)
             # Check if still at bottom or content doesn't fill viewport
