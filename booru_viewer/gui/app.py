@@ -333,6 +333,15 @@ class BooruApp(QMainWindow):
         self._animated_only.setToolTip("Only show animated/video posts")
         top.addWidget(self._animated_only)
 
+        page_label = QLabel("Page")
+        top.addWidget(page_label)
+        self._page_spin = QSpinBox()
+        self._page_spin.setRange(1, 99999)
+        self._page_spin.setValue(1)
+        self._page_spin.setFixedWidth(50)
+        self._page_spin.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
+        top.addWidget(self._page_spin)
+
         self._search_bar = SearchBar(db=self._db)
         self._search_bar.search_requested.connect(self._on_search)
         self._search_bar.autocomplete_requested.connect(self._request_autocomplete)
@@ -574,7 +583,7 @@ class BooruApp(QMainWindow):
 
     def _on_search(self, tags: str) -> None:
         self._current_tags = tags
-        self._current_page = 1
+        self._current_page = self._page_spin.value()
         self._shown_post_ids = set()
         self._page_cache = {}
         self._infinite_exhausted = False
