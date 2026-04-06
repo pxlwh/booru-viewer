@@ -249,7 +249,7 @@ Every outgoing request is logged in Settings > Network so you can verify this yo
 
 If you find this useful, consider buying me a coffee:
 
-[![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/paxmoe)
+[![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-00ff00?style=for-the-badge&logo=ko-fi&logoColor=00ff00&labelColor=000000&color=000000)](https://ko-fi.com/paxmoe)
 
 ## License
 
