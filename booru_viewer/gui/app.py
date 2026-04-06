@@ -211,6 +211,11 @@ class BooruApp(QMainWindow):
         if lib_dir:
             from ..core.config import set_library_dir
             set_library_dir(Path(lib_dir))
+        # Apply saved thumbnail size
+        saved_thumb = self._db.get_setting_int("thumbnail_size")
+        if saved_thumb:
+            import booru_viewer.gui.grid as grid_mod
+            grid_mod.THUMB_SIZE = saved_thumb
         self._current_site: Site | None = None
         self._posts: list[Post] = []
         self._current_page = 1
