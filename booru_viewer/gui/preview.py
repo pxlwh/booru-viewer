@@ -254,18 +254,21 @@ class FullscreenPreview(QMainWindow):
             self._hyprctl_resize(0, 0)  # only sets keep_aspect_ratio
             return
         aspect = content_w / content_h
-        w = self.width()
-        new_h = int(w / aspect)
-        # Clamp to screen bounds if content would overspill
         screen = self.screen()
         if screen:
             avail = screen.availableGeometry()
-            if new_h > avail.height():
-                new_h = avail.height()
-                w = int(new_h * aspect)
-            if w > avail.width():
-                w = avail.width()
-                new_h = int(w / aspect)
+            max_w = avail.width()
+            max_h = avail.height()
+        else:
+            max_w = max_h = 9999
+        w = min(self.width(), max_w)
+        new_h = int(w / aspect)
+        if new_h > max_h:
+            new_h = max_h
+            w = int(new_h * aspect)
+        _log.info(f"Aspect adjust: content={content_w}x{content_h} aspect={aspect:.2f} -> {w}x{new_h} (screen={max_w}x{max_h})")
+        floating = self._is_hypr_floating()
+        _log.info(f"Hyprland floating={floating}")
         self.resize(w, new_h)
         self._hyprctl_resize(w, new_h)
 
@@ -399,7 +402,8 @@ class FullscreenPreview(QMainWindow):
         try:
             subprocess.Popen(
                 ["hyprctl", "--batch",
-                 f"dispatch resizewindowpixel exact {w} {h},address:{addr}"
+                 f"dispatch setprop address:{addr} keep_aspect_ratio 0"
+                 f" ; dispatch resizewindowpixel exact {w} {h},address:{addr}"
                  f" ; dispatch setprop address:{addr} keep_aspect_ratio 1"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
