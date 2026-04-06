@@ -920,7 +920,7 @@ class BooruApp(QMainWindow):
         self._drain_append_queue()
 
     def _drain_append_queue(self) -> None:
-        """Add queued posts to the grid one at a time with thumbnail fetch."""
+        """Add all queued posts to the grid at once, thumbnails load async."""
         if not getattr(self, '_append_queue', None) or len(self._append_queue) == 0:
             self._loading = False
             return
@@ -933,36 +933,34 @@ class BooruApp(QMainWindow):
         if _sd.exists():
             _saved_ids = {int(f.stem) for f in _sd.iterdir() if f.is_file() and f.stem.isdigit()}
 
-        post = self._append_queue.pop(0)
-        idx = len(self._posts)
-        self._posts.append(post)
-        thumbs = self._grid.append_posts(1)
-        thumb = thumbs[0]
+        posts = self._append_queue[:]
+        self._append_queue.clear()
+        start_idx = len(self._posts)
+        self._posts.extend(posts)
+        thumbs = self._grid.append_posts(len(posts))
 
-        if site_id and self._db.is_bookmarked(site_id, post.id):
-            thumb.set_bookmarked(True)
-        thumb.set_saved_locally(post.id in _saved_ids)
-        cached = cached_path_for(post.file_url)
-        if cached.exists():
-            thumb._cached_path = str(cached)
-        if post.preview_url:
-            self._fetch_thumbnail(idx, post.preview_url)
+        for i, (post, thumb) in enumerate(zip(posts, thumbs)):
+            idx = start_idx + i
+            if site_id and self._db.is_bookmarked(site_id, post.id):
+                thumb.set_bookmarked(True)
+            thumb.set_saved_locally(post.id in _saved_ids)
+            cached = cached_path_for(post.file_url)
+            if cached.exists():
+                thumb._cached_path = str(cached)
+            if post.preview_url:
+                self._fetch_thumbnail(idx, post.preview_url)
 
         self._status.showMessage(f"{len(self._posts)} results")
 
-        # Schedule next post
-        if self._append_queue:
-            QTimer.singleShot(50, self._drain_append_queue)
-        else:
-            # All done — unlock loading, evict
-            self._loading = False
-            self._auto_evict_cache()
-            # Check if still at bottom or content doesn't fill viewport
-            sb = self._grid.verticalScrollBar()
-            from .grid import THUMB_SIZE, THUMB_SPACING
-            threshold = THUMB_SIZE + THUMB_SPACING * 2
-            if sb.maximum() == 0 or sb.value() >= sb.maximum() - threshold:
-                self._on_reached_bottom()
+        # All done — unlock loading, evict
+        self._loading = False
+        self._auto_evict_cache()
+        # Check if still at bottom or content doesn't fill viewport
+        sb = self._grid.verticalScrollBar()
+        from .grid import THUMB_SIZE, THUMB_SPACING
+        threshold = THUMB_SIZE + THUMB_SPACING * 2
+        if sb.maximum() == 0 or sb.value() >= sb.maximum() - threshold:
+            self._on_reached_bottom()
 
     def _fetch_thumbnail(self, index: int, url: str) -> None:
         async def _download():
