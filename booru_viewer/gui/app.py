@@ -642,12 +642,16 @@ class BooruApp(QMainWindow):
             try:
                 collected = []
                 current_page = page
-                max_pages = 20 if animated_only else 5
+                max_pages = 50 if animated_only else 5
                 for _ in range(max_pages):
                     batch = await client.search(tags=search_tags, page=current_page, limit=limit)
+                    if not batch:
+                        break
                     filtered = _filter(batch)
                     collected.extend(filtered)
-                    if len(collected) >= limit or len(batch) < limit:
+                    if len(collected) >= limit:
+                        break
+                    if len(batch) < limit and not animated_only:
                         break
                     current_page += 1
                 self._signals.search_append.emit(collected[:limit])
@@ -760,14 +764,18 @@ class BooruApp(QMainWindow):
             try:
                 collected = []
                 current_page = page
-                max_pages = 20 if animated_only else 5
+                max_pages = 50 if animated_only else 5
                 for _ in range(max_pages):
                     batch = await client.search(tags=search_tags, page=current_page, limit=limit)
+                    if not batch:
+                        break  # API returned nothing — end of results
                     filtered = _filter(batch)
                     collected.extend(filtered)
                     log.debug(f"Backfill: page={current_page} batch={len(batch)} filtered={len(filtered)} total={len(collected)}/{limit}")
-                    if len(collected) >= limit or len(batch) < limit:
+                    if len(collected) >= limit:
                         break
+                    if len(batch) < limit and not animated_only:
+                        break  # short page = end (skip for animated — keep scanning)
                     current_page += 1
                 self._signals.search_done.emit(collected[:limit])
             except Exception as e:
