@@ -719,14 +719,9 @@ class BooruApp(QMainWindow):
         if self._min_score > 0:
             parts.append(f"score:>={self._min_score}")
 
-        # Animated filter — server-side where supported
+        # Animated filter — server-side tag
         if self._animated_only.isChecked():
-            if api in ("danbooru", "e621"):
-                parts.append("filetype:gif,mp4,webm,zip")
-            elif api == "gelbooru":
-                parts.append("animated")
-            else:
-                parts.append("animated")
+            parts.append("animated")
 
         return " ".join(parts)
 
