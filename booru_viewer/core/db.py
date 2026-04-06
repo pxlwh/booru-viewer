@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import sqlite3
 import json
-import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Generator
 
 from .config import db_path
 

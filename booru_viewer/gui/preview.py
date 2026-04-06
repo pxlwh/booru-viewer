@@ -531,8 +531,6 @@ class VideoPlayer(QWidget):
         self._audio.setMuted(not self._audio.isMuted())
         self._mute_btn.setText("Unmute" if self._audio.isMuted() else "Mute")
 
-    _last_pos = 0
-
     def _on_position(self, pos: int) -> None:
         if not self._seek_slider.isSliderDown():
             self._seek_slider.setValue(pos)
