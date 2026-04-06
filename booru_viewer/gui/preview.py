@@ -484,7 +484,8 @@ class VideoPlayer(QWidget):
         self._error_fired = False
         self._ended = False
         self._video_sized = False
-        self._video_widget.setMaximumHeight(16777215)  # reset max height
+        self._video_widget.setMaximumHeight(16777215)
+        self._video_widget.hide()  # hide until first frame to prevent black flash
         self._last_pos = 0
         self._player.setLoops(QMediaPlayer.Loops.Infinite)
         self._player.setSource(QUrl.fromLocalFile(path))
@@ -569,9 +570,10 @@ class VideoPlayer(QWidget):
         vw = frame.size().width()
         vh = frame.size().height()
         if vw > 0 and vh > 0:
-            available_w = self._video_widget.width()
+            available_w = self._video_widget.parentWidget().width() if self._video_widget.parentWidget() else self._video_widget.width()
             scaled_h = int(available_w * vh / vw)
             self._video_widget.setMaximumHeight(scaled_h)
+        self._video_widget.show()
 
     def _on_media_status(self, status) -> None:
         pass
