@@ -325,6 +325,11 @@ class BooruApp(QMainWindow):
         score_up.clicked.connect(lambda: self._score_spin.setValue(self._score_spin.value() + 1))
         top.addWidget(score_up)
 
+        from PySide6.QtWidgets import QCheckBox
+        self._animated_only = QCheckBox("Animated")
+        self._animated_only.setToolTip("Only show animated/video posts")
+        top.addWidget(self._animated_only)
+
         self._search_bar = SearchBar(db=self._db)
         self._search_bar.search_requested.connect(self._on_search)
         self._search_bar.autocomplete_requested.connect(self._request_autocomplete)
@@ -619,12 +624,16 @@ class BooruApp(QMainWindow):
             bl_tags = set(self._db.get_blacklisted_tags())
         bl_posts = self._db.get_blacklisted_posts()
         shown_ids = getattr(self, '_shown_post_ids', set()).copy()
+        animated_only = self._animated_only.isChecked()
+        _ANIM_EXTS = {".gif", ".mp4", ".webm", ".mkv", ".mov", ".avi", ".zip"}
 
         def _filter(posts):
             if bl_tags:
                 posts = [p for p in posts if not bl_tags.intersection(p.tag_list)]
             if bl_posts:
                 posts = [p for p in posts if p.file_url not in bl_posts]
+            if animated_only:
+                posts = [p for p in posts if Path(p.file_url.split("?")[0]).suffix.lower() in _ANIM_EXTS]
             posts = [p for p in posts if p.id not in shown_ids]
             return posts
 
@@ -731,12 +740,16 @@ class BooruApp(QMainWindow):
             bl_tags = set(self._db.get_blacklisted_tags())
         bl_posts = self._db.get_blacklisted_posts()
         shown_ids = getattr(self, '_shown_post_ids', set()).copy()
+        animated_only = self._animated_only.isChecked()
+        _ANIM_EXTS = {".gif", ".mp4", ".webm", ".mkv", ".mov", ".avi", ".zip"}
 
         def _filter(posts):
             if bl_tags:
                 posts = [p for p in posts if not bl_tags.intersection(p.tag_list)]
             if bl_posts:
                 posts = [p for p in posts if p.file_url not in bl_posts]
+            if animated_only:
+                posts = [p for p in posts if Path(p.file_url.split("?")[0]).suffix.lower() in _ANIM_EXTS]
             # Skip posts already shown on previous pages
             posts = [p for p in posts if p.id not in shown_ids]
             return posts
