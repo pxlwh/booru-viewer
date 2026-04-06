@@ -26,7 +26,7 @@ hiddenimports = [
 a = Analysis(
     ['booru_viewer/main_gui.py'],
     pathex=[],
-    binaries=[('mpv-2.dll', '.')] if sys.platform == 'win32' else [],
+    binaries=[('libmpv-2.dll', '.')] if sys.platform == 'win32' else [],
     datas=[('icon.png', '.')],
     hiddenimports=hiddenimports,
     hookspath=[],
