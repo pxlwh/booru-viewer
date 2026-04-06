@@ -624,16 +624,12 @@ class BooruApp(QMainWindow):
             bl_tags = set(self._db.get_blacklisted_tags())
         bl_posts = self._db.get_blacklisted_posts()
         shown_ids = getattr(self, '_shown_post_ids', set()).copy()
-        animated_only = self._animated_only.isChecked()
-        _ANIM_EXTS = {".gif", ".mp4", ".webm", ".mkv", ".mov", ".avi", ".zip"}
 
         def _filter(posts):
             if bl_tags:
                 posts = [p for p in posts if not bl_tags.intersection(p.tag_list)]
             if bl_posts:
                 posts = [p for p in posts if p.file_url not in bl_posts]
-            if animated_only:
-                posts = [p for p in posts if Path(p.file_url.split("?")[0]).suffix.lower() in _ANIM_EXTS]
             posts = [p for p in posts if p.id not in shown_ids]
             return posts
 
@@ -642,16 +638,12 @@ class BooruApp(QMainWindow):
             try:
                 collected = []
                 current_page = page
-                max_pages = 50 if animated_only else 5
+                max_pages = 5
                 for _ in range(max_pages):
                     batch = await client.search(tags=search_tags, page=current_page, limit=limit)
-                    if not batch:
-                        break
                     filtered = _filter(batch)
                     collected.extend(filtered)
-                    if len(collected) >= limit:
-                        break
-                    if len(batch) < limit and not animated_only:
+                    if len(collected) >= limit or len(batch) < limit:
                         break
                     current_page += 1
                 self._signals.search_append.emit(collected[:limit])
@@ -724,6 +716,10 @@ class BooruApp(QMainWindow):
         if self._min_score > 0:
             parts.append(f"score:>={self._min_score}")
 
+        # Animated filter
+        if self._animated_only.isChecked():
+            parts.append("animated")
+
         return " ".join(parts)
 
     def _do_search(self) -> None:
@@ -745,16 +741,12 @@ class BooruApp(QMainWindow):
             bl_tags = set(self._db.get_blacklisted_tags())
         bl_posts = self._db.get_blacklisted_posts()
         shown_ids = getattr(self, '_shown_post_ids', set()).copy()
-        animated_only = self._animated_only.isChecked()
-        _ANIM_EXTS = {".gif", ".mp4", ".webm", ".mkv", ".mov", ".avi", ".zip"}
 
         def _filter(posts):
             if bl_tags:
                 posts = [p for p in posts if not bl_tags.intersection(p.tag_list)]
             if bl_posts:
                 posts = [p for p in posts if p.file_url not in bl_posts]
-            if animated_only:
-                posts = [p for p in posts if Path(p.file_url.split("?")[0]).suffix.lower() in _ANIM_EXTS]
             # Skip posts already shown on previous pages
             posts = [p for p in posts if p.id not in shown_ids]
             return posts
@@ -764,18 +756,14 @@ class BooruApp(QMainWindow):
             try:
                 collected = []
                 current_page = page
-                max_pages = 50 if animated_only else 5
+                max_pages = 5
                 for _ in range(max_pages):
                     batch = await client.search(tags=search_tags, page=current_page, limit=limit)
-                    if not batch:
-                        break  # API returned nothing — end of results
                     filtered = _filter(batch)
                     collected.extend(filtered)
                     log.debug(f"Backfill: page={current_page} batch={len(batch)} filtered={len(filtered)} total={len(collected)}/{limit}")
-                    if len(collected) >= limit:
+                    if len(collected) >= limit or len(batch) < limit:
                         break
-                    if len(batch) < limit and not animated_only:
-                        break  # short page = end (skip for animated — keep scanning)
                     current_page += 1
                 self._signals.search_done.emit(collected[:limit])
             except Exception as e:
