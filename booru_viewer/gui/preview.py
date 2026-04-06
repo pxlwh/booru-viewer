@@ -399,9 +399,9 @@ class VideoPlayer(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Video surface
+        # Video surface — inherit theme background instead of black
         self._video_widget = QVideoWidget()
-        self._video_widget.setAutoFillBackground(True)
+        self._video_widget.setStyleSheet("background: transparent;")
         layout.addWidget(self._video_widget, stretch=1)
 
         # Player
