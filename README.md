@@ -6,7 +6,7 @@ Qt6 GUI, cross-platform (Linux + Windows), fully themeable.
 
 If you find this useful, consider buying me a coffee:
 
-[![Ko-fi](https://img.shields.io/badge/Support_on_Ko--fi-00ff00?style=for-the-badge&logo=ko-fi&logoColor=00ff00&color=000000)](https://ko-fi.com/paxmoe)
+[![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-00ff00?style=for-the-badge&logo=ko-fi&logoColor=00ff00&labelColor=000000&color=00ff00)](https://ko-fi.com/paxmoe)
 
 ## Screenshots
 
