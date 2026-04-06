@@ -245,6 +245,12 @@ booru-viewer makes **no connections** except to the booru sites you configure. T
 
 Every outgoing request is logged in Settings > Network so you can verify this yourself — you will only see requests to the booru API endpoints and CDNs you chose to connect to.
 
+## Support
+
+If you find this useful, consider buying me a coffee:
+
+[![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/paxmoe)
+
 ## License
 
 MIT
