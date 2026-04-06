@@ -1886,6 +1886,10 @@ class BooruApp(QMainWindow):
         from ..core.cache import cached_path_for, is_cached
         path = cached_path_for(post.file_url)
         if path.exists():
+            # Pause any playing video before opening externally
+            self._preview._video_player._player.pause()
+            if self._fullscreen_window and self._fullscreen_window.isVisible():
+                self._fullscreen_window._video._player.pause()
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
         else:
             self._status.showMessage("Image not cached yet — double-click to download first")
