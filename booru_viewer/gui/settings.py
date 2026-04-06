@@ -112,7 +112,7 @@ class SettingsDialog(QDialog):
 
         # Prefetch adjacent posts
         self._prefetch_combo = QComboBox()
-        self._prefetch_combo.addItems(["Off", "Adjacent", "Full page"])
+        self._prefetch_combo.addItems(["Off", "Nearby", "Aggressive"])
         prefetch_mode = self._db.get_setting("prefetch_mode") or "Off"
         idx = self._prefetch_combo.findText(prefetch_mode)
         if idx >= 0:

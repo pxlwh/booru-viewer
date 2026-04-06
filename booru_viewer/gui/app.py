@@ -845,7 +845,7 @@ class BooruApp(QMainWindow):
         self._grid.setFocus()
 
         # Start prefetching from top of page
-        if self._db.get_setting("prefetch_mode") in ("Adjacent", "Full page") and posts:
+        if self._db.get_setting("prefetch_mode") in ("Nearby", "Aggressive") and posts:
             self._prefetch_adjacent(0)
 
         # Infinite scroll: if first page doesn't fill viewport, load more
@@ -998,7 +998,7 @@ class BooruApp(QMainWindow):
             self._run_async(_load)
 
             # Prefetch adjacent posts
-            if self._db.get_setting("prefetch_mode") in ("Adjacent", "Full page"):
+            if self._db.get_setting("prefetch_mode") in ("Nearby", "Aggressive"):
                 self._prefetch_adjacent(index)
 
     def _prefetch_adjacent(self, index: int) -> None:
@@ -1009,7 +1009,7 @@ class BooruApp(QMainWindow):
         cols = self._grid._flow.columns
         mode = self._db.get_setting("prefetch_mode")
 
-        if mode == "Adjacent":
+        if mode == "Nearby":
             # Just 4 cardinals: left, right, up, down
             order = []
             for offset in [1, -1, cols, -cols]:
@@ -1017,10 +1017,12 @@ class BooruApp(QMainWindow):
                 if 0 <= adj < total:
                     order.append(adj)
         else:
-            # Full page: ring expansion in all 8 directions
+            # Aggressive: ring expansion, capped to ~3 rows radius
+            max_radius = 3
+            max_posts = cols * max_radius * 2 + cols  # ~3 rows above and below
             seen = {index}
             order = []
-            for dist in range(1, total):
+            for dist in range(1, max_radius + 1):
                 ring = set()
                 for dy in (-dist, 0, dist):
                     for dx in (-dist, 0, dist):
@@ -1035,7 +1037,7 @@ class BooruApp(QMainWindow):
                 for adj in sorted(ring):
                     seen.add(adj)
                     order.append(adj)
-                if len(order) >= total - 1:
+                if len(order) >= max_posts:
                     break
 
         async def _prefetch_spiral():
