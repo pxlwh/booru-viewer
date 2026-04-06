@@ -94,7 +94,8 @@ class FullscreenPreview(QMainWindow):
         self._stack.addWidget(self._viewer)
 
         self._video = VideoPlayer()
-        self._video._auto_size_video = False  # fullscreen — don't constrain height
+        self._video._auto_size_video = True
+        self._video._size_by_width = False  # constrain width not height in fullscreen
         self._video.play_next.connect(lambda: self.navigate.emit(1))
         self._stack.addWidget(self._video)
 
@@ -486,6 +487,7 @@ class VideoPlayer(QWidget):
         self._ended = False
         self._video_sized = False
         self._video_widget.setMaximumHeight(16777215)
+        self._video_widget.setMaximumWidth(16777215)
         self._last_pos = 0
         self._player.setLoops(QMediaPlayer.Loops.Infinite)
         self._player.setSource(QUrl.fromLocalFile(path))
@@ -562,7 +564,8 @@ class VideoPlayer(QWidget):
         else:
             self._play_btn.setText("Play")
 
-    _auto_size_video = True  # set False for fullscreen/slideshow
+    _auto_size_video = True
+    _size_by_width = True  # True = constrain height (preview), False = constrain width (slideshow)
 
     def _on_video_size(self, frame) -> None:
         """Resize video widget to match video aspect ratio on first frame."""
@@ -573,9 +576,13 @@ class VideoPlayer(QWidget):
             vw = frame.size().width()
             vh = frame.size().height()
             if vw > 0 and vh > 0:
-                available_w = self._video_widget.parentWidget().width() if self._video_widget.parentWidget() else self._video_widget.width()
-                scaled_h = int(available_w * vh / vw)
-                self._video_widget.setMaximumHeight(scaled_h)
+                parent = self._video_widget.parentWidget()
+                if self._size_by_width:
+                    available_w = parent.width() if parent else self._video_widget.width()
+                    self._video_widget.setMaximumHeight(int(available_w * vh / vw))
+                else:
+                    available_h = parent.height() if parent else self._video_widget.height()
+                    self._video_widget.setMaximumWidth(int(available_h * vw / vh))
 
     def _on_media_status(self, status) -> None:
         pass
