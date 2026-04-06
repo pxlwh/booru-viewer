@@ -144,6 +144,9 @@ class BookmarksView(QWidget):
                     for ext in MEDIA_EXTENSIONS
                 )
             thumb.set_saved_locally(saved)
+            # Set cached path for drag-and-drop and copy
+            if fav.cached_path and Path(fav.cached_path).exists():
+                thumb._cached_path = fav.cached_path
             if fav.preview_url:
                 self._load_thumb_async(i, fav.preview_url)
             elif fav.cached_path and Path(fav.cached_path).exists():
