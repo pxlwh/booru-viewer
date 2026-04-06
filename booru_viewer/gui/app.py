@@ -2225,6 +2225,17 @@ def _apply_windows_dark_mode(app: QApplication) -> None:
                     border-radius: 2px;
                     padding: 3px 6px;
                 }
+                QComboBox::drop-down {
+                    border: none;
+                    width: 20px;
+                }
+                QComboBox::down-arrow {
+                    image: none;
+                    border-left: 4px solid transparent;
+                    border-right: 4px solid transparent;
+                    border-top: 5px solid #aaa;
+                    margin-right: 6px;
+                }
                 QSpinBox {
                     border: 1px solid #555;
                     border-radius: 2px;
