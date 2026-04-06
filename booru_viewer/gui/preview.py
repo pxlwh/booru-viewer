@@ -399,9 +399,9 @@ class VideoPlayer(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Video surface — inherit theme background instead of black
+        # Video surface
         self._video_widget = QVideoWidget()
-        self._video_widget.setStyleSheet("background: transparent;")
+        self._video_widget.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
         layout.addWidget(self._video_widget, stretch=1)
 
         # Player
@@ -471,6 +471,11 @@ class VideoPlayer(QWidget):
         self._player.playbackStateChanged.connect(self._on_state)
         self._player.mediaStatusChanged.connect(self._on_media_status)
         self._player.errorOccurred.connect(self._on_error)
+        # Resize video widget to match video aspect ratio
+        self._video_sized = False
+        sink = self._player.videoSink()
+        if sink:
+            sink.videoFrameChanged.connect(self._on_video_size)
         self._current_file: str | None = None
         self._error_fired = False
 
@@ -478,6 +483,8 @@ class VideoPlayer(QWidget):
         self._current_file = path
         self._error_fired = False
         self._ended = False
+        self._video_sized = False
+        self._video_widget.setMaximumHeight(16777215)  # reset max height
         self._last_pos = 0
         self._player.setLoops(QMediaPlayer.Loops.Infinite)
         self._player.setSource(QUrl.fromLocalFile(path))
@@ -553,6 +560,18 @@ class VideoPlayer(QWidget):
             self._play_btn.setText("Pause")
         else:
             self._play_btn.setText("Play")
+
+    def _on_video_size(self, frame) -> None:
+        """Resize video widget to match video aspect ratio on first frame."""
+        if self._video_sized or not frame.isValid():
+            return
+        self._video_sized = True
+        vw = frame.size().width()
+        vh = frame.size().height()
+        if vw > 0 and vh > 0:
+            available_w = self._video_widget.width()
+            scaled_h = int(available_w * vh / vw)
+            self._video_widget.setMaximumHeight(scaled_h)
 
     def _on_media_status(self, status) -> None:
         pass
