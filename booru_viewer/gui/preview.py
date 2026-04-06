@@ -343,7 +343,7 @@ class FullscreenPreview(QMainWindow):
         if event.type() == QEvent.Type.MouseMove and self.isActiveWindow():
             y = event.position().y() if hasattr(event, 'position') else event.pos().y()
             h = self.centralWidget().height()
-            toolbar_zone = 60  # px from top/bottom edge to trigger
+            toolbar_zone = 40  # px from top/bottom edge to trigger
             if y < toolbar_zone:
                 self._toolbar.show()
                 self._hide_timer.start()
