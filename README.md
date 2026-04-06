@@ -4,6 +4,8 @@ Local desktop app for browsing, searching, and saving images from booru-style im
 
 Qt6 GUI, cross-platform (Linux + Windows), fully themeable.
 
+If you find this useful, consider buying me a coffee:
+
 [![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-00ff00?style=for-the-badge&logo=ko-fi&logoColor=00ff00&labelColor=000000&color=000000)](https://ko-fi.com/paxmoe)
 
 ## Screenshots
