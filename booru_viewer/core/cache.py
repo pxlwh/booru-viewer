@@ -117,6 +117,35 @@ def _convert_ugoira_to_gif(zip_path: Path) -> Path:
     return gif_path
 
 
+def _convert_animated_to_gif(source_path: Path) -> Path:
+    """Convert animated PNG or WebP to GIF for Qt playback."""
+    gif_path = source_path.with_suffix(".gif")
+    if gif_path.exists():
+        return gif_path
+    try:
+        img = Image.open(source_path)
+        if not getattr(img, 'is_animated', False):
+            return source_path  # not animated, keep as-is
+        frames = []
+        durations = []
+        for i in range(img.n_frames):
+            img.seek(i)
+            frames.append(img.convert("RGBA").copy())
+            durations.append(img.info.get("duration", 80))
+        if not frames:
+            return source_path
+        frames[0].save(
+            gif_path, save_all=True, append_images=frames[1:],
+            duration=durations, loop=0, disposal=2,
+        )
+        if gif_path.exists():
+            source_path.unlink()
+            return gif_path
+    except Exception:
+        pass
+    return source_path
+
+
 async def download_image(
     url: str,
     client: httpx.AsyncClient | None = None,
@@ -140,9 +169,20 @@ async def download_image(
         if local.exists() and zipfile.is_zipfile(local):
             return _convert_ugoira_to_gif(local)
 
+    # Check if animated PNG/WebP was already converted to gif
+    if local.suffix.lower() in (".png", ".webp"):
+        gif_path = local.with_suffix(".gif")
+        if gif_path.exists():
+            return gif_path
+
     # Validate cached file isn't corrupt (e.g. HTML error page saved as image)
     if local.exists():
         if _is_valid_media(local):
+            # Convert animated PNG/WebP on access if not yet converted
+            if local.suffix.lower() in (".png", ".webp"):
+                converted = _convert_animated_to_gif(local)
+                if converted != local:
+                    return converted
             return local
         else:
             local.unlink()  # Remove corrupt cache entry
@@ -196,6 +236,9 @@ async def download_image(
         # Convert ugoira zip to animated GIF
         if local.suffix.lower() == ".zip" and zipfile.is_zipfile(local):
             local = _convert_ugoira_to_gif(local)
+        # Convert animated PNG/WebP to GIF for Qt playback
+        elif local.suffix.lower() in (".png", ".webp"):
+            local = _convert_animated_to_gif(local)
     finally:
         pass  # shared client stays open for connection reuse
     return local
