@@ -195,6 +195,15 @@ File > Manage Sites. Enter a URL, click Auto-Detect, and save.
 
 API credentials are optional — needed for Gelbooru and rate-limited sites.
 
+### Tested Sites
+
+- danbooru.donmai.us
+- gelbooru.com
+- rule34.xxx
+- safebooru.donmai.us
+- safebooru.org
+- e621.net
+
 ## Theming
 
 The app uses your OS native theme by default. To customize, copy a `.qss` file from the [`themes/`](themes/) folder to your data directory as `custom.qss`:
