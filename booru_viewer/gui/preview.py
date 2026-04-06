@@ -256,6 +256,13 @@ class FullscreenPreview(QMainWindow):
         aspect = content_w / content_h
         w = self.width()
         new_h = int(w / aspect)
+        # Clamp to screen bounds if portrait content would overspill
+        screen = self.screen()
+        if screen:
+            max_h = screen.availableGeometry().height()
+            if new_h > max_h:
+                new_h = max_h
+                w = int(new_h * aspect)
         self.resize(w, new_h)
         self._hyprctl_resize(w, new_h)
 
