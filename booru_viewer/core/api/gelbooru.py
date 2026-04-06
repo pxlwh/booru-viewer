@@ -44,7 +44,11 @@ class GelbooruClient(BooruClient):
             log.warning(f"  body: {resp.text[:500]}")
         resp.raise_for_status()
 
-        data = resp.json()
+        try:
+            data = resp.json()
+        except Exception:
+            log.warning(f"  non-JSON response: {resp.text[:200]}")
+            return []
         log.debug(f"  json type: {type(data).__name__}, keys: {list(data.keys()) if isinstance(data, dict) else f'list[{len(data)}]'}")
         # Gelbooru wraps posts in {"post": [...]} or returns {"post": []}
         if isinstance(data, dict):

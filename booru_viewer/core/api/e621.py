@@ -49,7 +49,10 @@ class E621Client(BooruClient):
         if resp.status_code != 200:
             log.warning(f"  body: {resp.text[:500]}")
         resp.raise_for_status()
-        data = resp.json()
+        try:
+            data = resp.json()
+        except Exception:
+            return []
 
         # e621 wraps posts in {"posts": [...]}
         if isinstance(data, dict):

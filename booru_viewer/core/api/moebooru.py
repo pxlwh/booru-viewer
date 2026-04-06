@@ -23,7 +23,10 @@ class MoebooruClient(BooruClient):
 
         resp = await self.client.get(f"{self.base_url}/post.json", params=params)
         resp.raise_for_status()
-        data = resp.json()
+        try:
+            data = resp.json()
+        except Exception:
+            return []
         if isinstance(data, dict):
             data = data.get("posts", data.get("post", []))
         if not isinstance(data, list):

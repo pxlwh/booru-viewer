@@ -29,7 +29,10 @@ class DanbooruClient(BooruClient):
         if resp.status_code != 200:
             log.warning(f"  body: {resp.text[:500]}")
         resp.raise_for_status()
-        data = resp.json()
+        try:
+            data = resp.json()
+        except Exception:
+            return []
 
         # Some Danbooru forks wrap in {"posts": [...]}
         if isinstance(data, dict):
