@@ -995,6 +995,7 @@ class BooruApp(QMainWindow):
             post = self._posts[index]
             self._status.showMessage(
                 f"#{post.id}  {post.width}x{post.height}  score:{post.score}  [{post.rating}]  {Path(post.file_url.split('?')[0]).suffix.lstrip('.').upper() if post.file_url else ''}"
+                + (f"  {post.created_at}" if post.created_at else "")
             )
             if self._info_panel.isVisible():
                 self._info_panel.set_post(post)
@@ -1015,7 +1016,8 @@ class BooruApp(QMainWindow):
                 self._prefetch_pause.clear()  # pause prefetch
                 try:
                     path = await download_image(post.file_url, progress_callback=_progress)
-                    info = f"#{post.id}  {post.width}x{post.height}  score:{post.score}  [{post.rating}]  {Path(post.file_url.split('?')[0]).suffix.lstrip('.').upper() if post.file_url else ''}"
+                    info = (f"#{post.id}  {post.width}x{post.height}  score:{post.score}  [{post.rating}]  {Path(post.file_url.split('?')[0]).suffix.lstrip('.').upper() if post.file_url else ''}"
+                            + (f"  {post.created_at}" if post.created_at else ""))
                     self._signals.image_done.emit(str(path), info)
                 except Exception as e:
                     log.error(f"Image download failed: {e}")
@@ -1217,7 +1219,7 @@ class BooruApp(QMainWindow):
                 source=meta.get("source"), tag_categories=meta.get("tag_categories", {}),
             )
             self._info_panel.set_post(p)
-            info = f"#{p.id}  score:{p.score}  [{p.rating}]  {Path(path).suffix.lstrip('.').upper()}"
+            info = f"#{p.id}  score:{p.score}  [{p.rating}]  {Path(path).suffix.lstrip('.').upper()}" + (f"  {p.created_at}" if p.created_at else "")
             self._status.showMessage(info)
 
     def _on_library_selected(self, path: str) -> None:

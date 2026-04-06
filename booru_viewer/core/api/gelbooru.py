@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from ..config import DEFAULT_PAGE_SIZE
-from .base import BooruClient, Post
+from .base import BooruClient, Post, _parse_date
 
 log = logging.getLogger("booru")
 
@@ -72,6 +72,7 @@ class GelbooruClient(BooruClient):
                     source=item.get("source"),
                     width=item.get("width", 0),
                     height=item.get("height", 0),
+                    created_at=_parse_date(item.get("created_at")),
                 )
             )
         return posts
@@ -116,6 +117,7 @@ class GelbooruClient(BooruClient):
             source=item.get("source"),
             width=item.get("width", 0),
             height=item.get("height", 0),
+            created_at=_parse_date(item.get("created_at")),
         )
 
     async def autocomplete(self, query: str, limit: int = 10) -> list[str]:

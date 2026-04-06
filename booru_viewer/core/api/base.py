@@ -25,11 +25,35 @@ class Post:
     source: str | None
     width: int = 0
     height: int = 0
+    created_at: str = ""  # YYYY-MM-DD
     tag_categories: dict[str, list[str]] = field(default_factory=dict)
 
     @property
     def tag_list(self) -> list[str]:
         return self.tags.split()
+
+
+def _parse_date(raw) -> str:
+    """Normalize various booru date formats to YYYY-MM-DD."""
+    if not raw:
+        return ""
+    if isinstance(raw, dict):
+        raw = raw.get("s", 0)
+    if isinstance(raw, (int, float)):
+        from datetime import datetime, timezone
+        return datetime.fromtimestamp(raw, tz=timezone.utc).strftime("%Y-%m-%d")
+    s = str(raw)
+    # ISO 8601
+    if len(s) >= 10 and s[4] == '-' and s[7] == '-':
+        return s[:10]
+    # Gelbooru style: "Thu Jun 06 08:16:14 -0500 2024"
+    from datetime import datetime
+    for fmt in ("%a %b %d %H:%M:%S %z %Y",):
+        try:
+            return datetime.strptime(s, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            pass
+    return ""
 
 
 class BooruClient(ABC):

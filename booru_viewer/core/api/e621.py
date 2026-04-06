@@ -7,7 +7,7 @@ import logging
 import httpx
 
 from ..config import DEFAULT_PAGE_SIZE, USER_AGENT
-from .base import BooruClient, Post
+from .base import BooruClient, Post, _parse_date
 
 log = logging.getLogger("booru")
 
@@ -74,6 +74,7 @@ class E621Client(BooruClient):
                     source=self._get_source(item),
                     width=self._get_nested(item, "file", "width") or 0,
                     height=self._get_nested(item, "file", "height") or 0,
+                    created_at=_parse_date(item.get("created_at")),
                     tag_categories=self._extract_tag_categories(item),
                 )
             )
@@ -107,6 +108,7 @@ class E621Client(BooruClient):
             source=self._get_source(item),
             width=self._get_nested(item, "file", "width") or 0,
             height=self._get_nested(item, "file", "height") or 0,
+            created_at=_parse_date(item.get("created_at")),
         )
 
     async def autocomplete(self, query: str, limit: int = 10) -> list[str]:

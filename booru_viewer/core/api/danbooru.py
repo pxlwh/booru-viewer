@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from ..config import DEFAULT_PAGE_SIZE
-from .base import BooruClient, Post
+from .base import BooruClient, Post, _parse_date
 
 log = logging.getLogger("booru")
 
@@ -54,6 +54,7 @@ class DanbooruClient(BooruClient):
                     source=item.get("source"),
                     width=item.get("image_width", 0),
                     height=item.get("image_height", 0),
+                    created_at=_parse_date(item.get("created_at")),
                     tag_categories=self._extract_tag_categories(item),
                 )
             )
@@ -85,6 +86,7 @@ class DanbooruClient(BooruClient):
             source=item.get("source"),
             width=item.get("image_width", 0),
             height=item.get("image_height", 0),
+            created_at=_parse_date(item.get("created_at")),
         )
 
     async def autocomplete(self, query: str, limit: int = 10) -> list[str]:
