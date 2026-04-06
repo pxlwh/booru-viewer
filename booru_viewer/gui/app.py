@@ -457,6 +457,7 @@ class BooruApp(QMainWindow):
         if self._infinite_scroll:
             self._bottom_nav.hide()
         self._grid.reached_bottom.connect(self._on_reached_bottom)
+        self._grid.verticalScrollBar().rangeChanged.connect(self._on_scroll_range_changed)
 
         # Log panel
         self._log_text = QTextEdit()
@@ -871,6 +872,11 @@ class BooruApp(QMainWindow):
         # Infinite scroll: if first page doesn't fill viewport, load more
         if self._infinite_scroll and posts:
             QTimer.singleShot(200, self._check_viewport_fill)
+
+    def _on_scroll_range_changed(self, _min: int, max_val: int) -> None:
+        """Scrollbar range changed (resize/splitter) — check if viewport needs filling."""
+        if max_val == 0 and self._infinite_scroll and self._posts:
+            QTimer.singleShot(100, self._check_viewport_fill)
 
     def _check_viewport_fill(self) -> None:
         """If content doesn't fill the viewport, trigger infinite scroll."""
