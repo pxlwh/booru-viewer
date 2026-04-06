@@ -477,11 +477,6 @@ class VideoPlayer(QWidget):
         self._player.playbackStateChanged.connect(self._on_state)
         self._player.mediaStatusChanged.connect(self._on_media_status)
         self._player.errorOccurred.connect(self._on_error)
-        # Resize video widget to match video aspect ratio
-        self._video_sized = False
-        sink = self._player.videoSink()
-        if sink:
-            sink.videoFrameChanged.connect(self._on_video_size)
         self._current_file: str | None = None
         self._error_fired = False
 
@@ -489,8 +484,6 @@ class VideoPlayer(QWidget):
         self._current_file = path
         self._error_fired = False
         self._ended = False
-        self._video_sized = False
-        self._video_widget.setMaximumHeight(16777215)
         self._last_pos = 0
         self._player.setLoops(QMediaPlayer.Loops.Infinite)
         self._player.setSource(QUrl.fromLocalFile(path))
@@ -567,20 +560,6 @@ class VideoPlayer(QWidget):
         else:
             self._play_btn.setText("Play")
 
-    _preview_auto_size = False  # set True for preview panel, False for slideshow
-
-    def _on_video_size(self, frame) -> None:
-        """In preview mode, constrain height to match video aspect ratio."""
-        if not self._preview_auto_size or self._video_sized or not frame.isValid():
-            return
-        self._video_sized = True
-        vw = frame.size().width()
-        vh = frame.size().height()
-        if vw > 0 and vh > 0:
-            parent = self._video_widget.parentWidget()
-            available_w = parent.width() if parent else self._video_widget.width()
-            self._video_widget.setMaximumHeight(int(available_w * vh / vw))
-
     def _on_media_status(self, status) -> None:
         pass
 
@@ -632,7 +611,6 @@ class ImagePreview(QWidget):
         # Video player (index 1)
         self._video_player = VideoPlayer()
         self._video_player.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._video_player._preview_auto_size = True  # auto-size in preview panel
         self._video_player.play_next.connect(lambda: self.navigate.emit(1))
         self._stack.addWidget(self._video_player)
 
