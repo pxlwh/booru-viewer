@@ -35,7 +35,7 @@ class FullscreenPreview(QMainWindow):
 
     def __init__(self, grid_cols: int = 3, show_actions: bool = True, monitor: str = "", parent=None) -> None:
         super().__init__(parent, Qt.WindowType.Window)
-        self.setWindowTitle("booru-viewer — Fullscreen")
+        self.setWindowTitle("booru-viewer — Slideshow")
         self.setMinimumSize(640, 480)
         self._grid_cols = grid_cols
 
@@ -114,8 +114,15 @@ class FullscreenPreview(QMainWindow):
         if target_screen:
             self.setScreen(target_screen)
             self.setGeometry(target_screen.geometry())
-        self.showFullScreen()
+        # Restore saved state or start fullscreen
+        if FullscreenPreview._saved_geometry and not FullscreenPreview._saved_fullscreen:
+            self.setGeometry(FullscreenPreview._saved_geometry)
+            self.show()
+        else:
+            self.showFullScreen()
 
+    _saved_geometry = None  # remembers window size/position across opens
+    _saved_fullscreen = False
     _current_tags: dict[str, list[str]] = {}
     _current_tag_list: list[str] = []
 
@@ -230,6 +237,10 @@ class FullscreenPreview(QMainWindow):
 
     def closeEvent(self, event) -> None:
         from PySide6.QtWidgets import QApplication
+        # Save window state for next open
+        FullscreenPreview._saved_fullscreen = self.isFullScreen()
+        if not self.isFullScreen():
+            FullscreenPreview._saved_geometry = self.geometry()
         QApplication.instance().removeEventFilter(self)
         self.closed.emit()
         self._video.stop()
