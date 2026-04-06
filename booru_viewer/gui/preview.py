@@ -94,6 +94,7 @@ class FullscreenPreview(QMainWindow):
         self._stack.addWidget(self._viewer)
 
         self._video = VideoPlayer()
+        self._video._auto_size_video = False  # fullscreen — don't constrain height
         self._video.play_next.connect(lambda: self.navigate.emit(1))
         self._stack.addWidget(self._video)
 
@@ -485,7 +486,6 @@ class VideoPlayer(QWidget):
         self._ended = False
         self._video_sized = False
         self._video_widget.setMaximumHeight(16777215)
-        self._video_widget.hide()  # hide until first frame to prevent black flash
         self._last_pos = 0
         self._player.setLoops(QMediaPlayer.Loops.Infinite)
         self._player.setSource(QUrl.fromLocalFile(path))
@@ -562,18 +562,20 @@ class VideoPlayer(QWidget):
         else:
             self._play_btn.setText("Play")
 
+    _auto_size_video = True  # set False for fullscreen/slideshow
+
     def _on_video_size(self, frame) -> None:
         """Resize video widget to match video aspect ratio on first frame."""
         if self._video_sized or not frame.isValid():
             return
         self._video_sized = True
-        vw = frame.size().width()
-        vh = frame.size().height()
-        if vw > 0 and vh > 0:
-            available_w = self._video_widget.parentWidget().width() if self._video_widget.parentWidget() else self._video_widget.width()
-            scaled_h = int(available_w * vh / vw)
-            self._video_widget.setMaximumHeight(scaled_h)
-        self._video_widget.show()
+        if self._auto_size_video:
+            vw = frame.size().width()
+            vh = frame.size().height()
+            if vw > 0 and vh > 0:
+                available_w = self._video_widget.parentWidget().width() if self._video_widget.parentWidget() else self._video_widget.width()
+                scaled_h = int(available_w * vh / vw)
+                self._video_widget.setMaximumHeight(scaled_h)
 
     def _on_media_status(self, status) -> None:
         pass
