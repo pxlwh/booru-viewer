@@ -94,7 +94,6 @@ class FullscreenPreview(QMainWindow):
         self._stack.addWidget(self._viewer)
 
         self._video = VideoPlayer()
-        self._video._auto_size_video = True
         self._video.play_next.connect(lambda: self.navigate.emit(1))
         self._stack.addWidget(self._video)
 
@@ -403,6 +402,12 @@ class VideoPlayer(QWidget):
         # Video surface
         self._video_widget = QVideoWidget()
         self._video_widget.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
+        # Match letterbox color to theme background
+        from PySide6.QtGui import QPalette
+        vp = self._video_widget.palette()
+        vp.setColor(QPalette.ColorRole.Window, self.palette().color(QPalette.ColorRole.Window))
+        self._video_widget.setPalette(vp)
+        self._video_widget.setAutoFillBackground(True)
         layout.addWidget(self._video_widget, stretch=1)
 
         # Player
@@ -484,9 +489,6 @@ class VideoPlayer(QWidget):
         self._current_file = path
         self._error_fired = False
         self._ended = False
-        self._video_sized = False
-        self._video_widget.setMaximumHeight(16777215)
-        self._video_widget.setMaximumWidth(16777215)
         self._last_pos = 0
         self._player.setLoops(QMediaPlayer.Loops.Infinite)
         self._player.setSource(QUrl.fromLocalFile(path))
@@ -563,28 +565,8 @@ class VideoPlayer(QWidget):
         else:
             self._play_btn.setText("Play")
 
-    _auto_size_video = True
-
     def _on_video_size(self, frame) -> None:
-        """Resize video widget to match video aspect ratio on first frame."""
-        if self._video_sized or not frame.isValid():
-            return
-        self._video_sized = True
-        if self._auto_size_video:
-            vw = frame.size().width()
-            vh = frame.size().height()
-            if vw > 0 and vh > 0:
-                parent = self._video_widget.parentWidget()
-                available_w = parent.width() if parent else self._video_widget.width()
-                available_h = parent.height() if parent else self._video_widget.height()
-                video_ratio = vw / vh
-                container_ratio = available_w / available_h if available_h > 0 else 1
-                if video_ratio > container_ratio:
-                    # Video is wider — constrain height
-                    self._video_widget.setMaximumHeight(int(available_w / video_ratio))
-                else:
-                    # Video is taller — constrain width
-                    self._video_widget.setMaximumWidth(int(available_h * video_ratio))
+        pass  # KeepAspectRatio handles sizing
 
     def _on_media_status(self, status) -> None:
         pass
