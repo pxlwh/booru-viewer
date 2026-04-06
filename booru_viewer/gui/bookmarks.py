@@ -39,6 +39,7 @@ class BookmarksView(QWidget):
 
     bookmark_selected = Signal(object)
     bookmark_activated = Signal(object)
+    bookmarks_changed = Signal()  # emitted after bookmark add/remove/unsave
 
     def __init__(self, db: Database, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -230,7 +231,21 @@ class BookmarksView(QWidget):
         save_lib_menu.addSeparator()
         save_lib_new = save_lib_menu.addAction("+ New Folder...")
 
-        unsave_lib = menu.addAction("Unsave from Library")
+        unsave_lib = None
+        # Only show unsave if the post is saved locally
+        from ..core.config import saved_dir, saved_folder_dir, MEDIA_EXTENSIONS
+        _saved = False
+        _sd = saved_dir()
+        if _sd.exists():
+            _saved = any((_sd / f"{fav.post_id}{ext}").exists() for ext in MEDIA_EXTENSIONS)
+        if not _saved:
+            for folder in self._db.get_folders():
+                d = saved_folder_dir(folder)
+                if d.exists() and any((d / f"{fav.post_id}{ext}").exists() for ext in MEDIA_EXTENSIONS):
+                    _saved = True
+                    break
+        if _saved:
+            unsave_lib = menu.addAction("Unsave from Library")
         copy_file = menu.addAction("Copy File to Clipboard")
         copy_url = menu.addAction("Copy Image URL")
         copy_tags = menu.addAction("Copy Tags")
@@ -282,6 +297,7 @@ class BookmarksView(QWidget):
             from ..core.cache import delete_from_library
             if delete_from_library(fav.post_id, fav.folder):
                 self.refresh()
+                self.bookmarks_changed.emit()
         elif action == copy_file:
             path = fav.cached_path
             if path and Path(path).exists():
@@ -315,6 +331,7 @@ class BookmarksView(QWidget):
         elif action == remove_bookmark:
             self._db.remove_bookmark(fav.site_id, fav.post_id)
             self.refresh()
+            self.bookmarks_changed.emit()
 
     def _on_multi_context_menu(self, indices: list, pos) -> None:
         favs = [self._bookmarks[i] for i in indices if 0 <= i < len(self._bookmarks)]
@@ -353,6 +370,7 @@ class BookmarksView(QWidget):
             for fav in favs:
                 delete_from_library(fav.post_id, fav.folder)
             self.refresh()
+            self.bookmarks_changed.emit()
         elif action == move_none:
             for fav in favs:
                 self._db.move_bookmark_to_folder(fav.id, None)
@@ -367,3 +385,4 @@ class BookmarksView(QWidget):
             for fav in favs:
                 self._db.remove_bookmark(fav.site_id, fav.post_id)
             self.refresh()
+            self.bookmarks_changed.emit()

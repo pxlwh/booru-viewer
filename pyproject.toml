@@ -4,13 +4,14 @@ build-backend = "hatchling.build"
 
 [project]
 name = "booru-viewer"
-version = "0.1.9"
+version = "0.2.0"
 description = "Local booru image browser with Qt6 GUI"
 requires-python = ">=3.11"
 dependencies = [
     "httpx[http2]>=0.27",
     "Pillow>=10.0",
     "PySide6>=6.6",
+    "python-mpv>=1.0",
 ]
 
 [project.scripts]

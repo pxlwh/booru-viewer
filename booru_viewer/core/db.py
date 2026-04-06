@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS saved_searches (
 
 _DEFAULTS = {
     "max_cache_mb": "2048",
+    "max_thumb_cache_mb": "500",
     "auto_evict": "1",
     "thumbnail_size": "180",
     "page_size": "40",

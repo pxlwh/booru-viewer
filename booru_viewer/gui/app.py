@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -33,10 +32,12 @@ from PySide6.QtWidgets import (
     QProgressBar,
 )
 
+from dataclasses import dataclass, field
+
 from ..core.db import Database, Site
 from ..core.api.base import BooruClient, Post
 from ..core.api.detect import client_for_type
-from ..core.cache import download_image, download_thumbnail, cache_size_bytes, evict_oldest
+from ..core.cache import download_image, download_thumbnail, cache_size_bytes, evict_oldest, evict_oldest_thumbnails
 from ..core.config import MEDIA_EXTENSIONS
 
 from .grid import ThumbnailGrid
@@ -48,6 +49,18 @@ from .library import LibraryView
 from .settings import SettingsDialog
 
 log = logging.getLogger("booru")
+
+
+@dataclass
+class SearchState:
+    """Mutable state that resets on every new search."""
+    shown_post_ids: set[int] = field(default_factory=set)
+    page_cache: dict[int, list] = field(default_factory=dict)
+    infinite_exhausted: bool = False
+    infinite_last_page: int = 0
+    infinite_api_exhausted: bool = False
+    nav_page_turn: str | None = None
+    append_queue: list = field(default_factory=list)
 
 
 class LogHandler(logging.Handler, QObject):
@@ -107,7 +120,8 @@ class InfoPanel(QWidget):
 
         self._details = QLabel()
         self._details.setWordWrap(True)
-        self._details.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self._details.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextBrowserInteraction)
+        self._details.setMaximumHeight(120)
         layout.addWidget(self._details)
 
         self._tags_label = QLabel("Tags:")
@@ -128,13 +142,33 @@ class InfoPanel(QWidget):
         log.debug(f"InfoPanel: tag_categories={list(post.tag_categories.keys()) if post.tag_categories else 'empty'}")
         self._title.setText(f"Post #{post.id}")
         filetype = Path(post.file_url.split("?")[0]).suffix.lstrip(".").upper() if post.file_url else "unknown"
+        source = post.source or "none"
+        # Truncate display text but keep full URL for the link
+        source_full = source
+        if len(source) > 60:
+            source_display = source[:57] + "..."
+        else:
+            source_display = source
+        if source_full.startswith(("http://", "https://")):
+            source_html = f'<a href="{source_full}" style="color: #4fc3f7;">{source_display}</a>'
+        else:
+            source_html = source_display
+        from html import escape
         self._details.setText(
             f"Size: {post.width}x{post.height}\n"
             f"Score: {post.score}\n"
             f"Rating: {post.rating or 'unknown'}\n"
-            f"Filetype: {filetype}\n"
-            f"Source: {post.source or 'none'}"
+            f"Filetype: {filetype}"
         )
+        self._details.setTextFormat(Qt.TextFormat.RichText)
+        self._details.setText(
+            f"Size: {post.width}x{post.height}<br>"
+            f"Score: {post.score}<br>"
+            f"Rating: {escape(post.rating or 'unknown')}<br>"
+            f"Filetype: {filetype}<br>"
+            f"Source: {source_html}"
+        )
+        self._details.setOpenExternalLinks(True)
         # Clear old tags
         while self._tags_flow.count():
             item = self._tags_flow.takeAt(0)
@@ -223,6 +257,7 @@ class BooruApp(QMainWindow):
         self._current_rating = "all"
         self._min_score = 0
         self._loading = False
+        self._search = SearchState()
         self._last_scroll_page = 0
         self._prefetch_pause = asyncio.Event()
         self._prefetch_pause.set()  # not paused
@@ -257,7 +292,7 @@ class BooruApp(QMainWindow):
         s.bookmark_error.connect(self._on_bookmark_error, Q)
         s.autocomplete_done.connect(self._on_autocomplete_done, Q)
         s.batch_progress.connect(self._on_batch_progress, Q)
-        s.batch_done.connect(lambda m: self._status.showMessage(m), Q)
+        s.batch_done.connect(self._on_batch_done, Q)
         s.download_progress.connect(self._on_download_progress, Q)
         s.prefetch_progress.connect(self._on_prefetch_progress, Q)
 
@@ -333,10 +368,11 @@ class BooruApp(QMainWindow):
         score_up.clicked.connect(lambda: self._score_spin.setValue(self._score_spin.value() + 1))
         top.addWidget(score_up)
 
-        from PySide6.QtWidgets import QCheckBox
-        self._animated_only = QCheckBox("Animated")
-        self._animated_only.setToolTip("Only show animated/video posts")
-        top.addWidget(self._animated_only)
+        self._media_filter = QComboBox()
+        self._media_filter.addItems(["All", "Animated", "Video", "GIF", "Audio"])
+        self._media_filter.setToolTip("Filter by media type")
+        self._media_filter.setFixedWidth(90)
+        top.addWidget(self._media_filter)
 
         page_label = QLabel("Page")
         top.addWidget(page_label)
@@ -395,11 +431,13 @@ class BooruApp(QMainWindow):
         self._bookmarks_view = BookmarksView(self._db)
         self._bookmarks_view.bookmark_selected.connect(self._on_bookmark_selected)
         self._bookmarks_view.bookmark_activated.connect(self._on_bookmark_activated)
+        self._bookmarks_view.bookmarks_changed.connect(self._refresh_browse_saved_dots)
         self._stack.addWidget(self._bookmarks_view)
 
         self._library_view = LibraryView(db=self._db)
         self._library_view.file_selected.connect(self._on_library_selected)
         self._library_view.file_activated.connect(self._on_library_activated)
+        self._library_view.files_deleted.connect(self._on_library_files_deleted)
         self._stack.addWidget(self._library_view)
 
         self._splitter.addWidget(self._stack)
@@ -414,6 +452,8 @@ class BooruApp(QMainWindow):
         self._preview.bookmark_requested.connect(self._bookmark_from_preview)
         self._preview.save_to_folder.connect(self._save_from_preview)
         self._preview.unsave_requested.connect(self._unsave_from_preview)
+        self._preview.blacklist_tag_requested.connect(self._blacklist_tag_from_popout)
+        self._preview.blacklist_post_requested.connect(self._blacklist_post_from_popout)
         self._preview.navigate.connect(self._navigate_preview)
         self._preview.fullscreen_requested.connect(self._open_fullscreen_preview)
         self._preview.set_folders_callback(self._db.get_folders)
@@ -446,14 +486,14 @@ class BooruApp(QMainWindow):
         bottom_nav.addStretch()
         self._page_label = QLabel("Page 1")
         bottom_nav.addWidget(self._page_label)
-        bottom_prev = QPushButton("Prev")
-        bottom_prev.setFixedWidth(60)
-        bottom_prev.clicked.connect(self._prev_page)
-        bottom_nav.addWidget(bottom_prev)
-        bottom_next = QPushButton("Next")
-        bottom_next.setFixedWidth(60)
-        bottom_next.clicked.connect(self._next_page)
-        bottom_nav.addWidget(bottom_next)
+        self._prev_page_btn = QPushButton("Prev")
+        self._prev_page_btn.setFixedWidth(60)
+        self._prev_page_btn.clicked.connect(self._prev_page)
+        bottom_nav.addWidget(self._prev_page_btn)
+        self._next_page_btn = QPushButton("Next")
+        self._next_page_btn.setFixedWidth(60)
+        self._next_page_btn.clicked.connect(self._next_page)
+        bottom_nav.addWidget(self._next_page_btn)
         bottom_nav.addStretch()
         layout.addWidget(self._bottom_nav)
 
@@ -544,6 +584,12 @@ class BooruApp(QMainWindow):
         self._site_combo.clear()
         for site in self._db.get_sites():
             self._site_combo.addItem(site.name, site.id)
+        # Select default site if configured
+        default_id = self._db.get_setting_int("default_site_id")
+        if default_id:
+            idx = self._site_combo.findData(default_id)
+            if idx >= 0:
+                self._site_combo.setCurrentIndex(idx)
 
     def _make_client(self) -> BooruClient | None:
         if not self._current_site:
@@ -571,6 +617,20 @@ class BooruApp(QMainWindow):
         self._browse_btn.setChecked(index == 0)
         self._bookmark_btn.setChecked(index == 1)
         self._library_btn.setChecked(index == 2)
+        # Clear grid selections and current post to prevent cross-tab action conflicts
+        # Preview media stays visible but actions are disabled until a new post is selected
+        self._grid.clear_selection()
+        self._bookmarks_view._grid.clear_selection()
+        self._library_view._grid.clear_selection()
+        self._preview._current_post = None
+        self._preview._current_site_id = None
+        self._preview.update_bookmark_state(False)
+        self._preview.update_save_state(False)
+        # Show/hide preview toolbar buttons per tab
+        is_library = index == 2
+        self._preview._bookmark_btn.setVisible(not is_library)
+        self._preview._bl_tag_btn.setVisible(not is_library)
+        self._preview._bl_post_btn.setVisible(not is_library)
         if index == 1:
             self._bookmarks_view.refresh()
             self._bookmarks_view._grid.setFocus()
@@ -590,18 +650,18 @@ class BooruApp(QMainWindow):
     def _on_search(self, tags: str) -> None:
         self._current_tags = tags
         self._current_page = self._page_spin.value()
-        self._shown_post_ids = set()
-        self._page_cache = {}
-        self._infinite_exhausted = False
+        self._search = SearchState()
         self._min_score = self._score_spin.value()
         self._preview.clear()
+        self._next_page_btn.setVisible(True)
+        self._prev_page_btn.setVisible(False)
         self._do_search()
 
     def _prev_page(self) -> None:
         if self._current_page > 1:
             self._current_page -= 1
-            if self._current_page in self._page_cache:
-                self._signals.search_done.emit(self._page_cache[self._current_page])
+            if self._current_page in self._search.page_cache:
+                self._signals.search_done.emit(self._search.page_cache[self._current_page])
             else:
                 self._do_search()
 
@@ -609,26 +669,26 @@ class BooruApp(QMainWindow):
         if self._loading:
             return
         self._current_page += 1
-        if self._current_page in getattr(self, '_page_cache', {}):
-            self._signals.search_done.emit(self._page_cache[self._current_page])
+        if self._current_page in self._search.page_cache:
+            self._signals.search_done.emit(self._search.page_cache[self._current_page])
             return
         self._do_search()
 
     def _on_nav_past_end(self) -> None:
         if self._infinite_scroll:
             return  # infinite scroll handles this via reached_bottom
-        self._nav_page_turn = "first"
+        self._search.nav_page_turn = "first"
         self._next_page()
 
     def _on_nav_before_start(self) -> None:
         if self._infinite_scroll:
             return
         if self._current_page > 1:
-            self._nav_page_turn = "last"
+            self._search.nav_page_turn = "last"
             self._prev_page()
 
     def _on_reached_bottom(self) -> None:
-        if not self._infinite_scroll or self._loading or getattr(self, '_infinite_exhausted', False):
+        if not self._infinite_scroll or self._loading or self._search.infinite_exhausted:
             return
         self._loading = True
         self._current_page += 1
@@ -641,14 +701,16 @@ class BooruApp(QMainWindow):
         if self._db.get_setting_bool("blacklist_enabled"):
             bl_tags = set(self._db.get_blacklisted_tags())
         bl_posts = self._db.get_blacklisted_posts()
-        shown_ids = getattr(self, '_shown_post_ids', set()).copy()
+        shown_ids = self._search.shown_post_ids.copy()
+        seen = shown_ids.copy()  # local dedup for this backfill round
 
         def _filter(posts):
             if bl_tags:
                 posts = [p for p in posts if not bl_tags.intersection(p.tag_list)]
             if bl_posts:
                 posts = [p for p in posts if p.file_url not in bl_posts]
-            posts = [p for p in posts if p.id not in shown_ids]
+            posts = [p for p in posts if p.id not in seen]
+            seen.update(p.id for p in posts)
             return posts
 
         async def _search():
@@ -658,24 +720,31 @@ class BooruApp(QMainWindow):
             api_exhausted = False
             try:
                 current_page = page
-                max_pages = 5
-                for _ in range(max_pages):
-                    batch = await client.search(tags=search_tags, page=current_page, limit=limit)
-                    last_page = current_page
-                    filtered = _filter(batch)
-                    collected.extend(filtered)
-                    if len(batch) < limit:
-                        api_exhausted = True
-                        break
-                    if len(collected) >= limit:
-                        break
-                    current_page += 1
+                batch = await client.search(tags=search_tags, page=current_page, limit=limit)
+                last_page = current_page
+                filtered = _filter(batch)
+                collected.extend(filtered)
+                if len(batch) < limit:
+                    api_exhausted = True
+                elif len(collected) < limit:
+                    for _ in range(9):
+                        await asyncio.sleep(0.3)
+                        current_page += 1
+                        batch = await client.search(tags=search_tags, page=current_page, limit=limit)
+                        last_page = current_page
+                        filtered = _filter(batch)
+                        collected.extend(filtered)
+                        if len(batch) < limit:
+                            api_exhausted = True
+                            break
+                        if len(collected) >= limit:
+                            break
             except Exception as e:
                 log.warning(f"Infinite scroll fetch failed: {e}")
             finally:
-                self._infinite_last_page = last_page
-                self._infinite_api_exhausted = api_exhausted
-                self._signals.search_append.emit(collected[:limit])
+                self._search.infinite_last_page = last_page
+                self._search.infinite_api_exhausted = api_exhausted
+                self._signals.search_append.emit(collected)
                 await client.close()
 
         self._run_async(_search)
@@ -742,9 +811,16 @@ class BooruApp(QMainWindow):
         if self._min_score > 0:
             parts.append(f"score:>={self._min_score}")
 
-        # Animated filter
-        if self._animated_only.isChecked():
+        # Media type filter
+        media = self._media_filter.currentText()
+        if media == "Animated":
             parts.append("animated")
+        elif media == "Video":
+            parts.append("video")
+        elif media == "GIF":
+            parts.append("animated_gif")
+        elif media == "Audio":
+            parts.append("audio")
 
         return " ".join(parts)
 
@@ -766,15 +842,16 @@ class BooruApp(QMainWindow):
         if self._db.get_setting_bool("blacklist_enabled"):
             bl_tags = set(self._db.get_blacklisted_tags())
         bl_posts = self._db.get_blacklisted_posts()
-        shown_ids = getattr(self, '_shown_post_ids', set()).copy()
+        shown_ids = self._search.shown_post_ids.copy()
+        seen = shown_ids.copy()
 
         def _filter(posts):
             if bl_tags:
                 posts = [p for p in posts if not bl_tags.intersection(p.tag_list)]
             if bl_posts:
                 posts = [p for p in posts if p.file_url not in bl_posts]
-            # Skip posts already shown on previous pages
-            posts = [p for p in posts if p.id not in shown_ids]
+            posts = [p for p in posts if p.id not in seen]
+            seen.update(p.id for p in posts)
             return posts
 
         async def _search():
@@ -782,15 +859,20 @@ class BooruApp(QMainWindow):
             try:
                 collected = []
                 current_page = page
-                max_pages = 5
-                for _ in range(max_pages):
-                    batch = await client.search(tags=search_tags, page=current_page, limit=limit)
-                    filtered = _filter(batch)
-                    collected.extend(filtered)
-                    log.debug(f"Backfill: page={current_page} batch={len(batch)} filtered={len(filtered)} total={len(collected)}/{limit}")
-                    if len(collected) >= limit or len(batch) < limit:
-                        break
-                    current_page += 1
+                batch = await client.search(tags=search_tags, page=current_page, limit=limit)
+                filtered = _filter(batch)
+                collected.extend(filtered)
+                # Backfill only if first page didn't return enough after filtering
+                if len(collected) < limit and len(batch) >= limit:
+                    for _ in range(9):
+                        await asyncio.sleep(0.3)
+                        current_page += 1
+                        batch = await client.search(tags=search_tags, page=current_page, limit=limit)
+                        filtered = _filter(batch)
+                        collected.extend(filtered)
+                        log.debug(f"Backfill: page={current_page} batch={len(batch)} filtered={len(filtered)} total={len(collected)}/{limit}")
+                        if len(collected) >= limit or len(batch) < limit:
+                            break
                 self._signals.search_done.emit(collected[:limit])
             except Exception as e:
                 self._signals.search_error.emit(str(e))
@@ -803,17 +885,22 @@ class BooruApp(QMainWindow):
         self._page_label.setText(f"Page {self._current_page}")
         self._posts = posts
         # Cache page results and track shown IDs
-        if not hasattr(self, '_shown_post_ids'):
-            self._shown_post_ids = set()
-        if not hasattr(self, '_page_cache'):
-            self._page_cache = {}
-        self._shown_post_ids.update(p.id for p in posts)
-        self._page_cache[self._current_page] = posts
+        ss = self._search
+        ss.shown_post_ids.update(p.id for p in posts)
+        ss.page_cache[self._current_page] = posts
         # Cap page cache in pagination mode (infinite scroll needs all pages)
-        if not self._infinite_scroll and len(self._page_cache) > 10:
-            oldest = min(self._page_cache.keys())
-            del self._page_cache[oldest]
-        self._status.showMessage(f"{len(posts)} results")
+        if not self._infinite_scroll and len(ss.page_cache) > 10:
+            oldest = min(ss.page_cache.keys())
+            del ss.page_cache[oldest]
+        limit = self._db.get_setting_int("page_size") or 40
+        at_end = len(posts) < limit
+        if at_end:
+            self._status.showMessage(f"{len(posts)} results (end)")
+        else:
+            self._status.showMessage(f"{len(posts)} results")
+        # Update pagination buttons
+        self._prev_page_btn.setVisible(self._current_page > 1)
+        self._next_page_btn.setVisible(not at_end)
         thumbs = self._grid.set_posts(len(posts))
         self._grid.scroll_to_top()
         # Clear loading after a brief delay so scroll signals don't re-trigger
@@ -858,9 +945,9 @@ class BooruApp(QMainWindow):
                 self._fetch_thumbnail(i, post.preview_url)
 
         # Auto-select first/last post if page turn was triggered by navigation
-        turn = getattr(self, "_nav_page_turn", None)
+        turn = self._search.nav_page_turn
         if turn and posts:
-            self._nav_page_turn = None
+            self._search.nav_page_turn = None
             if turn == "first":
                 idx = 0
             else:
@@ -885,7 +972,7 @@ class BooruApp(QMainWindow):
 
     def _check_viewport_fill(self) -> None:
         """If content doesn't fill the viewport, trigger infinite scroll."""
-        if not self._infinite_scroll or self._loading or getattr(self, '_infinite_exhausted', False):
+        if not self._infinite_scroll or self._loading or self._search.infinite_exhausted:
             return
         # Force layout update so scrollbar range is current
         self._grid.widget().updateGeometry()
@@ -896,32 +983,33 @@ class BooruApp(QMainWindow):
 
     def _on_search_append(self, posts: list) -> None:
         """Queue posts and add them one at a time as thumbnails arrive."""
-        # Advance page counter past pages consumed by backfill
-        last_page = getattr(self, '_infinite_last_page', self._current_page)
-        if last_page > self._current_page:
-            self._current_page = last_page
+        ss = self._search
 
         if not posts:
+            # Only advance page if API is exhausted — otherwise we retry
+            if ss.infinite_api_exhausted and ss.infinite_last_page > self._current_page:
+                self._current_page = ss.infinite_last_page
             self._loading = False
             # Only mark exhausted if the API itself returned a short page,
             # not just because blacklist/dedup filtering emptied the results
-            if getattr(self, '_infinite_api_exhausted', False):
-                self._infinite_exhausted = True
+            if ss.infinite_api_exhausted:
+                ss.infinite_exhausted = True
                 self._status.showMessage(f"{len(self._posts)} results (end)")
             else:
-                # Viewport still not full — keep loading
+                # Viewport still not full ��� keep loading
                 QTimer.singleShot(100, self._check_viewport_fill)
             return
-        self._shown_post_ids.update(p.id for p in posts)
-
-        if not hasattr(self, '_append_queue'):
-            self._append_queue = []
-        self._append_queue.extend(posts)
+        # Advance page counter past pages consumed by backfill
+        if ss.infinite_last_page > self._current_page:
+            self._current_page = ss.infinite_last_page
+        ss.shown_post_ids.update(p.id for p in posts)
+        ss.append_queue.extend(posts)
         self._drain_append_queue()
 
     def _drain_append_queue(self) -> None:
         """Add all queued posts to the grid at once, thumbnails load async."""
-        if not getattr(self, '_append_queue', None) or len(self._append_queue) == 0:
+        ss = self._search
+        if not ss.append_queue:
             self._loading = False
             return
 
@@ -933,8 +1021,8 @@ class BooruApp(QMainWindow):
         if _sd.exists():
             _saved_ids = {int(f.stem) for f in _sd.iterdir() if f.is_file() and f.stem.isdigit()}
 
-        posts = self._append_queue[:]
-        self._append_queue.clear()
+        posts = ss.append_queue[:]
+        ss.append_queue.clear()
         start_idx = len(self._posts)
         self._posts.extend(posts)
         thumbs = self._grid.append_posts(len(posts))
@@ -1020,6 +1108,14 @@ class BooruApp(QMainWindow):
         if 0 <= index < len(self._posts):
             post = self._posts[index]
             log.info(f"Preview: #{post.id} -> {post.file_url}")
+            self._preview._current_post = post
+            self._preview._current_site_id = self._site_combo.currentData()
+            self._preview.set_post_tags(post.tag_categories, post.tag_list)
+            site_id = self._preview._current_site_id
+            self._preview.update_bookmark_state(
+                bool(site_id and self._db.is_bookmarked(site_id, post.id))
+            )
+            self._preview.update_save_state(self._is_post_saved(post.id))
             self._status.showMessage(f"Loading #{post.id}...")
             self._dl_progress.show()
             self._dl_progress.setRange(0, 0)
@@ -1136,7 +1232,7 @@ class BooruApp(QMainWindow):
                 self._update_fullscreen_state()
 
     def _update_fullscreen_state(self) -> None:
-        """Update slideshow button states for the current post."""
+        """Update popout button states for the current post."""
         if not self._fullscreen_window:
             return
         from ..core.config import saved_dir, saved_folder_dir, MEDIA_EXTENSIONS
@@ -1164,22 +1260,16 @@ class BooruApp(QMainWindow):
             else:
                 self._fullscreen_window.update_state(False, False)
         else:
+            post = None
             idx = self._grid.selected_index
-            if 0 <= idx < len(self._posts) and site_id:
+            if 0 <= idx < len(self._posts):
                 post = self._posts[idx]
-                bookmarked = self._db.is_bookmarked(site_id, post.id)
-                saved = any(
-                    (saved_dir() / f"{post.id}{ext}").exists()
-                    for ext in MEDIA_EXTENSIONS
-                )
-                if not saved:
-                    for folder in self._db.get_folders():
-                        saved = any(
-                            (saved_folder_dir(folder) / f"{post.id}{ext}").exists()
-                            for ext in MEDIA_EXTENSIONS
-                        )
-                        if saved:
-                            break
+            elif self._preview._current_post:
+                post = self._preview._current_post
+            if post:
+                s_id = self._preview._current_site_id or site_id
+                bookmarked = bool(s_id and self._db.is_bookmarked(s_id, post.id))
+                saved = self._is_post_saved(post.id)
                 self._fullscreen_window.update_state(bookmarked, saved)
                 self._fullscreen_window.set_post_tags(post.tag_categories, post.tag_list)
             else:
@@ -1188,7 +1278,7 @@ class BooruApp(QMainWindow):
     def _on_image_done(self, path: str, info: str) -> None:
         self._dl_progress.hide()
         if self._fullscreen_window and self._fullscreen_window.isVisible():
-            # Slideshow is open — only show there, keep preview clear
+            # Popout is open — only show there, keep preview clear
             self._preview._info_label.setText(info)
             self._preview._current_path = path
         else:
@@ -1218,6 +1308,12 @@ class BooruApp(QMainWindow):
             evicted = evict_oldest(max_bytes, protected)
             if evicted:
                 log.info(f"Auto-evicted {evicted} cached files")
+        # Thumbnail eviction
+        max_thumb_mb = self._db.get_setting_int("max_thumb_cache_mb") or 500
+        max_thumb_bytes = max_thumb_mb * 1024 * 1024
+        evicted_thumbs = evict_oldest_thumbnails(max_thumb_bytes)
+        if evicted_thumbs:
+            log.info(f"Auto-evicted {evicted_thumbs} thumbnails")
 
     def _set_library_info(self, path: str) -> None:
         """Update info panel with library metadata for the given file."""
@@ -1238,14 +1334,35 @@ class BooruApp(QMainWindow):
             self._status.showMessage(info)
 
     def _on_library_selected(self, path: str) -> None:
-        self._set_preview_media(path, Path(path).name)
-        self._update_fullscreen(path, Path(path).name)
-        self._set_library_info(path)
+        self._show_library_post(path)
 
     def _on_library_activated(self, path: str) -> None:
+        self._show_library_post(path)
+
+    def _show_library_post(self, path: str) -> None:
         self._set_preview_media(path, Path(path).name)
         self._update_fullscreen(path, Path(path).name)
         self._set_library_info(path)
+        # Build a Post from library metadata so toolbar actions work
+        stem = Path(path).stem
+        if stem.isdigit():
+            post_id = int(stem)
+            from ..core.api.base import Post
+            meta = self._db.get_library_meta(post_id) or {}
+            post = Post(
+                id=post_id, file_url=meta.get("file_url", ""),
+                preview_url=None, tags=meta.get("tags", ""),
+                score=meta.get("score", 0), rating=meta.get("rating"),
+                source=meta.get("source"),
+                tag_categories=meta.get("tag_categories", {}),
+            )
+            self._preview._current_post = post
+            self._preview._current_site_id = self._site_combo.currentData()
+            self._preview.update_save_state(True)
+            self._preview.set_post_tags(post.tag_categories, post.tag_list)
+        else:
+            self._preview._current_post = None
+            self._preview.update_save_state(True)
 
     def _on_bookmark_selected(self, fav) -> None:
         self._status.showMessage(f"Bookmark #{fav.post_id}")
@@ -1265,6 +1382,21 @@ class BooruApp(QMainWindow):
         self._on_bookmark_activated(fav)
 
     def _on_bookmark_activated(self, fav) -> None:
+        from ..core.api.base import Post
+        cats = fav.tag_categories or {}
+        post = Post(
+            id=fav.post_id, file_url=fav.file_url or "",
+            preview_url=fav.preview_url, tags=fav.tags or "",
+            score=fav.score or 0, rating=fav.rating,
+            source=fav.source, tag_categories=cats,
+        )
+        self._preview._current_post = post
+        self._preview._current_site_id = fav.site_id
+        self._preview.set_post_tags(post.tag_categories, post.tag_list)
+        self._preview.update_bookmark_state(
+            bool(self._db.is_bookmarked(fav.site_id, post.id))
+        )
+        self._preview.update_save_state(self._is_post_saved(post.id))
         info = f"Bookmark #{fav.post_id}"
 
         # Try local cache first
@@ -1348,64 +1480,148 @@ class BooruApp(QMainWindow):
                 self._grid._select(idx)
                 self._on_post_activated(idx)
             elif idx >= len(self._posts) and direction > 0 and len(self._posts) > 0 and not self._infinite_scroll:
-                self._nav_page_turn = "first"
+                self._search.nav_page_turn = "first"
                 self._next_page()
             elif idx < 0 and direction < 0 and self._current_page > 1 and not self._infinite_scroll:
-                self._nav_page_turn = "last"
+                self._search.nav_page_turn = "last"
                 self._prev_page()
 
-    def _bookmark_from_preview(self) -> None:
+    def _is_post_saved(self, post_id: int) -> bool:
+        """Check if a post is saved in the library (any folder)."""
+        from ..core.config import saved_dir, saved_folder_dir, MEDIA_EXTENSIONS
+        _sd = saved_dir()
+        if _sd.exists():
+            for ext in MEDIA_EXTENSIONS:
+                if (_sd / f"{post_id}{ext}").exists():
+                    return True
+        for folder in self._db.get_folders():
+            d = saved_folder_dir(folder)
+            if d.exists():
+                for ext in MEDIA_EXTENSIONS:
+                    if (d / f"{post_id}{ext}").exists():
+                        return True
+        return False
+
+    def _get_preview_post(self):
+        """Get the post currently shown in the preview, from grid or stored ref."""
         idx = self._grid.selected_index
         if 0 <= idx < len(self._posts):
+            return self._posts[idx], idx
+        if self._preview._current_post:
+            return self._preview._current_post, -1
+        return None, -1
+
+    def _bookmark_from_preview(self) -> None:
+        post, idx = self._get_preview_post()
+        if not post:
+            return
+        site_id = self._preview._current_site_id or self._site_combo.currentData()
+        if not site_id:
+            return
+        if idx >= 0:
             self._toggle_bookmark(idx)
-            self._update_fullscreen_state()
+        else:
+            if self._db.is_bookmarked(site_id, post.id):
+                self._db.remove_bookmark(site_id, post.id)
+            else:
+                from ..core.cache import cached_path_for
+                cached = cached_path_for(post.file_url)
+                self._db.add_bookmark(
+                    site_id=site_id, post_id=post.id,
+                    file_url=post.file_url, preview_url=post.preview_url or "",
+                    tags=post.tags, rating=post.rating, score=post.score,
+                    source=post.source, cached_path=str(cached) if cached.exists() else None,
+                    tag_categories=post.tag_categories,
+                )
+        bookmarked = bool(self._db.is_bookmarked(site_id, post.id))
+        self._preview.update_bookmark_state(bookmarked)
+        self._update_fullscreen_state()
+        # Refresh bookmarks tab if visible
+        if self._stack.currentIndex() == 1:
+            self._bookmarks_view.refresh()
 
     def _save_from_preview(self, folder: str) -> None:
-        idx = self._grid.selected_index
-        if 0 <= idx < len(self._posts):
+        post, idx = self._get_preview_post()
+        if post:
             target = folder if folder else None
             if folder and folder not in self._db.get_folders():
                 self._db.add_folder(folder)
-            self._save_to_library(self._posts[idx], target)
-            self._update_fullscreen_state()
+            self._save_to_library(post, target)
+            # State updates happen in _on_bookmark_done after async save completes
 
     def _unsave_from_preview(self) -> None:
-        idx = self._grid.selected_index
-        if 0 <= idx < len(self._posts):
-            post = self._posts[idx]
-            from ..core.cache import delete_from_library
-            site_id = self._site_combo.currentData()
-            folder = None
-            if site_id:
-                favs = self._db.get_bookmarks(site_id=site_id)
-                for f in favs:
-                    if f.post_id == post.id and f.folder:
-                        folder = f.folder
-                        break
-            if delete_from_library(post.id, folder):
-                self._status.showMessage(f"Removed #{post.id} from library")
-                if 0 <= idx < len(self._grid._thumbs):
-                    self._grid._thumbs[idx].set_saved_locally(False)
-            else:
-                self._status.showMessage(f"#{post.id} not in library")
-            self._update_fullscreen_state()
+        post, idx = self._get_preview_post()
+        if not post:
+            return
+        from ..core.cache import delete_from_library
+        # Check all folders for saved files
+        from ..core.config import saved_dir, saved_folder_dir, MEDIA_EXTENSIONS
+        deleted = False
+        # Try unsorted
+        _sd = saved_dir()
+        for ext in MEDIA_EXTENSIONS:
+            p = _sd / f"{post.id}{ext}"
+            if p.exists():
+                p.unlink()
+                deleted = True
+        # Try all folders
+        for folder in self._db.get_folders():
+            d = saved_folder_dir(folder)
+            for ext in MEDIA_EXTENSIONS:
+                p = d / f"{post.id}{ext}"
+                if p.exists():
+                    p.unlink()
+                    deleted = True
+        if deleted:
+            self._status.showMessage(f"Removed #{post.id} from library")
+            self._preview.update_save_state(False)
+            # Update browse grid thumbnail saved dot
+            for i, p in enumerate(self._posts):
+                if p.id == post.id and i < len(self._grid._thumbs):
+                    self._grid._thumbs[i].set_saved_locally(False)
+                    break
+            # Update bookmarks grid thumbnail
+            bm_grid = self._bookmarks_view._grid
+            for i, fav in enumerate(self._bookmarks_view._bookmarks):
+                if fav.post_id == post.id and i < len(bm_grid._thumbs):
+                    bm_grid._thumbs[i].set_saved_locally(False)
+                    break
+            # Refresh library tab if visible
+            if self._stack.currentIndex() == 2:
+                self._library_view.refresh()
+        else:
+            self._status.showMessage(f"#{post.id} not in library")
+        self._update_fullscreen_state()
 
-    def _save_toggle_from_slideshow(self) -> None:
+    def _save_toggle_from_popout(self) -> None:
         if self._fullscreen_window and self._fullscreen_window._is_saved:
             self._unsave_from_preview()
         else:
             self._save_from_preview("")
 
-    def _blacklist_tag_from_slideshow(self, tag: str) -> None:
+    def _blacklist_tag_from_popout(self, tag: str) -> None:
+        reply = QMessageBox.question(
+            self, "Blacklist Tag",
+            f"Blacklist tag \"{tag}\"?\nPosts with this tag will be hidden.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
         self._db.add_blacklisted_tag(tag)
         self._db.set_setting("blacklist_enabled", "1")
         self._status.showMessage(f"Blacklisted: {tag}")
         self._remove_blacklisted_from_grid(tag=tag)
 
-    def _blacklist_post_from_slideshow(self) -> None:
-        idx = self._grid.selected_index
-        if 0 <= idx < len(self._posts):
-            post = self._posts[idx]
+    def _blacklist_post_from_popout(self) -> None:
+        post, idx = self._get_preview_post()
+        if post:
+            reply = QMessageBox.question(
+                self, "Blacklist Post",
+                f"Blacklist post #{post.id}?\nThis post will be hidden from results.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
             self._db.add_blacklisted_post(post.file_url)
             self._status.showMessage(f"Post #{post.id} blacklisted")
             self._remove_blacklisted_from_grid(post_url=post.file_url)
@@ -1418,8 +1634,8 @@ class BooruApp(QMainWindow):
         # Grab video position before clearing
         video_pos = 0
         if self._preview._stack.currentIndex() == 1:
-            video_pos = self._preview._video_player._player.position()
-        # Clear the main preview — slideshow takes over
+            video_pos = self._preview._video_player.get_position_ms()
+        # Clear the main preview — popout takes over
         # Hide preview, expand info panel into the freed space
         self._info_was_visible = self._info_panel.isVisible()
         self._right_splitter_sizes = self._right_splitter.sizes()
@@ -1433,6 +1649,20 @@ class BooruApp(QMainWindow):
         if 0 <= idx < len(self._posts):
             self._info_panel.set_post(self._posts[idx])
         from .preview import FullscreenPreview
+        # Restore persisted window state
+        saved_geo = self._db.get_setting("slideshow_geometry")
+        saved_fs = self._db.get_setting_bool("slideshow_fullscreen")
+        if saved_geo:
+            parts = saved_geo.split(",")
+            if len(parts) == 4:
+                from PySide6.QtCore import QRect
+                FullscreenPreview._saved_geometry = QRect(*[int(p) for p in parts])
+                FullscreenPreview._saved_fullscreen = saved_fs
+            else:
+                FullscreenPreview._saved_geometry = None
+                FullscreenPreview._saved_fullscreen = True
+        else:
+            FullscreenPreview._saved_fullscreen = True
         cols = self._grid._flow.columns
         show_actions = self._stack.currentIndex() != 2
         monitor = self._db.get_setting("slideshow_monitor")
@@ -1440,81 +1670,77 @@ class BooruApp(QMainWindow):
         self._fullscreen_window.navigate.connect(self._navigate_fullscreen)
         if show_actions:
             self._fullscreen_window.bookmark_requested.connect(self._bookmark_from_preview)
-            self._fullscreen_window.save_toggle_requested.connect(self._save_toggle_from_slideshow)
-            self._fullscreen_window.blacklist_tag_requested.connect(self._blacklist_tag_from_slideshow)
-            self._fullscreen_window.blacklist_post_requested.connect(self._blacklist_post_from_slideshow)
+            self._fullscreen_window.save_toggle_requested.connect(self._save_toggle_from_popout)
+            self._fullscreen_window.blacklist_tag_requested.connect(self._blacklist_tag_from_popout)
+            self._fullscreen_window.blacklist_post_requested.connect(self._blacklist_post_from_popout)
         self._fullscreen_window.closed.connect(self._on_fullscreen_closed)
         self._fullscreen_window.privacy_requested.connect(self._toggle_privacy)
-        # Sync video player state from preview to slideshow
+        # Set post tags for BL Tag menu
+        post = self._preview._current_post
+        if post:
+            self._fullscreen_window.set_post_tags(post.tag_categories, post.tag_list)
+        # Sync video player state from preview to popout
         pv = self._preview._video_player
         sv = self._fullscreen_window._video
-        sv._audio.setMuted(pv._audio.isMuted())
-        sv._audio.setVolume(pv._audio.volume())
-        sv._vol_slider.setValue(pv._vol_slider.value())
-        sv._mute_btn.setText(pv._mute_btn.text())
-        sv._autoplay = pv._autoplay
-        sv._autoplay_btn.setChecked(pv._autoplay_btn.isChecked())
-        sv._autoplay_btn.setText(pv._autoplay_btn.text())
-        sv._autoplay_btn.setVisible(pv._autoplay_btn.isVisible())
-        sv._loop_state = pv._loop_state
-        sv._loop_btn.setText(pv._loop_btn.text())
+        sv.volume = pv.volume
+        sv.is_muted = pv.is_muted
+        sv.autoplay = pv.autoplay
+        sv.loop_state = pv.loop_state
+        # Connect seek-after-load BEFORE set_media so we don't miss media_ready
+        if video_pos > 0:
+            def _seek_when_ready():
+                sv.seek_to_ms(video_pos)
+                try:
+                    sv.media_ready.disconnect(_seek_when_ready)
+                except RuntimeError:
+                    pass
+            sv.media_ready.connect(_seek_when_ready)
         self._fullscreen_window.set_media(path, info)
-        # Seek to the position from the preview after media loads
-        if video_pos > 0 and self._fullscreen_window._stack.currentIndex() == 1:
-            def _seek_when_ready(status):
-                from PySide6.QtMultimedia import QMediaPlayer
-                if status == QMediaPlayer.MediaStatus.BufferedMedia or status == QMediaPlayer.MediaStatus.LoadedMedia:
-                    self._fullscreen_window._video._player.setPosition(video_pos)
-                    try:
-                        self._fullscreen_window._video._player.mediaStatusChanged.disconnect(_seek_when_ready)
-                    except RuntimeError:
-                        pass
-            self._fullscreen_window._video._player.mediaStatusChanged.connect(_seek_when_ready)
         if show_actions:
             self._update_fullscreen_state()
 
     def _on_fullscreen_closed(self) -> None:
+        # Persist popout window state to DB
+        if self._fullscreen_window:
+            from .preview import FullscreenPreview
+            fs = FullscreenPreview._saved_fullscreen
+            geo = FullscreenPreview._saved_geometry
+            self._db.set_setting("slideshow_fullscreen", "1" if fs else "0")
+            if geo:
+                self._db.set_setting("slideshow_geometry", f"{geo.x()},{geo.y()},{geo.width()},{geo.height()}")
         # Restore preview and info panel visibility
         self._preview.show()
         if not getattr(self, '_info_was_visible', False):
             self._info_panel.hide()
         if hasattr(self, '_right_splitter_sizes'):
             self._right_splitter.setSizes(self._right_splitter_sizes)
-        # Sync video player state from slideshow back to preview
+        # Sync video player state from popout back to preview
         if self._fullscreen_window:
             sv = self._fullscreen_window._video
             pv = self._preview._video_player
-            pv._audio.setMuted(sv._audio.isMuted())
-            pv._audio.setVolume(sv._audio.volume())
-            pv._vol_slider.setValue(sv._vol_slider.value())
-            pv._mute_btn.setText(sv._mute_btn.text())
-            pv._autoplay = sv._autoplay
-            pv._autoplay_btn.setChecked(sv._autoplay_btn.isChecked())
-            pv._autoplay_btn.setText(sv._autoplay_btn.text())
-            pv._autoplay_btn.setVisible(sv._autoplay_btn.isVisible())
-            pv._loop_state = sv._loop_state
-            pv._loop_btn.setText(sv._loop_btn.text())
+            pv.volume = sv.volume
+            pv.is_muted = sv.is_muted
+            pv.autoplay = sv.autoplay
+            pv.loop_state = sv.loop_state
         # Grab video position before cleanup
         video_pos = 0
         if self._fullscreen_window and self._fullscreen_window._stack.currentIndex() == 1:
-            video_pos = self._fullscreen_window._video._player.position()
+            video_pos = self._fullscreen_window._video.get_position_ms()
         # Restore preview with current media
         path = self._preview._current_path
         info = self._preview._info_label.text()
         self._fullscreen_window = None
         if path:
+            # Connect seek-after-load BEFORE set_media so we don't miss media_ready
+            if video_pos > 0:
+                def _seek_preview():
+                    self._preview._video_player.seek_to_ms(video_pos)
+                    try:
+                        self._preview._video_player.media_ready.disconnect(_seek_preview)
+                    except RuntimeError:
+                        pass
+                self._preview._video_player.media_ready.connect(_seek_preview)
             self._preview.set_media(path, info)
-            # Seek preview to slideshow position
-            if video_pos > 0 and self._preview._stack.currentIndex() == 1:
-                def _seek_preview(status):
-                    from PySide6.QtMultimedia import QMediaPlayer
-                    if status in (QMediaPlayer.MediaStatus.BufferedMedia, QMediaPlayer.MediaStatus.LoadedMedia):
-                        self._preview._video_player._player.setPosition(video_pos)
-                        try:
-                            self._preview._video_player._player.mediaStatusChanged.disconnect(_seek_preview)
-                        except RuntimeError:
-                            pass
-                self._preview._video_player._player.mediaStatusChanged.connect(_seek_preview)
 
     def _navigate_fullscreen(self, direction: int) -> None:
         self._navigate_preview(direction)
@@ -1552,7 +1778,9 @@ class BooruApp(QMainWindow):
         save_lib_menu.addSeparator()
         save_lib_new = save_lib_menu.addAction("+ New Folder...")
 
-        unsave_lib = menu.addAction("Unsave from Library")
+        unsave_lib = None
+        if self._is_post_saved(post.id):
+            unsave_lib = menu.addAction("Unsave from Library")
         copy_clipboard = menu.addAction("Copy File to Clipboard")
         copy_url = menu.addAction("Copy Image URL")
         copy_tags = menu.addAction("Copy Tags")
@@ -1591,21 +1819,8 @@ class BooruApp(QMainWindow):
         elif id(action) in save_lib_folders:
             self._save_to_library(post, save_lib_folders[id(action)])
         elif action == unsave_lib:
-            from ..core.cache import delete_from_library
-            site_id = self._site_combo.currentData()
-            folder = None
-            if site_id:
-                favs = self._db.get_bookmarks(site_id=site_id)
-                for f in favs:
-                    if f.post_id == post.id and f.folder:
-                        folder = f.folder
-                        break
-            if delete_from_library(post.id, folder):
-                self._status.showMessage(f"Removed #{post.id} from library")
-                if 0 <= index < len(self._grid._thumbs):
-                    self._grid._thumbs[index].set_saved_locally(False)
-            else:
-                self._status.showMessage(f"#{post.id} not in library")
+            self._preview._current_post = post
+            self._unsave_from_preview()
         elif action == copy_clipboard:
             self._copy_file_to_clipboard()
         elif action == copy_url:
@@ -1804,13 +2019,13 @@ class BooruApp(QMainWindow):
                     dest = dest_dir / f"{post.id}{ext}"
                     if not dest.exists():
                         shutil.copy2(path, dest)
-                    if site_id and not self._db.is_bookmarked(site_id, post.id):
-                        self._db.add_bookmark(
-                            site_id=site_id, post_id=post.id,
-                            file_url=post.file_url, preview_url=post.preview_url,
-                            tags=post.tags, rating=post.rating, score=post.score,
-                            source=post.source, cached_path=str(path), folder=folder,
-                        )
+                    # Store metadata for library search
+                    self._db.save_library_meta(
+                        post_id=post.id, tags=post.tags,
+                        tag_categories=post.tag_categories,
+                        score=post.score, rating=post.rating,
+                        source=post.source, file_url=post.file_url,
+                    )
                     self._signals.bookmark_done.emit(idx, f"Saved {i+1}/{len(posts)} to {where}")
                 except Exception as e:
                     log.warning(f"Operation failed: {e}")
@@ -1885,9 +2100,9 @@ class BooruApp(QMainWindow):
         path = cached_path_for(post.file_url)
         if path.exists():
             # Pause any playing video before opening externally
-            self._preview._video_player._player.pause()
+            self._preview._video_player.pause()
             if self._fullscreen_window and self._fullscreen_window.isVisible():
-                self._fullscreen_window._video._player.pause()
+                self._fullscreen_window._video.pause()
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
         else:
             self._status.showMessage("Image not cached yet — double-click to download first")
@@ -2063,11 +2278,11 @@ class BooruApp(QMainWindow):
             self.setWindowTitle("booru-viewer")
             # Pause preview video
             if self._preview._stack.currentIndex() == 1:
-                self._preview._video_player._player.pause()
-            # Hide and pause slideshow
+                self._preview._video_player.pause()
+            # Hide and pause popout
             if self._fullscreen_window and self._fullscreen_window.isVisible():
                 if self._fullscreen_window._stack.currentIndex() == 1:
-                    self._fullscreen_window._video._player.pause()
+                    self._fullscreen_window._video.pause()
                 self._fullscreen_window.hide()
         else:
             self._privacy_overlay.hide()
@@ -2106,6 +2321,14 @@ class BooruApp(QMainWindow):
         elif key == Qt.Key.Key_Space:
             if self._preview._stack.currentIndex() == 1 and self._preview.underMouse():
                 self._preview._video_player._toggle_play()
+                return
+        elif key == Qt.Key.Key_Period:
+            if self._preview._stack.currentIndex() == 1:
+                self._preview._video_player._seek_relative(1800)
+                return
+        elif key == Qt.Key.Key_Comma:
+            if self._preview._stack.currentIndex() == 1:
+                self._preview._video_player._seek_relative(-1800)
                 return
         super().keyPressEvent(event)
 
@@ -2176,13 +2399,51 @@ class BooruApp(QMainWindow):
 
     def _on_bookmark_done(self, index: int, msg: str) -> None:
         self._status.showMessage(f"{len(self._posts)} results — {msg}")
+        # Detect batch operations (e.g. "Saved 3/10 to Unsorted") — skip heavy updates
+        is_batch = "/" in msg and any(c.isdigit() for c in msg.split("/")[0][-2:])
         thumbs = self._grid._thumbs
         if 0 <= index < len(thumbs):
             if "Saved" in msg:
                 thumbs[index].set_saved_locally(True)
             if "Bookmarked" in msg:
                 thumbs[index].set_bookmarked(True)
+        if not is_batch:
+            if "Bookmarked" in msg:
+                self._preview.update_bookmark_state(True)
+            if "Saved" in msg:
+                self._preview.update_save_state(True)
+                if self._stack.currentIndex() == 1:
+                    bm_grid = self._bookmarks_view._grid
+                    bm_idx = bm_grid.selected_index
+                    if 0 <= bm_idx < len(bm_grid._thumbs):
+                        bm_grid._thumbs[bm_idx].set_saved_locally(True)
+                if self._stack.currentIndex() == 2:
+                    self._library_view.refresh()
+            self._update_fullscreen_state()
+
+    def _on_library_files_deleted(self, post_ids: list) -> None:
+        """Library deleted files — clear saved dots on browse grid."""
+        for i, p in enumerate(self._posts):
+            if p.id in post_ids and i < len(self._grid._thumbs):
+                self._grid._thumbs[i].set_saved_locally(False)
+
+    def _refresh_browse_saved_dots(self) -> None:
+        """Bookmarks changed — rescan saved state for all visible browse grid posts."""
+        for i, p in enumerate(self._posts):
+            if i < len(self._grid._thumbs):
+                self._grid._thumbs[i].set_saved_locally(self._is_post_saved(p.id))
+                site_id = self._site_combo.currentData()
+                self._grid._thumbs[i].set_bookmarked(
+                    bool(site_id and self._db.is_bookmarked(site_id, p.id))
+                )
+
+    def _on_batch_done(self, msg: str) -> None:
+        self._status.showMessage(msg)
         self._update_fullscreen_state()
+        if self._stack.currentIndex() == 1:
+            self._bookmarks_view.refresh()
+        if self._stack.currentIndex() == 2:
+            self._library_view.refresh()
 
     def closeEvent(self, event) -> None:
         self._async_loop.call_soon_threadsafe(self._async_loop.stop)
@@ -2279,6 +2540,11 @@ def run() -> None:
     from ..core.config import data_dir
 
     app = QApplication(sys.argv)
+
+    # mpv requires LC_NUMERIC=C — Qt resets the locale in QApplication(),
+    # so we must restore it after Qt init but before creating any mpv instances.
+    import locale
+    locale.setlocale(locale.LC_NUMERIC, "C")
 
     # Apply dark mode on Windows 10+ if system is set to dark
     if sys.platform == "win32":

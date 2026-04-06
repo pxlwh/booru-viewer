@@ -114,3 +114,10 @@ QTabBar::tab:selected {
     background: #3b4261;
     color: #7aa2f7;
 }
+
+/* Popout & preview overlay controls */
+QWidget#_preview_controls,
+QWidget#_slideshow_toolbar,
+QWidget#_slideshow_controls {
+    background: rgba(0, 0, 0, 160);
+}

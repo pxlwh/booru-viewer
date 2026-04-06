@@ -5,12 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal, QSize, QRect, QMimeData, QUrl, QPoint, Property
-from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QKeyEvent, QWheelEvent, QDrag
+from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QKeyEvent, QWheelEvent, QDrag, QMouseEvent
 from PySide6.QtWidgets import (
     QWidget,
     QScrollArea,
     QMenu,
     QApplication,
+    QRubberBand,
 )
 
 from ..core.api.base import Post
@@ -304,6 +305,9 @@ class ThumbnailGrid(QScrollArea):
         self._last_click_index = -1  # for shift-click range
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.verticalScrollBar().valueChanged.connect(self._check_scroll_bottom)
+        # Rubber band drag selection
+        self._rubber_band: QRubberBand | None = None
+        self._rb_origin: QPoint | None = None
 
     @property
     def selected_index(self) -> int:
@@ -354,6 +358,13 @@ class ThumbnailGrid(QScrollArea):
             if 0 <= idx < len(self._thumbs):
                 self._thumbs[idx].set_multi_selected(False)
         self._multi_selected.clear()
+
+    def clear_selection(self) -> None:
+        """Deselect everything."""
+        self._clear_multi()
+        if 0 <= self._selected_index < len(self._thumbs):
+            self._thumbs[self._selected_index].set_selected(False)
+        self._selected_index = -1
 
     def _select(self, index: int) -> None:
         if index < 0 or index >= len(self._thumbs):
@@ -416,6 +427,42 @@ class ThumbnailGrid(QScrollArea):
             self._thumbs[index].set_selected(True)
             self.ensureWidgetVisible(self._thumbs[index])
             self.context_requested.emit(index, pos)
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            # Only start rubber band if click is on empty grid space (not a thumbnail)
+            child = self.childAt(event.position().toPoint())
+            if child is self.widget() or child is self.viewport():
+                self._rb_origin = event.position().toPoint()
+                if not self._rubber_band:
+                    self._rubber_band = QRubberBand(QRubberBand.Shape.Rectangle, self.viewport())
+                self._rubber_band.setGeometry(QRect(self._rb_origin, QSize()))
+                self._rubber_band.show()
+                self._clear_multi()
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        if self._rb_origin and self._rubber_band:
+            rb_rect = QRect(self._rb_origin, event.position().toPoint()).normalized()
+            self._rubber_band.setGeometry(rb_rect)
+            # Select thumbnails that intersect the rubber band
+            vp_offset = self.widget().mapFrom(self.viewport(), QPoint(0, 0))
+            self._clear_multi()
+            for i, thumb in enumerate(self._thumbs):
+                thumb_rect = thumb.geometry().translated(vp_offset)
+                if rb_rect.intersects(thumb_rect):
+                    self._multi_selected.add(i)
+                    thumb.set_multi_selected(True)
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if self._rb_origin and self._rubber_band:
+            self._rubber_band.hide()
+            self._rb_origin = None
+            return
+        super().mouseReleaseEvent(event)
 
     def select_all(self) -> None:
         self._clear_multi()

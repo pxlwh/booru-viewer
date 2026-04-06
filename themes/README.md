@@ -185,6 +185,18 @@ QTabBar::tab:selected {
 
 ### Video Player Controls
 
+The preview panel's video controls bar uses a translucent overlay style by default (`rgba(0,0,0,160)` background, white text). This is styled internally and **overrides QSS** for the controls bar. The seek/volume sliders and buttons inside the controls bar use a built-in dark overlay theme.
+
+To override the preview controls bar background in QSS:
+
+```css
+QWidget#_preview_controls {
+    background: rgba(40, 40, 40, 200);  /* your custom translucent bg */
+}
+```
+
+Standard slider styling still applies outside the controls bar:
+
 ```css
 QSlider::groove:horizontal {
     background: #333;
@@ -198,6 +210,43 @@ QSlider::handle:horizontal {
     border-radius: 6px;
 }
 ```
+
+### Popout Overlay
+
+The popout (fullscreen preview) toolbar and video controls float over the media with a translucent background and auto-hide after 2 seconds of no mouse activity. Mouse movement or Ctrl+H toggles them.
+
+These overlays use internal styling that overrides QSS. To customize:
+
+```css
+/* Popout top toolbar */
+QWidget#_slideshow_toolbar {
+    background: rgba(40, 40, 40, 200);
+}
+
+/* Popout bottom video controls */
+QWidget#_slideshow_controls {
+    background: rgba(40, 40, 40, 200);
+}
+```
+
+Buttons and labels inside both overlays inherit a white-on-transparent style. To override:
+
+```css
+QWidget#_slideshow_toolbar QPushButton {
+    border: 1px solid rgba(255, 255, 255, 120);
+    color: #ccc;
+}
+QWidget#_slideshow_controls QPushButton {
+    border: 1px solid rgba(255, 255, 255, 120);
+    color: #ccc;
+}
+```
+
+### Preview Toolbar
+
+The preview panel has an action toolbar (Bookmark, Save, BL Tag, BL Post, Popout) that appears above the media when a post is active. This toolbar uses the app's default button styling.
+
+The toolbar does not have a named object ID — it inherits the app's `QPushButton` styles directly.
 
 ### Progress Bar (Download)
 
@@ -230,6 +279,17 @@ QLabel {
 }
 ```
 
+### Rubber Band Selection
+
+Click and drag on empty grid space to select multiple thumbnails. The rubber band uses the system's default `QRubberBand` style, which can be customized:
+
+```css
+QRubberBand {
+    background: rgba(0, 120, 215, 40);
+    border: 1px solid #0078d7;
+}
+```
+
 ### Thumbnail Indicators
 
 ```css
@@ -257,4 +317,3 @@ ThumbnailWidget {
 - Tag category colors (Artist, Character, etc.) in the info panel are set in code, not via QSS
 - Saved dot (green) and bookmark star (yellow) are QSS-controllable via `qproperty-savedColor` and `qproperty-bookmarkedColor` on `ThumbnailWidget`
 - Use `QLabel { background: transparent; }` to prevent labels from getting opaque backgrounds
-- Right-click on thumbnails selects visually but does not change the preview

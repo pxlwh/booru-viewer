@@ -40,6 +40,7 @@ class LibraryView(QWidget):
 
     file_selected = Signal(str)
     file_activated = Signal(str)
+    files_deleted = Signal(list)  # list of post IDs that were deleted
 
     def __init__(self, db=None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -351,11 +352,13 @@ class LibraryView(QWidget):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply == QMessageBox.StandardButton.Yes:
+                post_id = int(filepath.stem) if filepath.stem.isdigit() else None
                 filepath.unlink(missing_ok=True)
-                # Also remove cached thumbnail
                 lib_thumb = thumbnails_dir() / "library" / f"{filepath.stem}.jpg"
                 lib_thumb.unlink(missing_ok=True)
                 self.refresh()
+                if post_id is not None:
+                    self.files_deleted.emit([post_id])
 
     def _on_multi_context_menu(self, indices: list, pos) -> None:
         files = [self._files[i] for i in indices if 0 <= i < len(self._files)]
@@ -375,8 +378,13 @@ class LibraryView(QWidget):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply == QMessageBox.StandardButton.Yes:
+                deleted_ids = []
                 for f in files:
+                    if f.stem.isdigit():
+                        deleted_ids.append(int(f.stem))
                     f.unlink(missing_ok=True)
                     lib_thumb = thumbnails_dir() / "library" / f"{f.stem}.jpg"
                     lib_thumb.unlink(missing_ok=True)
                 self.refresh()
+                if deleted_ids:
+                    self.files_deleted.emit(deleted_ids)

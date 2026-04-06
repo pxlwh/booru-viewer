@@ -21,7 +21,7 @@ class MoebooruClient(BooruClient):
             params["login"] = self.api_user
             params["password_hash"] = self.api_key
 
-        resp = await self.client.get(f"{self.base_url}/post.json", params=params)
+        resp = await self._request("GET", f"{self.base_url}/post.json", params=params)
         resp.raise_for_status()
         try:
             data = resp.json()
@@ -59,7 +59,7 @@ class MoebooruClient(BooruClient):
             params["login"] = self.api_user
             params["password_hash"] = self.api_key
 
-        resp = await self.client.get(f"{self.base_url}/post.json", params=params)
+        resp = await self._request("GET", f"{self.base_url}/post.json", params=params)
         if resp.status_code == 404:
             return None
         resp.raise_for_status()
@@ -87,8 +87,8 @@ class MoebooruClient(BooruClient):
 
     async def autocomplete(self, query: str, limit: int = 10) -> list[str]:
         try:
-            resp = await self.client.get(
-                f"{self.base_url}/tag.json",
+            resp = await self._request(
+                "GET", f"{self.base_url}/tag.json",
                 params={"name": f"*{query}*", "order": "count", "limit": limit},
             )
             resp.raise_for_status()

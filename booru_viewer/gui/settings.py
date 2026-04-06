@@ -99,6 +99,18 @@ class SettingsDialog(QDialog):
             self._default_rating.setCurrentIndex(idx)
         form.addRow("Default rating filter:", self._default_rating)
 
+        # Default site
+        self._default_site = QComboBox()
+        self._default_site.addItem("(none)", 0)
+        for site in self._db.get_sites():
+            self._default_site.addItem(site.name, site.id)
+        default_site_id = self._db.get_setting_int("default_site_id")
+        if default_site_id:
+            idx = self._default_site.findData(default_site_id)
+            if idx >= 0:
+                self._default_site.setCurrentIndex(idx)
+        form.addRow("Default site:", self._default_site)
+
         # Default min score
         self._default_score = QSpinBox()
         self._default_score.setRange(0, 99999)
@@ -135,7 +147,7 @@ class SettingsDialog(QDialog):
             idx = self._monitor_combo.findText(current_monitor)
             if idx >= 0:
                 self._monitor_combo.setCurrentIndex(idx)
-        form.addRow("Slideshow monitor:", self._monitor_combo)
+        form.addRow("Popout monitor:", self._monitor_combo)
 
         # File dialog platform (Linux only)
         self._file_dialog_combo = None
@@ -189,6 +201,12 @@ class SettingsDialog(QDialog):
         self._max_cache.setSuffix(" MB")
         self._max_cache.setValue(self._db.get_setting_int("max_cache_mb"))
         limits_layout.addRow("Max cache size:", self._max_cache)
+
+        self._max_thumb_cache = QSpinBox()
+        self._max_thumb_cache.setRange(50, 10000)
+        self._max_thumb_cache.setSuffix(" MB")
+        self._max_thumb_cache.setValue(self._db.get_setting_int("max_thumb_cache_mb") or 500)
+        limits_layout.addRow("Max thumbnail cache:", self._max_thumb_cache)
 
         self._auto_evict = QCheckBox("Auto-evict oldest when limit reached")
         self._auto_evict.setChecked(self._db.get_setting_bool("auto_evict"))
@@ -683,6 +701,7 @@ class SettingsDialog(QDialog):
         self._db.set_setting("page_size", str(self._page_size.value()))
         self._db.set_setting("thumbnail_size", str(self._thumb_size.value()))
         self._db.set_setting("default_rating", self._default_rating.currentText())
+        self._db.set_setting("default_site_id", str(self._default_site.currentData() or 0))
         self._db.set_setting("default_score", str(self._default_score.value()))
         self._db.set_setting("preload_thumbnails", "1" if self._preload.isChecked() else "0")
         self._db.set_setting("prefetch_mode", self._prefetch_combo.currentText())
@@ -690,6 +709,7 @@ class SettingsDialog(QDialog):
         self._db.set_setting("slideshow_monitor", self._monitor_combo.currentText())
         self._db.set_setting("library_dir", self._library_dir.text().strip())
         self._db.set_setting("max_cache_mb", str(self._max_cache.value()))
+        self._db.set_setting("max_thumb_cache_mb", str(self._max_thumb_cache.value()))
         self._db.set_setting("auto_evict", "1" if self._auto_evict.isChecked() else "0")
         self._db.set_setting("clear_cache_on_exit", "1" if self._clear_on_exit.isChecked() else "0")
         self._db.set_setting("blacklist_enabled", "1" if self._bl_enabled.isChecked() else "0")

@@ -39,7 +39,7 @@ Supports custom styling via `custom.qss` — see [Theming](#theming).
 - Auto-detect site API type — just paste the URL
 - Tag search with autocomplete, history dropdown, and saved searches
 - Rating and score filtering (server-side `score:>=N`)
-- **Animated filter** — checkbox to only show video/gif/animated posts
+- **Media type filter** — dropdown: All / Animated / Video / GIF / Audio
 - Blacklisted tags and posts (client-side filtering with backfill)
 - Thumbnail grid with keyboard navigation
 - **Infinite scroll** — optional, auto-loads more posts at bottom
@@ -51,17 +51,20 @@ Supports custom styling via `custom.qss` — see [Theming](#theming).
 - Image viewer with zoom (scroll wheel), pan (drag), and reset (middle click)
 - GIF animation, Pixiv ugoira auto-conversion (zip to animated GIF)
 - Animated PNG/WebP auto-conversion to GIF
-- Video playback (MP4, WebM) with play/pause, seek, volume, mute, and seamless looping
+- Video playback via mpv (MP4, WebM, MKV) with play/pause, seek, volume, mute, and seamless looping
 - Info panel with post details, date, clickable tags, and filetype
+- **Preview toolbar** — Bookmark, Save, BL Tag, BL Post, and Popout buttons above the preview panel
 
-### Slideshow Mode
-- Right-click preview → "Slideshow Mode" for fullscreen viewing
+### Popout Viewer
+- Right-click preview → "Popout" or click the Popout button in the preview toolbar
 - Arrow keys / `h`/`j`/`k`/`l` navigate posts (including during video playback)
-- `,` / `.` seek 5 seconds in videos, `Space` toggles play/pause
-- Toolbar with Bookmark, Save/Unsave, Blacklist Tag, and Blacklist Post buttons
+- `,` / `.` seek 3 seconds in videos, `Space` toggles play/pause
+- Floating overlay UI — toolbar and video controls auto-hide after 2 seconds, reappear on mouse move
 - `F11` toggles fullscreen/windowed, `Ctrl+H` hides all UI, `Ctrl+P` privacy screen
-- Bidirectional sync — clicking posts in the main grid updates the slideshow
-- Video position and player state synced between preview and slideshow
+- Window auto-sizes to content aspect ratio; state persisted across sessions
+- Hyprland: `keep_aspect_ratio` prop locks window to content proportions
+- Bidirectional sync — clicking posts in the main grid updates the popout
+- Video position and player state synced between preview and popout
 
 ### Bookmarks & Library
 - Bookmark posts, organize into folders
@@ -69,7 +72,7 @@ Supports custom styling via `custom.qss` — see [Theming](#theming).
 - Save to library (unsorted or per-folder), drag-and-drop thumbnails as files
 - Multi-select (Ctrl/Shift+Click, Ctrl+A) with bulk actions
 - Bulk context menus in both Browse and Bookmarks tabs
-- Unsave from Library available in grid, preview, and slideshow
+- Unsave from Library available in grid, preview, and popout (only shown when post is saved)
 - Import/export bookmarks as JSON
 
 ### Library
@@ -91,8 +94,6 @@ Supports custom styling via `custom.qss` — see [Theming](#theming).
 
 Download `booru-viewer-setup.exe` from [Releases](https://git.pax.moe/pax/booru-viewer/releases) and run the installer. It installs to AppData with Start Menu and optional desktop shortcuts. To update, just run the new installer over the old one — your data in `%APPDATA%\booru-viewer\` is preserved.
 
-For WebM video playback, install [VP9 Video Extensions](https://apps.microsoft.com/detail/9n4d0msmp0pt) from the Microsoft Store.
-
 Windows 10 dark mode is automatically detected and applied.
 
 ### Linux
@@ -101,17 +102,17 @@ Requires Python 3.11+ and pip. Most distros ship Python but you may need to inst
 
 **Arch / CachyOS:**
 ```sh
-sudo pacman -S python python-pip qt6-base qt6-multimedia qt6-multimedia-ffmpeg ffmpeg
+sudo pacman -S python python-pip qt6-base mpv ffmpeg
 ```
 
 **Ubuntu / Debian (24.04+):**
 ```sh
-sudo apt install python3 python3-pip python3-venv libqt6multimedia6 gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav ffmpeg
+sudo apt install python3 python3-pip python3-venv mpv libmpv-dev ffmpeg
 ```
 
 **Fedora:**
 ```sh
-sudo dnf install python3 python3-pip qt6-qtbase qt6-qtmultimedia gstreamer1-plugins-good gstreamer1-plugins-bad-free gstreamer1-libav ffmpeg
+sudo dnf install python3 python3-pip qt6-qtbase mpv mpv-libs-devel ffmpeg
 ```
 
 Then clone and install:
@@ -147,6 +148,8 @@ Categories=Graphics;
 - PySide6 (Qt6)
 - httpx
 - Pillow
+- python-mpv
+- mpv (system package on Linux, bundled DLL on Windows)
 
 ## Keybinds
 
@@ -169,22 +172,22 @@ Categories=Graphics;
 | Scroll wheel | Zoom |
 | Middle click / `0` | Reset view |
 | Arrow keys / `h`/`j`/`k`/`l` | Navigate posts |
-| `,` / `.` | Seek 5s back / forward (video) |
+| `,` / `.` | Seek 3s back / forward (video) |
 | `Space` | Play / pause (video, hover to activate) |
-| Right click | Context menu (bookmark, save, slideshow) |
+| Right click | Context menu (bookmark, save, popout) |
 
-### Slideshow
+### Popout
 
 | Key | Action |
 |-----|--------|
 | Arrow keys / `h`/`j`/`k`/`l` | Navigate posts |
-| `,` / `.` | Seek 5s (video) |
+| `,` / `.` | Seek 3s (video) |
 | `Space` | Play / pause (video) |
 | Scroll wheel | Volume up / down (video) |
 | `F11` | Toggle fullscreen / windowed |
 | `Ctrl+H` | Hide / show UI |
 | `Ctrl+P` | Privacy screen |
-| `Escape` / `Q` | Close slideshow |
+| `Escape` / `Q` | Close popout |
 
 ### Global
 
@@ -227,8 +230,8 @@ A template is also available in Settings > Theme > Create from Template.
 
 ## Settings
 
-- **General** — page size, thumbnail size, default rating/score, prefetch mode (Off / Nearby / Aggressive), infinite scroll, slideshow monitor, file dialog platform
-- **Cache** — max cache size, auto-evict, clear cache on exit (session-only mode)
+- **General** — page size, thumbnail size, default site, default rating/score, prefetch mode (Off / Nearby / Aggressive), infinite scroll, popout monitor, file dialog platform
+- **Cache** — max cache size, max thumbnail cache, auto-evict, clear cache on exit (session-only mode)
 - **Blacklist** — tag blacklist with toggle, post URL blacklist
 - **Paths** — data directory, cache, database, configurable library directory
 - **Theme** — custom.qss editor, template generator, CSS guide

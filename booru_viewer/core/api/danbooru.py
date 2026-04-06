@@ -24,7 +24,7 @@ class DanbooruClient(BooruClient):
         url = f"{self.base_url}/posts.json"
         log.info(f"GET {url}")
         log.debug(f"  params: {params}")
-        resp = await self.client.get(url, params=params)
+        resp = await self._request("GET", url, params=params)
         log.info(f"  -> {resp.status_code}")
         if resp.status_code != 200:
             log.warning(f"  body: {resp.text[:500]}")
@@ -66,8 +66,8 @@ class DanbooruClient(BooruClient):
             params["login"] = self.api_user
             params["api_key"] = self.api_key
 
-        resp = await self.client.get(
-            f"{self.base_url}/posts/{post_id}.json", params=params
+        resp = await self._request(
+            "GET", f"{self.base_url}/posts/{post_id}.json", params=params
         )
         if resp.status_code == 404:
             return None
@@ -91,8 +91,8 @@ class DanbooruClient(BooruClient):
 
     async def autocomplete(self, query: str, limit: int = 10) -> list[str]:
         try:
-            resp = await self.client.get(
-                f"{self.base_url}/autocomplete.json",
+            resp = await self._request(
+                "GET", f"{self.base_url}/autocomplete.json",
                 params={"search[query]": query, "search[type]": "tag_query", "limit": limit},
             )
             resp.raise_for_status()

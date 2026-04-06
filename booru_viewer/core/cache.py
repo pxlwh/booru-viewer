@@ -310,6 +310,26 @@ def evict_oldest(max_bytes: int, protected_paths: set[str] | None = None) -> int
     return deleted
 
 
+def evict_oldest_thumbnails(max_bytes: int) -> int:
+    """Delete oldest thumbnails until under max_bytes. Returns count deleted."""
+    td = thumbnails_dir()
+    if not td.exists():
+        return 0
+    files = sorted(td.iterdir(), key=lambda f: f.stat().st_mtime)
+    deleted = 0
+    current = sum(f.stat().st_size for f in td.iterdir() if f.is_file())
+    for f in files:
+        if current <= max_bytes:
+            break
+        if not f.is_file():
+            continue
+        size = f.stat().st_size
+        f.unlink()
+        current -= size
+        deleted += 1
+    return deleted
+
+
 def clear_cache(clear_images: bool = True, clear_thumbnails: bool = True) -> int:
     """Delete all cached files. Returns count deleted."""
     deleted = 0

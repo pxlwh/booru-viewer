@@ -38,7 +38,7 @@ class GelbooruClient(BooruClient):
         url = f"{self.base_url}/index.php"
         log.info(f"GET {url}")
         log.debug(f"  params: {params}")
-        resp = await self.client.get(url, params=params)
+        resp = await self._request("GET", url, params=params)
         log.info(f"  -> {resp.status_code}")
         if resp.status_code != 200:
             log.warning(f"  body: {resp.text[:500]}")
@@ -94,7 +94,7 @@ class GelbooruClient(BooruClient):
             params["api_key"] = self.api_key
             params["user_id"] = self.api_user
 
-        resp = await self.client.get(f"{self.base_url}/index.php", params=params)
+        resp = await self._request("GET", f"{self.base_url}/index.php", params=params)
         if resp.status_code == 404:
             return None
         resp.raise_for_status()
@@ -111,7 +111,7 @@ class GelbooruClient(BooruClient):
             id=item["id"],
             file_url=file_url,
             preview_url=item.get("preview_url"),
-            tags=item.get("tags", ""),
+            tags=self._decode_tags(item.get("tags", "")),
             score=item.get("score", 0),
             rating=item.get("rating"),
             source=item.get("source"),
@@ -122,8 +122,8 @@ class GelbooruClient(BooruClient):
 
     async def autocomplete(self, query: str, limit: int = 10) -> list[str]:
         try:
-            resp = await self.client.get(
-                f"{self.base_url}/index.php",
+            resp = await self._request(
+                "GET", f"{self.base_url}/index.php",
                 params={
                     "page": "dapi",
                     "s": "tag",

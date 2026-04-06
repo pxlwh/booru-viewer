@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -89,6 +90,36 @@ class BooruClient(ABC):
     @staticmethod
     async def _log_request(request: httpx.Request) -> None:
         log_connection(str(request.url))
+
+    _RETRYABLE_STATUS = frozenset({429, 503})
+
+    async def _request(
+        self, method: str, url: str, *, params: dict | None = None
+    ) -> httpx.Response:
+        """Issue an HTTP request with a single retry on 429/503/timeout."""
+        for attempt in range(2):
+            try:
+                resp = await self.client.request(method, url, params=params)
+                if resp.status_code not in self._RETRYABLE_STATUS or attempt == 1:
+                    return resp
+                wait = 1.0
+                if resp.status_code == 429:
+                    retry_after = resp.headers.get("retry-after")
+                    if retry_after:
+                        try:
+                            wait = min(float(retry_after), 5.0)
+                        except (ValueError, TypeError):
+                            wait = 2.0
+                    else:
+                        wait = 2.0
+                log.info(f"Retrying {url} after {resp.status_code} (wait {wait}s)")
+                await asyncio.sleep(wait)
+            except httpx.TimeoutException:
+                if attempt == 1:
+                    raise
+                log.info(f"Retrying {url} after timeout")
+                await asyncio.sleep(1.0)
+        return resp  # unreachable in practice, satisfies type checker
 
     async def close(self) -> None:
         pass  # shared client stays open

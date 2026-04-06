@@ -20,12 +20,13 @@ hiddenimports = [
     'PIL.GifImagePlugin',
     'PIL.WebPImagePlugin',
     'PIL.BmpImagePlugin',
+    'mpv',
 ]
 
 a = Analysis(
     ['booru_viewer/main_gui.py'],
     pathex=[],
-    binaries=[],
+    binaries=[('mpv-2.dll', '.')] if sys.platform == 'win32' else [],
     datas=[('icon.png', '.')],
     hiddenimports=hiddenimports,
     hookspath=[],
