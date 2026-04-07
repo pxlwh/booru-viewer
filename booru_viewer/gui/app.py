@@ -209,14 +209,12 @@ class InfoPanel(QWidget):
             source_html = source_display
         from html import escape
         self._details.setText(
-            f"Size: {post.width}x{post.height}\n"
             f"Score: {post.score}\n"
             f"Rating: {post.rating or 'unknown'}\n"
             f"Filetype: {filetype}"
         )
         self._details.setTextFormat(Qt.TextFormat.RichText)
         self._details.setText(
-            f"Size: {post.width}x{post.height}<br>"
             f"Score: {post.score}<br>"
             f"Rating: {escape(post.rating or 'unknown')}<br>"
             f"Filetype: {filetype}<br>"
