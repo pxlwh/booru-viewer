@@ -278,6 +278,10 @@ class BooruApp(QMainWindow):
         self._setup_ui()
         self._setup_menu()
         self._load_sites()
+        # Restore window state (geometry, floating, maximized) on the next
+        # event-loop iteration — by then main.py has called show() and the
+        # window has been registered with the compositor.
+        QTimer.singleShot(0, self._restore_main_window_state)
 
     def _setup_signals(self) -> None:
         Q = Qt.ConnectionType.QueuedConnection
@@ -477,7 +481,31 @@ class BooruApp(QMainWindow):
         right.setSizes([500, 0, 200])
         self._splitter.addWidget(right)
 
-        self._splitter.setSizes([600, 500])
+        # Restore the persisted main-splitter sizes if present, otherwise
+        # fall back to the historic default. The sizes are saved as a
+        # comma-separated string in the settings table — same format as
+        # slideshow_geometry to keep things consistent.
+        saved_main_split = self._db.get_setting("main_splitter_sizes")
+        applied = False
+        if saved_main_split:
+            try:
+                parts = [int(p) for p in saved_main_split.split(",")]
+                if len(parts) == 2 and all(p >= 0 for p in parts) and sum(parts) > 0:
+                    self._splitter.setSizes(parts)
+                    applied = True
+            except ValueError:
+                pass
+        if not applied:
+            self._splitter.setSizes([600, 500])
+        # Debounced save on drag — splitterMoved fires hundreds of times
+        # per second, so we restart a 300ms one-shot and save when it stops.
+        self._main_splitter_save_timer = QTimer(self)
+        self._main_splitter_save_timer.setSingleShot(True)
+        self._main_splitter_save_timer.setInterval(300)
+        self._main_splitter_save_timer.timeout.connect(self._save_main_splitter_sizes)
+        self._splitter.splitterMoved.connect(
+            lambda *_: self._main_splitter_save_timer.start()
+        )
         layout.addWidget(self._splitter, stretch=1)
 
         # Bottom page nav (centered)
@@ -1456,6 +1484,121 @@ class BooruApp(QMainWindow):
                 self._signals.image_error.emit(str(e))
 
         self._run_async(_dl)
+
+    def _save_main_splitter_sizes(self) -> None:
+        """Persist the main grid/preview splitter sizes (debounced)."""
+        sizes = self._splitter.sizes()
+        if sum(sizes) > 0:
+            self._db.set_setting(
+                "main_splitter_sizes", ",".join(str(s) for s in sizes)
+            )
+
+    def _hyprctl_main_window(self) -> dict | None:
+        """Look up this main window in hyprctl clients. None off Hyprland."""
+        import os, subprocess, json
+        if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+            return None
+        try:
+            result = subprocess.run(
+                ["hyprctl", "clients", "-j"],
+                capture_output=True, text=True, timeout=1,
+            )
+            for c in json.loads(result.stdout):
+                if c.get("title") == self.windowTitle():
+                    return c
+        except Exception:
+            pass
+        return None
+
+    def _save_main_window_state(self) -> None:
+        """Persist the main window's size, position, floating, maximized state.
+
+        On Hyprland, queries hyprctl for the real geometry (Qt's frameGeometry
+        is unreliable for floating windows on Wayland). Maximized/fullscreen is
+        recorded separately so the next launch can re-maximize without
+        clobbering the underlying windowed geometry.
+        """
+        try:
+            self._db.set_setting(
+                "main_window_maximized",
+                "1" if self.isMaximized() else "0",
+            )
+            if self.isMaximized():
+                return  # don't overwrite the windowed-mode geometry
+            win = self._hyprctl_main_window()
+            if win and win.get("at") and win.get("size"):
+                x, y = win["at"]
+                w, h = win["size"]
+                floating = 1 if win.get("floating") else 0
+                self._db.set_setting(
+                    "main_window_geometry",
+                    f"{x},{y},{w},{h},{floating}",
+                )
+                return
+            g = self.frameGeometry()
+            self._db.set_setting(
+                "main_window_geometry",
+                f"{g.x()},{g.y()},{g.width()},{g.height()},0",
+            )
+        except Exception:
+            pass
+
+    def _restore_main_window_state(self) -> None:
+        """One-shot restore of saved geometry, floating and maximized state.
+
+        Called from __init__ via QTimer.singleShot(0, ...) so it fires on the
+        next event-loop iteration — by which time the window has been shown
+        and (on Hyprland) registered with the compositor.
+        """
+        if self._db.get_setting_bool("main_window_maximized"):
+            self.showMaximized()
+            return
+        saved = self._db.get_setting("main_window_geometry")
+        if not saved:
+            return
+        parts = saved.split(",")
+        if len(parts) != 5:
+            return
+        try:
+            x, y, w, h, floating = (int(p) for p in parts)
+        except ValueError:
+            return
+        # Seed Qt with the size; Hyprland may ignore the position for the
+        # initial map, but we follow up with a hyprctl batch below.
+        self.setGeometry(x, y, w, h)
+        import os
+        if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+            return
+        # Slight delay so the window is registered before we try to find
+        # its address. The popout uses the same pattern.
+        QTimer.singleShot(
+            50, lambda: self._hyprctl_apply_main_state(x, y, w, h, bool(floating))
+        )
+
+    def _hyprctl_apply_main_state(self, x: int, y: int, w: int, h: int, floating: bool) -> None:
+        """Apply saved floating/position/size to the main window via hyprctl."""
+        import subprocess
+        win = self._hyprctl_main_window()
+        if not win:
+            return
+        addr = win.get("address")
+        if not addr:
+            return
+        cmds = []
+        if bool(win.get("floating")) != floating:
+            cmds.append(f"dispatch togglefloating address:{addr}")
+        if floating:
+            cmds.append(f"dispatch resizewindowpixel exact {w} {h},address:{addr}")
+            cmds.append(f"dispatch movewindowpixel exact {x} {y},address:{addr}")
+        if not cmds:
+            return
+        try:
+            subprocess.Popen(
+                ["hyprctl", "--batch", " ; ".join(cmds)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        except FileNotFoundError:
+            pass
 
     def _open_preview_in_default(self) -> None:
         # The preview is shared across tabs but its right-click menu used
@@ -2529,6 +2672,13 @@ class BooruApp(QMainWindow):
             self._library_view.refresh()
 
     def closeEvent(self, event) -> None:
+        # Flush any pending splitter save (debounce timer might still be
+        # running if the user dragged it within the last 300ms) and capture
+        # the final main window state. Both must run BEFORE _db.close().
+        if self._main_splitter_save_timer.isActive():
+            self._main_splitter_save_timer.stop()
+        self._save_main_splitter_sizes()
+        self._save_main_window_state()
         self._async_loop.call_soon_threadsafe(self._async_loop.stop)
         self._async_thread.join(timeout=2)
         if self._db.get_setting_bool("clear_cache_on_exit"):
