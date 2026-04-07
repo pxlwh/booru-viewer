@@ -40,6 +40,7 @@ class BookmarksView(QWidget):
     bookmark_selected = Signal(object)
     bookmark_activated = Signal(object)
     bookmarks_changed = Signal()  # emitted after bookmark add/remove/unsave
+    open_in_browser_requested = Signal(int, int)  # (site_id, post_id)
 
     def __init__(self, db: Database, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -219,6 +220,7 @@ class BookmarksView(QWidget):
 
         menu = QMenu(self)
 
+        open_browser = menu.addAction("Open in Browser")
         open_default = menu.addAction("Open in Default App")
         menu.addSeparator()
         save_as = menu.addAction("Save As...")
@@ -286,6 +288,8 @@ class BookmarksView(QWidget):
             folder_name = save_lib_folders[id(action)]
             self._copy_to_library(fav, folder_name)
             self.refresh()
+        elif action == open_browser:
+            self.open_in_browser_requested.emit(fav.site_id, fav.post_id)
         elif action == open_default:
             if fav.cached_path and Path(fav.cached_path).exists():
                 QDesktopServices.openUrl(QUrl.fromLocalFile(fav.cached_path))

@@ -430,6 +430,9 @@ class BooruApp(QMainWindow):
         self._bookmarks_view.bookmark_selected.connect(self._on_bookmark_selected)
         self._bookmarks_view.bookmark_activated.connect(self._on_bookmark_activated)
         self._bookmarks_view.bookmarks_changed.connect(self._refresh_browse_saved_dots)
+        self._bookmarks_view.open_in_browser_requested.connect(
+            lambda site_id, post_id: self._open_post_id_in_browser(post_id, site_id=site_id)
+        )
         self._stack.addWidget(self._bookmarks_view)
 
         self._library_view = LibraryView(db=self._db)
@@ -1455,26 +1458,71 @@ class BooruApp(QMainWindow):
         self._run_async(_dl)
 
     def _open_preview_in_default(self) -> None:
-        # Try the currently selected post first
+        # The preview is shared across tabs but its right-click menu used
+        # to read browse-tab grid/posts unconditionally and then fell back
+        # to "open the most recently modified file in the cache", which on
+        # bookmarks/library tabs opened a completely unrelated image.
+        # Branch on the active tab and use the right source.
+        stack_idx = self._stack.currentIndex()
+        if stack_idx == 1:
+            # Bookmarks: prefer the bookmark's stored cached_path, fall back
+            # to deriving the hashed cache filename from file_url in case
+            # the stored path was set on a different machine or is stale.
+            favs = self._bookmarks_view._bookmarks
+            idx = self._bookmarks_view._grid.selected_index
+            if 0 <= idx < len(favs):
+                fav = favs[idx]
+                from ..core.cache import cached_path_for
+                path = None
+                if fav.cached_path and Path(fav.cached_path).exists():
+                    path = Path(fav.cached_path)
+                else:
+                    derived = cached_path_for(fav.file_url)
+                    if derived.exists():
+                        path = derived
+                if path is not None:
+                    self._preview._video_player.pause()
+                    if self._fullscreen_window and self._fullscreen_window.isVisible():
+                        self._fullscreen_window._video.pause()
+                    QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+                else:
+                    self._status.showMessage("Bookmark not cached — open it first to download")
+            return
+        if stack_idx == 2:
+            # Library: the preview's current path IS the local library file.
+            # Don't go through cached_path_for — library files live under
+            # saved_dir, not the cache.
+            current = self._preview._current_path
+            if current and Path(current).exists():
+                self._preview._video_player.pause()
+                if self._fullscreen_window and self._fullscreen_window.isVisible():
+                    self._fullscreen_window._video.pause()
+                QDesktopServices.openUrl(QUrl.fromLocalFile(current))
+            return
+        # Browse: original path. Removed the "open random cache file"
+        # fallback — better to do nothing than to open the wrong image.
         idx = self._grid.selected_index
         if 0 <= idx < len(self._posts):
             self._open_in_default(self._posts[idx])
-            return
-        # Fall back to finding any cached image that matches the preview
-        from ..core.cache import cache_dir
-        from PySide6.QtGui import QDesktopServices
-        # Open the most recently modified file in cache
-        cache = cache_dir()
-        files = sorted(cache.iterdir(), key=lambda f: f.stat().st_mtime, reverse=True)
-        for f in files:
-            if f.is_file() and f.suffix in ('.jpg', '.jpeg', '.png', '.gif', '.webp'):
-                QDesktopServices.openUrl(QUrl.fromLocalFile(str(f)))
-                return
 
     def _open_preview_in_browser(self) -> None:
-        idx = self._grid.selected_index
-        if 0 <= idx < len(self._posts):
-            self._open_in_browser(self._posts[idx])
+        # Same shape as _open_preview_in_default: route per active tab so
+        # bookmarks open the post page on the bookmark's source site, not
+        # the search dropdown's currently-selected site.
+        stack_idx = self._stack.currentIndex()
+        if stack_idx == 1:
+            favs = self._bookmarks_view._bookmarks
+            idx = self._bookmarks_view._grid.selected_index
+            if 0 <= idx < len(favs):
+                fav = favs[idx]
+                self._open_post_id_in_browser(fav.post_id, site_id=fav.site_id)
+        elif stack_idx == 2:
+            # Library files have no booru source URL — nothing to open.
+            return
+        else:
+            idx = self._grid.selected_index
+            if 0 <= idx < len(self._posts):
+                self._open_in_browser(self._posts[idx])
 
     def _navigate_preview(self, direction: int) -> None:
         """Navigate to prev/next post in the preview. direction: -1 or +1."""
@@ -2102,19 +2150,33 @@ class BooruApp(QMainWindow):
             return False
         return self._db.is_bookmarked(site_id, self._posts[index].id)
 
+    def _open_post_id_in_browser(self, post_id: int, site_id: int | None = None) -> None:
+        """Open the post page in the system browser. site_id selects which
+        site's URL/api scheme to use; defaults to the currently selected
+        search site. Pass site_id explicitly when the post comes from a
+        different source than the search dropdown (e.g. bookmarks)."""
+        site = None
+        if site_id is not None:
+            sites = self._db.get_sites()
+            site = next((s for s in sites if s.id == site_id), None)
+        if site is None:
+            site = self._current_site
+        if not site:
+            return
+        base = site.url
+        api = site.api_type
+        if api == "danbooru" or api == "e621":
+            url = f"{base}/posts/{post_id}"
+        elif api == "gelbooru":
+            url = f"{base}/index.php?page=post&s=view&id={post_id}"
+        elif api == "moebooru":
+            url = f"{base}/post/show/{post_id}"
+        else:
+            url = f"{base}/posts/{post_id}"
+        QDesktopServices.openUrl(QUrl(url))
+
     def _open_in_browser(self, post: Post) -> None:
-        if self._current_site:
-            base = self._current_site.url
-            api = self._current_site.api_type
-            if api == "danbooru" or api == "e621":
-                url = f"{base}/posts/{post.id}"
-            elif api == "gelbooru":
-                url = f"{base}/index.php?page=post&s=view&id={post.id}"
-            elif api == "moebooru":
-                url = f"{base}/post/show/{post.id}"
-            else:
-                url = f"{base}/posts/{post.id}"
-            QDesktopServices.openUrl(QUrl(url))
+        self._open_post_id_in_browser(post.id)
 
     def _open_in_default(self, post: Post) -> None:
         from ..core.cache import cached_path_for, is_cached
