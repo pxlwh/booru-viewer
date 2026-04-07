@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal, QSize, QRect, QRectF, QMimeData, QUrl, QPoint, Property
-from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QKeyEvent, QWheelEvent, QDrag, QMouseEvent
+from PySide6.QtGui import QPixmap, QPainter, QPainterPath, QColor, QPen, QKeyEvent, QWheelEvent, QDrag, QMouseEvent
 from PySide6.QtWidgets import (
     QWidget,
     QScrollArea,
@@ -31,7 +31,6 @@ class ThumbnailWidget(QWidget):
     # QSS-controllable dot colors
     _saved_color = QColor("#22cc22")
     _bookmarked_color = QColor("#ffcc00")
-    _missing_color = QColor("#ff4444")
 
     def _get_saved_color(self): return self._saved_color
     def _set_saved_color(self, c): self._saved_color = QColor(c) if isinstance(c, str) else c
@@ -41,9 +40,30 @@ class ThumbnailWidget(QWidget):
     def _set_bookmarked_color(self, c): self._bookmarked_color = QColor(c) if isinstance(c, str) else c
     bookmarkedColor = Property(QColor, _get_bookmarked_color, _set_bookmarked_color)
 
-    def _get_missing_color(self): return self._missing_color
-    def _set_missing_color(self, c): self._missing_color = QColor(c) if isinstance(c, str) else c
-    missingColor = Property(QColor, _get_missing_color, _set_missing_color)
+    # QSS-controllable selection paint colors. Defaults are read from the
+    # palette in __init__ so non-themed environments still pick up the
+    # system Highlight color, but a custom.qss can override any of them
+    # via `ThumbnailWidget { qproperty-selectionColor: ${accent}; }`.
+    _selection_color = QColor("#3399ff")
+    _multi_select_color = QColor("#226699")
+    _hover_color = QColor("#66bbff")
+    _idle_color = QColor("#444444")
+
+    def _get_selection_color(self): return self._selection_color
+    def _set_selection_color(self, c): self._selection_color = QColor(c) if isinstance(c, str) else c
+    selectionColor = Property(QColor, _get_selection_color, _set_selection_color)
+
+    def _get_multi_select_color(self): return self._multi_select_color
+    def _set_multi_select_color(self, c): self._multi_select_color = QColor(c) if isinstance(c, str) else c
+    multiSelectColor = Property(QColor, _get_multi_select_color, _set_multi_select_color)
+
+    def _get_hover_color(self): return self._hover_color
+    def _set_hover_color(self, c): self._hover_color = QColor(c) if isinstance(c, str) else c
+    hoverColor = Property(QColor, _get_hover_color, _set_hover_color)
+
+    def _get_idle_color(self): return self._idle_color
+    def _set_idle_color(self, c): self._idle_color = QColor(c) if isinstance(c, str) else c
+    idleColor = Property(QColor, _get_idle_color, _set_idle_color)
 
     def __init__(self, index: int, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -53,11 +73,20 @@ class ThumbnailWidget(QWidget):
         self._multi_selected = False
         self._bookmarked = False
         self._saved_locally = False
-        self._missing = False
         self._hover = False
         self._drag_start: QPoint | None = None
         self._cached_path: str | None = None
         self._prefetch_progress: float = -1  # -1 = not prefetching, 0-1 = progress
+        # Seed selection colors from the palette so non-themed environments
+        # (no custom.qss) automatically use the system highlight color.
+        # The qproperty setters above override these later when the QSS is
+        # polished, so any theme can repaint via `qproperty-selectionColor`.
+        from PySide6.QtGui import QPalette
+        pal = self.palette()
+        self._selection_color = pal.color(QPalette.ColorRole.Highlight)
+        self._multi_select_color = self._selection_color.darker(150)
+        self._hover_color = self._selection_color.lighter(150)
+        self._idle_color = pal.color(QPalette.ColorRole.Mid)
         self.setFixedSize(THUMB_SIZE, THUMB_SIZE)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setMouseTracking(True)
@@ -86,10 +115,6 @@ class ThumbnailWidget(QWidget):
         self._saved_locally = saved
         self.update()
 
-    def set_missing(self, missing: bool) -> None:
-        self._missing = missing
-        self.update()
-
     def set_prefetch_progress(self, progress: float) -> None:
         """Set prefetch progress: -1 = hide, 0.0-1.0 = progress."""
         self._prefetch_progress = progress
@@ -101,9 +126,11 @@ class ThumbnailWidget(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         pal = self.palette()
-        highlight = pal.color(pal.ColorRole.Highlight)
+        # State colors come from Qt Properties so QSS can override them.
+        # Defaults were seeded from the palette in __init__.
+        highlight = self._selection_color
         base = pal.color(pal.ColorRole.Base)
-        mid = pal.color(pal.ColorRole.Mid)
+        mid = self._idle_color
         window = pal.color(pal.ColorRole.Window)
 
         # Fill entire cell with window color
@@ -121,7 +148,7 @@ class ThumbnailWidget(QWidget):
 
         # Background (content area only)
         if self._multi_selected:
-            p.fillRect(content, highlight.darker(200))
+            p.fillRect(content, self._multi_select_color.darker(200))
         elif self._hover:
             p.fillRect(content, window.lighter(130))
 
@@ -129,58 +156,78 @@ class ThumbnailWidget(QWidget):
         # centered on a QRect's geometric edge spills half a pixel out on
         # each side, which on AA-on rendering blends with the cell
         # background and makes the border read as thinner than the pen
-        # width — and uneven, since some sides land on integer pixels and
-        # some don't. Inset by half the pen width into a QRectF so the
-        # full pen width sits cleanly inside the content rect, and use
-        # drawRoundedRect for smooth corners that match the rest of the
-        # Fusion-style theming.
+        # width. Inset by half the pen width into a QRectF so the full
+        # pen width sits cleanly inside the content rect.
+        # All four state colors are QSS-controllable Qt Properties on
+        # ThumbnailWidget — see selectionColor, multiSelectColor,
+        # hoverColor, idleColor at the top of this class.
         if self._selected:
             pen_width = 3
-            pen_color = highlight
+            pen_color = self._selection_color
         elif self._multi_selected:
             pen_width = 3
-            pen_color = highlight.darker(150)
+            pen_color = self._multi_select_color
         elif self._hover:
             pen_width = 1
-            pen_color = highlight.lighter(150)
+            pen_color = self._hover_color
         else:
             pen_width = 1
-            pen_color = mid
-        pen = QPen(pen_color, pen_width)
-        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-        p.setPen(pen)
-        p.setBrush(Qt.BrushStyle.NoBrush)
+            pen_color = self._idle_color
         half = pen_width / 2.0
         border_rect = QRectF(content).adjusted(half, half, -half, -half)
-        # 2px radius is subtle enough that it doesn't visibly leave window
-        # color showing through the gap between the rounded curve and the
-        # square pixmap corners.
-        p.drawRoundedRect(border_rect, 2, 2)
 
-        # Thumbnail
+        # Draw the thumbnail FIRST so the selection border z-orders on top.
+        # No clip path: the border is square and the pixmap is square, so
+        # there's nothing to round and nothing to mismatch.
         if self._pixmap:
             x = (self.width() - self._pixmap.width()) // 2
             y = (self.height() - self._pixmap.height()) // 2
             p.drawPixmap(x, y, self._pixmap)
 
-        # Indicators relative to content rect
-        indicator_x = content.right() - 2
+        # Border drawn AFTER the pixmap. Plain rectangle (no rounding) so
+        # it lines up exactly with the pixmap's square edges — no corner
+        # cut-off triangles where window color would peek through.
+        pen = QPen(pen_color, pen_width)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawRect(border_rect)
+
+        # Indicators (top-right of content rect): bookmark on the left,
+        # saved dot on the right. Both share a fixed-size box so
+        # they're vertically and horizontally aligned. The right anchor
+        # is fixed regardless of which indicators are visible, so the
+        # rightmost slot stays in the same place whether the cell has
+        # one indicator or two.
+        from PySide6.QtGui import QFont
+        slot_size = 9
+        slot_gap = 2
+        slot_y = content.top() + 3
+        right_anchor = content.right() - 3
+
+        # Build the row right-to-left so we can decrement x as we draw.
+        # Right slot (drawn first): the saved-locally dot.
+        # Left slot (drawn second): the bookmark star.
+        draw_order: list[tuple[str, QColor]] = []
+        if self._saved_locally:
+            draw_order.append(('dot', self._saved_color))
         if self._bookmarked:
-            from PySide6.QtGui import QFont
-            p.setPen(self._bookmarked_color)
-            p.setFont(QFont(p.font().family(), 8))
-            indicator_x -= 11
-            p.drawText(indicator_x, content.top() + 14, "\u2605")
-        if self._missing:
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(self._missing_color)
-            indicator_x -= 9
-            p.drawEllipse(indicator_x, content.top() + 4, 7, 7)
-        elif self._saved_locally:
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(self._saved_color)
-            indicator_x -= 9
-            p.drawEllipse(indicator_x, content.top() + 4, 7, 7)
+            draw_order.append(('star', self._bookmarked_color))
+
+        x = right_anchor - slot_size
+        for kind, color in draw_order:
+            slot = QRect(x, slot_y, slot_size, slot_size)
+            if kind == 'dot':
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(color)
+                # 1px inset so the circle doesn't kiss the slot edge —
+                # makes it look slightly less stamped-on at small sizes.
+                p.drawEllipse(slot.adjusted(1, 1, -1, -1))
+            elif kind == 'star':
+                p.setPen(color)
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setFont(QFont(p.font().family(), 9))
+                p.drawText(slot, int(Qt.AlignmentFlag.AlignCenter), "\u2605")
+            x -= (slot_size + slot_gap)
 
         # Multi-select checkmark
         if self._multi_selected:
