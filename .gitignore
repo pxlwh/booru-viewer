@@ -9,3 +9,4 @@ build/
 venv/
 project.md
 *.bak/
+*.dll
