@@ -52,8 +52,20 @@ class BookmarksView(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        # Top bar: folder selector + search
+        # Top bar: folder selector + search.
+        # 4px right margin so the rightmost button doesn't sit flush
+        # against the preview splitter handle.
         top = QHBoxLayout()
+        top.setContentsMargins(0, 0, 4, 0)
+
+        # Compact button padding matches the rest of the app's narrow
+        # toolbar buttons (search bar score field, settings spinbox +/-,
+        # preview toolbar). The bundled themes' default `padding: 5px 12px`
+        # is too wide for short labels in fixed-width slots.
+        # min-height 22px gives a total height of 30px (22 + 3+3 padding +
+        # 1+1 border), matching the inputs/combos in the same row so the
+        # whole toolbar lines up at one consistent height.
+        _btn_style = "padding: 3px 6px; min-height: 22px;"
 
         self._folder_combo = QComboBox()
         self._folder_combo.setMinimumWidth(120)
@@ -62,7 +74,8 @@ class BookmarksView(QWidget):
 
         manage_btn = QPushButton("+ Folder")
         manage_btn.setToolTip("New folder")
-        manage_btn.setFixedWidth(65)
+        manage_btn.setFixedWidth(75)
+        manage_btn.setStyleSheet(_btn_style)
         manage_btn.clicked.connect(self._new_folder)
         top.addWidget(manage_btn)
 
@@ -72,10 +85,9 @@ class BookmarksView(QWidget):
         top.addWidget(self._search_input, stretch=1)
 
         search_btn = QPushButton("Search")
+        search_btn.setStyleSheet(_btn_style)
         search_btn.clicked.connect(self._do_search)
         top.addWidget(search_btn)
-
-        top.setContentsMargins(0, 0, 0, 0)
 
         layout.addLayout(top)
 

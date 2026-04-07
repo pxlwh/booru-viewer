@@ -58,8 +58,18 @@ class LibraryView(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
 
         # --- Top bar ---
+        # 4px right margin so the rightmost widget doesn't sit flush
+        # against the preview splitter handle.
         top = QHBoxLayout()
-        top.setContentsMargins(0, 0, 0, 0)
+        top.setContentsMargins(0, 0, 4, 0)
+
+        # Compact button padding matches the rest of the app's narrow
+        # toolbar buttons. Bundled themes' default `padding: 5px 12px`
+        # is too wide for short labels in fixed-width slots.
+        # min-height 22px gives a total height of 30px (22 + 3+3 padding +
+        # 1+1 border), matching the inputs/combos in the same row so the
+        # whole toolbar lines up at one consistent height.
+        _btn_style = "padding: 3px 6px; min-height: 22px;"
 
         self._folder_combo = QComboBox()
         self._folder_combo.setMinimumWidth(140)
@@ -73,7 +83,8 @@ class LibraryView(QWidget):
         top.addWidget(self._sort_combo)
 
         refresh_btn = QPushButton("Refresh")
-        refresh_btn.setFixedWidth(65)
+        refresh_btn.setFixedWidth(75)
+        refresh_btn.setStyleSheet(_btn_style)
         refresh_btn.clicked.connect(self.refresh)
         top.addWidget(refresh_btn)
 
@@ -136,9 +147,6 @@ class LibraryView(QWidget):
         for i, (filepath, thumb) in enumerate(zip(self._files, thumbs)):
             thumb._cached_path = str(filepath)
             thumb.setToolTip(filepath.name)
-            if not filepath.exists():
-                thumb.set_missing(True)
-                continue
             thumb.set_saved_locally(True)
             cached_thumb = lib_thumb_dir / f"{filepath.stem}.jpg"
             if cached_thumb.exists():

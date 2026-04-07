@@ -1306,10 +1306,12 @@ class ImagePreview(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Action toolbar — above the media, in the layout
+        # Action toolbar — above the media, in the layout.
+        # 4px horizontal margins so the leftmost button (Bookmark) doesn't
+        # sit flush against the preview splitter handle on the left.
         self._toolbar = QWidget()
         tb = QHBoxLayout(self._toolbar)
-        tb.setContentsMargins(2, 1, 2, 1)
+        tb.setContentsMargins(4, 1, 4, 1)
         tb.setSpacing(4)
 
         # Compact toolbar buttons. The bundled themes set
