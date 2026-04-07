@@ -258,7 +258,7 @@ class FullscreenPreview(QMainWindow):
         if screen:
             avail = screen.availableGeometry()
             max_w = avail.width()
-            max_h = avail.height()
+            max_h = int(avail.height() * 0.85)  # 15% margin top+bottom
         else:
             max_w = max_h = 9999
         w = min(self.width(), max_w)
