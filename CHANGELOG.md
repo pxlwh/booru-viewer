@@ -64,6 +64,14 @@
 - Prev/Next buttons hide when at page boundaries instead of just disabling
 - Source URLs clickable in info panel, truncated at 60 chars for display
 
+### Changed: scroll tilt navigation
+- Scroll tilt left/right now navigates between posts everywhere — grid, embedded preview, and popout — mirroring the L/R keys
+- Grid: moves selection one cell, falls through to `nav_before_start` / `nav_past_end` at the edges
+- Preview/popout: emits the existing `navigate` signal (±1)
+- Vertical scroll still adjusts video volume on the video stack; tilt and vertical can no longer interfere
+- Fixed: tilting over the image preview no longer zooms the image out (latent bug — `angleDelta().y() == 0` on pure tilt fell into the zoom-out branch)
+- `page_forward` / `page_back` grid signals removed (only consumer was the old tilt handler)
+
 ### Improved: video controls
 - Seek step changed from 5s to ~3s for `,` and `.` keys
 - `,` and `.` seek keys now work in the main preview panel, not just popout

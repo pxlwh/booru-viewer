@@ -161,7 +161,7 @@ Categories=Graphics;
 | `Ctrl+A` | Select all |
 | `Ctrl+Click` / `Shift+Click` | Multi-select |
 | `Home` / `End` | Jump to first / last |
-| Scroll tilt left / right | Previous / next page |
+| Scroll tilt left / right | Previous / next thumbnail (one cell) |
 | `Ctrl+C` | Copy file to clipboard |
 | Right click | Context menu |
 
@@ -169,7 +169,8 @@ Categories=Graphics;
 
 | Key | Action |
 |-----|--------|
-| Scroll wheel | Zoom |
+| Scroll wheel | Zoom (image) / volume (video) |
+| Scroll tilt left / right | Previous / next post |
 | Middle click / `0` | Reset view |
 | Arrow keys / `h`/`j`/`k`/`l` | Navigate posts |
 | `,` / `.` | Seek 3s back / forward (video) |
@@ -181,6 +182,7 @@ Categories=Graphics;
 | Key | Action |
 |-----|--------|
 | Arrow keys / `h`/`j`/`k`/`l` | Navigate posts |
+| Scroll tilt left / right | Previous / next post |
 | `,` / `.` | Seek 3s (video) |
 | `Space` | Play / pause (video) |
 | Scroll wheel | Volume up / down (video) |

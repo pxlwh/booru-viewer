@@ -288,10 +288,8 @@ class ThumbnailGrid(QScrollArea):
     multi_context_requested = Signal(list, object)  # list[int], QPoint
     reached_bottom = Signal()  # emitted when scrolled to the bottom
     reached_top = Signal()     # emitted when scrolled to the top
-    nav_past_end = Signal()    # keyboard nav past last post
-    nav_before_start = Signal()  # keyboard nav before first post
-    page_forward = Signal()    # scroll tilt right
-    page_back = Signal()       # scroll tilt left
+    nav_past_end = Signal()    # nav past last post (keyboard or scroll tilt)
+    nav_before_start = Signal()  # nav before first post (keyboard or scroll tilt)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -483,15 +481,9 @@ class ThumbnailGrid(QScrollArea):
             return
 
         if key in (Qt.Key.Key_Right, Qt.Key.Key_L):
-            if idx + 1 >= len(self._thumbs):
-                self.nav_past_end.emit()
-            else:
-                self._select(idx + 1)
+            self._nav_horizontal(1)
         elif key in (Qt.Key.Key_Left, Qt.Key.Key_H):
-            if idx - 1 < 0:
-                self.nav_before_start.emit()
-            else:
-                self._select(idx - 1)
+            self._nav_horizontal(-1)
         elif key in (Qt.Key.Key_Down, Qt.Key.Key_J):
             target = idx + cols
             if target >= len(self._thumbs):
@@ -536,12 +528,23 @@ class ThumbnailGrid(QScrollArea):
         if value <= 0 and sb.maximum() > 0:
             self.reached_top.emit()
 
+    def _nav_horizontal(self, direction: int) -> None:
+        """Move selection one cell left (-1) or right (+1); emit edge signals at boundaries."""
+        idx = self._selected_index
+        target = idx + direction
+        if target < 0:
+            self.nav_before_start.emit()
+        elif target >= len(self._thumbs):
+            self.nav_past_end.emit()
+        else:
+            self._select(target)
+
     def wheelEvent(self, event: QWheelEvent) -> None:
         delta = event.angleDelta().x()
         if delta > 30:
-            self.page_back.emit()
+            self._nav_horizontal(-1)
         elif delta < -30:
-            self.page_forward.emit()
+            self._nav_horizontal(1)
         else:
             super().wheelEvent(event)
 

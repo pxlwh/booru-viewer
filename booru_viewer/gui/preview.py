@@ -361,13 +361,23 @@ class FullscreenPreview(QMainWindow):
             elif key == Qt.Key.Key_Comma and self._stack.currentIndex() == 1:
                 self._video._seek_relative(-1800)
                 return True
-        if event.type() == QEvent.Type.Wheel and self._stack.currentIndex() == 1 and self.isActiveWindow():
-            delta = event.angleDelta().y()
-            if delta:
-                vol = max(0, min(100, self._video.volume + (5 if delta > 0 else -5)))
-                self._video.volume = vol
-                self._show_overlay()
+        if event.type() == QEvent.Type.Wheel and self.isActiveWindow():
+            # Horizontal tilt navigates between posts on either stack
+            tilt = event.angleDelta().x()
+            if tilt > 30:
+                self.navigate.emit(-1)
                 return True
+            if tilt < -30:
+                self.navigate.emit(1)
+                return True
+            # Vertical wheel adjusts volume on the video stack only
+            if self._stack.currentIndex() == 1:
+                delta = event.angleDelta().y()
+                if delta:
+                    vol = max(0, min(100, self._video.volume + (5 if delta > 0 else -5)))
+                    self._video.volume = vol
+                    self._show_overlay()
+                    return True
         if event.type() == QEvent.Type.MouseMove and self.isActiveWindow():
             # Map cursor position to window coordinates
             cursor_pos = self.mapFromGlobal(event.globalPosition().toPoint() if hasattr(event, 'globalPosition') else event.globalPos())
@@ -593,9 +603,13 @@ class ImageViewer(QWidget):
     def wheelEvent(self, event: QWheelEvent) -> None:
         if not self._pixmap:
             return
+        delta = event.angleDelta().y()
+        if delta == 0:
+            # Pure horizontal tilt — let parent handle (navigation)
+            event.ignore()
+            return
         mouse_pos = event.position()
         old_zoom = self._zoom
-        delta = event.angleDelta().y()
         factor = 1.15 if delta > 0 else 1 / 1.15
         self._zoom = max(0.1, min(self._zoom * factor, 20.0))
         ratio = self._zoom / old_zoom
@@ -1367,10 +1381,19 @@ class ImagePreview(QWidget):
             super().mousePressEvent(event)
 
     def wheelEvent(self, event) -> None:
+        # Horizontal tilt navigates between posts on either stack
+        tilt = event.angleDelta().x()
+        if tilt > 30:
+            self.navigate.emit(-1)
+            return
+        if tilt < -30:
+            self.navigate.emit(1)
+            return
         if self._stack.currentIndex() == 1:
             delta = event.angleDelta().y()
-            vol = max(0, min(100, self._video_player.volume + (5 if delta > 0 else -5)))
-            self._video_player.volume = vol
+            if delta:
+                vol = max(0, min(100, self._video_player.volume + (5 if delta > 0 else -5)))
+                self._video_player.volume = vol
         else:
             super().wheelEvent(event)
 

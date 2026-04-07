@@ -424,8 +424,6 @@ class BooruApp(QMainWindow):
         self._grid.multi_context_requested.connect(self._on_multi_context_menu)
         self._grid.nav_past_end.connect(self._on_nav_past_end)
         self._grid.nav_before_start.connect(self._on_nav_before_start)
-        self._grid.page_forward.connect(self._next_page)
-        self._grid.page_back.connect(self._prev_page)
         self._stack.addWidget(self._grid)
 
         self._bookmarks_view = BookmarksView(self._db)
