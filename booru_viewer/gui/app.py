@@ -1255,6 +1255,9 @@ class BooruApp(QMainWindow):
                         for ext in MEDIA_EXTENSIONS
                     )
                 self._fullscreen_window.update_state(True, saved)
+                self._fullscreen_window.set_post_tags(
+                    fav.tag_categories or {}, (fav.tags or "").split()
+                )
             else:
                 self._fullscreen_window.update_state(False, False)
         else:
