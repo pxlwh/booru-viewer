@@ -181,6 +181,12 @@ class FullscreenPreview(QMainWindow):
         # position the user has dragged the window to.
         self._first_fit_pending = True
         self._pending_position_restore: tuple[int, int] | None = None
+        self._pending_size: tuple[int, int] | None = None
+        # Last known windowed geometry — captured on entering fullscreen so
+        # F11 → windowed can land back on the same spot. Seeded from saved
+        # geometry when the popout opens windowed, so even an immediate
+        # F11 → fullscreen → F11 has a sensible target.
+        self._windowed_geometry = None
         # Restore saved state or start fullscreen
         if FullscreenPreview._saved_geometry and not FullscreenPreview._saved_fullscreen:
             self.setGeometry(FullscreenPreview._saved_geometry)
@@ -188,6 +194,11 @@ class FullscreenPreview(QMainWindow):
                 FullscreenPreview._saved_geometry.x(),
                 FullscreenPreview._saved_geometry.y(),
             )
+            self._pending_size = (
+                FullscreenPreview._saved_geometry.width(),
+                FullscreenPreview._saved_geometry.height(),
+            )
+            self._windowed_geometry = FullscreenPreview._saved_geometry
             self.show()
         else:
             self.showFullScreen()
@@ -269,12 +280,19 @@ class FullscreenPreview(QMainWindow):
         screen = self.screen()
         max_h = int(screen.availableGeometry().height() * 0.90) if screen else 9999
         max_w = screen.availableGeometry().width() if screen else 9999
-        w = min(self.width(), max_w)
+        # Starting width: prefer the pending one-shot size when set (saves us
+        # from depending on self.width() during transitional Qt states like
+        # right after showNormal(), where Qt may briefly report fullscreen
+        # dimensions before Hyprland confirms the windowed geometry).
+        if self._first_fit_pending and self._pending_size:
+            start_w = self._pending_size[0]
+        else:
+            start_w = self.width()
+        w = min(start_w, max_w)
         h = int(w / aspect)
         if h > max_h:
             h = max_h
             w = int(h * aspect)
-        self.resize(w, h)
         # Decide target top-left:
         #   first fit after open with a saved position → restore it (one-shot)
         #   any subsequent fit → center-pin from current Hyprland position
@@ -287,12 +305,20 @@ class FullscreenPreview(QMainWindow):
                 cx = win["at"][0] + win["size"][0] // 2
                 cy = win["at"][1] + win["size"][1] // 2
                 target = (cx - w // 2, cy - h // 2)
-        if target is not None:
-            self._hyprctl_resize_and_move(w, h, target[0], target[1])
+        if floating is True:
+            # Hyprland: hyprctl is the sole authority. Calling self.resize()
+            # here would race with the batch below and produce visible flashing
+            # when the window also has to move.
+            if target is not None:
+                self._hyprctl_resize_and_move(w, h, target[0], target[1])
+            else:
+                self._hyprctl_resize(w, h)
         else:
-            self._hyprctl_resize(w, h)
+            # Non-Hyprland fallback: Qt drives geometry directly.
+            self.resize(w, h)
         self._first_fit_pending = False
         self._pending_position_restore = None
+        self._pending_size = None
 
     def _show_overlay(self) -> None:
         """Show toolbar and video controls, restart auto-hide timer."""
@@ -350,7 +376,7 @@ class FullscreenPreview(QMainWindow):
                 if self.isFullScreen():
                     self._exit_fullscreen()
                 else:
-                    self.showFullScreen()
+                    self._enter_fullscreen()
                 return True
             elif key == Qt.Key.Key_Space and self._stack.currentIndex() == 1:
                 self._video._toggle_play()
@@ -423,9 +449,12 @@ class FullscreenPreview(QMainWindow):
             return
         if not win.get("floating"):
             # Tiled — don't resize (fights the layout), just set aspect lock
+            # and disable animations to prevent flashing on later transitions.
             try:
                 subprocess.Popen(
-                    ["hyprctl", "dispatch", "setprop", f"address:{addr} keep_aspect_ratio 1"],
+                    ["hyprctl", "--batch",
+                     f"dispatch setprop address:{addr} no_anim 1"
+                     f" ; dispatch setprop address:{addr} keep_aspect_ratio 1"],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 )
             except FileNotFoundError:
@@ -434,7 +463,8 @@ class FullscreenPreview(QMainWindow):
         try:
             subprocess.Popen(
                 ["hyprctl", "--batch",
-                 f"dispatch setprop address:{addr} keep_aspect_ratio 0"
+                 f"dispatch setprop address:{addr} no_anim 1"
+                 f" ; dispatch setprop address:{addr} keep_aspect_ratio 0"
                  f" ; dispatch resizewindowpixel exact {w} {h},address:{addr}"
                  f" ; dispatch setprop address:{addr} keep_aspect_ratio 1"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -456,7 +486,8 @@ class FullscreenPreview(QMainWindow):
         try:
             subprocess.Popen(
                 ["hyprctl", "--batch",
-                 f"dispatch setprop address:{addr} keep_aspect_ratio 0"
+                 f"dispatch setprop address:{addr} no_anim 1"
+                 f" ; dispatch setprop address:{addr} keep_aspect_ratio 0"
                  f" ; dispatch resizewindowpixel exact {w} {h},address:{addr}"
                  f" ; dispatch movewindowpixel exact {x} {y},address:{addr}"
                  f" ; dispatch setprop address:{addr} keep_aspect_ratio 1"],
@@ -465,8 +496,20 @@ class FullscreenPreview(QMainWindow):
         except FileNotFoundError:
             pass
 
+    def _enter_fullscreen(self) -> None:
+        """Enter fullscreen — capture windowed geometry first so F11 back can restore it."""
+        from PySide6.QtCore import QRect
+        win = self._hyprctl_get_window()
+        if win and win.get("at") and win.get("size"):
+            x, y = win["at"]
+            w, h = win["size"]
+            self._windowed_geometry = QRect(x, y, w, h)
+        else:
+            self._windowed_geometry = self.frameGeometry()
+        self.showFullScreen()
+
     def _exit_fullscreen(self) -> None:
-        """Leave fullscreen — sizes to content aspect ratio using current width."""
+        """Leave fullscreen — restore the pre-fullscreen position via the same handshake as open."""
         content_w, content_h = 0, 0
         if self._stack.currentIndex() == 1:
             mpv = self._video._mpv
@@ -482,9 +525,28 @@ class FullscreenPreview(QMainWindow):
             if pix and not pix.isNull():
                 content_w, content_h = pix.width(), pix.height()
         FullscreenPreview._saved_fullscreen = False
+        # Re-arm the one-shot handshake. Note: no setGeometry here — Qt's
+        # setGeometry on a fullscreen window races with showNormal() and the
+        # subsequent hyprctl batch, leaving the window stuck at the
+        # default child-window placement (top-left). Instead, _pending_size
+        # seeds the fit math directly and the deferred fit below dispatches
+        # the resize+move via hyprctl after Qt's state transition has settled.
+        if self._windowed_geometry is not None:
+            self._first_fit_pending = True
+            self._pending_position_restore = (
+                self._windowed_geometry.x(),
+                self._windowed_geometry.y(),
+            )
+            self._pending_size = (
+                self._windowed_geometry.width(),
+                self._windowed_geometry.height(),
+            )
         self.showNormal()
         if content_w > 0 and content_h > 0:
-            self._fit_to_content(content_w, content_h)
+            # Defer to next event-loop tick so Qt's showNormal() is processed
+            # by Hyprland before our hyprctl batch fires. Without this defer
+            # the two race and the window lands at top-left.
+            QTimer.singleShot(0, lambda: self._fit_to_content(content_w, content_h))
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -880,6 +942,10 @@ class VideoPlayer(QWidget):
         self._pending_duration: float | None = None
         self._media_ready_fired = False
         self._current_file: str | None = None
+        # Last reported source video size — used to dedupe video-params
+        # observer firings so widget-driven re-emissions don't trigger
+        # repeated _fit_to_content calls (which would loop forever).
+        self._last_video_size: tuple[int, int] | None = None
 
     def _ensure_mpv(self) -> mpvlib.MPV:
         """Set up mpv callbacks on first use. MPV instance is pre-created."""
@@ -954,6 +1020,7 @@ class VideoPlayer(QWidget):
         self._media_ready_fired = False
         self._pending_duration = None
         self._eof_pending = False
+        self._last_video_size = None  # reset dedupe so new file fires a fit
         self._apply_loop_to_mpv()
         m.loadfile(path)
         if self._autoplay:
@@ -1028,7 +1095,13 @@ class VideoPlayer(QWidget):
     def _on_video_params(self, _name: str, value) -> None:
         """Called from mpv thread when video dimensions become known."""
         if isinstance(value, dict) and value.get('w') and value.get('h'):
-            self._pending_video_size = (value['w'], value['h'])
+            new_size = (value['w'], value['h'])
+            # mpv re-fires video-params on output-area changes too. Dedupe
+            # against the source dimensions we last reported so resizing the
+            # popout doesn't kick off a fit→resize→fit feedback loop.
+            if new_size != self._last_video_size:
+                self._last_video_size = new_size
+                self._pending_video_size = new_size
 
     def _on_eof_reached(self, _name: str, value) -> None:
         """Called from mpv thread when eof-reached changes."""
