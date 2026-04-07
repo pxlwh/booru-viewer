@@ -403,26 +403,22 @@ class BooruApp(QMainWindow):
         self._rating_combo.currentTextChanged.connect(self._on_rating_changed)
         top.addWidget(self._rating_combo)
 
-        # Score filter
+        # Score filter — type the value directly. Spinbox arrows hidden
+        # since the field is small enough to type into and the +/- buttons
+        # were just visual noise. setFixedHeight(23) overrides Qt's
+        # QSpinBox sizeHint which still reserves vertical space for the
+        # arrow buttons internally even when `setButtonSymbols(NoButtons)`
+        # is set, leaving the spinbox 3px taller than the surrounding
+        # combos/inputs/buttons in the top toolbar (26 vs 23).
         score_label = QLabel("Score≥")
         top.addWidget(score_label)
         self._score_spin = QSpinBox()
         self._score_spin.setRange(0, 99999)
         self._score_spin.setValue(0)
         self._score_spin.setFixedWidth(50)
+        self._score_spin.setFixedHeight(23)
         self._score_spin.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
         top.addWidget(self._score_spin)
-        _btn_style = "padding: 4px 6px;"
-        score_down = QPushButton("-")
-        score_down.setFixedWidth(25)
-        score_down.setStyleSheet(_btn_style)
-        score_down.clicked.connect(lambda: self._score_spin.setValue(max(0, self._score_spin.value() - 1)))
-        top.addWidget(score_down)
-        score_up = QPushButton("+")
-        score_up.setFixedWidth(25)
-        score_up.setStyleSheet(_btn_style)
-        score_up.clicked.connect(lambda: self._score_spin.setValue(self._score_spin.value() + 1))
-        top.addWidget(score_up)
 
         self._media_filter = QComboBox()
         self._media_filter.addItems(["All", "Animated", "Video", "GIF", "Audio"])
@@ -436,6 +432,7 @@ class BooruApp(QMainWindow):
         self._page_spin.setRange(1, 99999)
         self._page_spin.setValue(1)
         self._page_spin.setFixedWidth(50)
+        self._page_spin.setFixedHeight(23)  # match the surrounding 23px row
         self._page_spin.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
         top.addWidget(self._page_spin)
 

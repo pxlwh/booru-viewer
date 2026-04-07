@@ -83,7 +83,7 @@ class FullscreenPreview(QMainWindow):
         # Same compact-padding override as the embedded preview toolbar —
         # bundled themes' default `padding: 5px 12px` is too wide for these
         # short labels in narrow fixed slots.
-        _tb_btn_style = "padding: 3px 6px;"
+        _tb_btn_style = "padding: 2px 6px;"
 
         self._bookmark_btn = QPushButton("Bookmark")
         self._bookmark_btn.setMaximumWidth(90)
@@ -961,7 +961,7 @@ class VideoPlayer(QWidget):
         # bottom controls bar reads as part of the same panel rather than
         # as a stamped-in overlay. Bundled themes' default `padding: 5px 12px`
         # is too wide for short labels in narrow button slots.
-        _ctrl_btn_style = "padding: 3px 6px;"
+        _ctrl_btn_style = "padding: 2px 6px;"
 
         self._play_btn = QPushButton("Play")
         self._play_btn.setMaximumWidth(65)
@@ -1321,7 +1321,7 @@ class ImagePreview(QWidget):
         # Unsave, BL Tag, BL Post, Popout) fit cleanly under any theme.
         # Same pattern as the search-bar score buttons in app.py and the
         # settings dialog spinbox +/- buttons.
-        _tb_btn_style = "padding: 3px 6px;"
+        _tb_btn_style = "padding: 2px 6px;"
 
         self._bookmark_btn = QPushButton("Bookmark")
         self._bookmark_btn.setFixedWidth(100)

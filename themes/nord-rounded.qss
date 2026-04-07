@@ -60,8 +60,8 @@ QPushButton {
     color: ${text};
     border: 1px solid ${border_strong};
     border-radius: 4px;
-    padding: 5px 12px;
-    min-height: 18px;
+    padding: 2px 8px;
+    min-height: 17px;
 }
 QPushButton:hover {
     background-color: ${bg_hover};
@@ -114,12 +114,12 @@ QLineEdit, QSpinBox, QDoubleSpinBox, QTextEdit, QPlainTextEdit {
     color: ${text};
     border: 1px solid ${border_strong};
     border-radius: 4px;
-    padding: 4px 8px;
+    padding: 2px 6px;
     /* min-height ensures the painted text fits inside the widget bounds
      * even when a parent layout (e.g. QFormLayout inside a QGroupBox)
      * compresses the natural sizeHint. Without this, spinboxes in dense
      * forms render with the top of the value text clipped. */
-    min-height: 20px;
+    min-height: 16px;
     selection-background-color: ${accent};
     selection-color: ${accent_text};
 }
@@ -145,8 +145,8 @@ QComboBox {
     color: ${text};
     border: 1px solid ${border_strong};
     border-radius: 4px;
-    padding: 4px 8px;
-    min-height: 20px;
+    padding: 2px 6px;
+    min-height: 16px;
 }
 QComboBox:hover {
     border-color: ${accent};

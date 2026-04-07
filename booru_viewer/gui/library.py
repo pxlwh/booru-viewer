@@ -63,13 +63,11 @@ class LibraryView(QWidget):
         top = QHBoxLayout()
         top.setContentsMargins(0, 0, 4, 0)
 
-        # Compact button padding matches the rest of the app's narrow
-        # toolbar buttons. Bundled themes' default `padding: 5px 12px`
-        # is too wide for short labels in fixed-width slots.
-        # min-height 22px gives a total height of 30px (22 + 3+3 padding +
-        # 1+1 border), matching the inputs/combos in the same row so the
-        # whole toolbar lines up at one consistent height.
-        _btn_style = "padding: 3px 6px; min-height: 22px;"
+        # Compact horizontal padding matches the rest of the app's narrow
+        # toolbar buttons. Vertical padding (2px) + global min-height
+        # (16px) gives a 22px total height — lines up with the inputs/
+        # combos in the same row.
+        _btn_style = "padding: 2px 6px;"
 
         self._folder_combo = QComboBox()
         self._folder_combo.setMinimumWidth(140)

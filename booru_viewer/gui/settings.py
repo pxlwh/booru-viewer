@@ -90,20 +90,20 @@ class SettingsDialog(QDialog):
         # absolute minimum bounds), which causes the spinbox value text to
         # vertically clip. setMinimumHeight is a Python-side floor that
         # propagates up the layout chain — the dialog's own min size grows
-        # to accommodate it instead of squeezing the contents. 32px gives
-        # comfortable headroom for the 13px font + padding/border on every
-        # tested DPI/scale combo (smoke-tested at 1x and 1.5x).
-        spinbox.setMinimumHeight(32)
+        # to accommodate it instead of squeezing the contents. 24px gives
+        # a couple of extra pixels of headroom over the 22px native button
+        # height for the 13px font, comfortable on every tested DPI/scale.
+        spinbox.setMinimumHeight(24)
         container = QWidget()
         h = QHBoxLayout(container)
         h.setContentsMargins(0, 0, 0, 0)
         h.setSpacing(2)
         h.addWidget(spinbox, 1)
-        # Inline padding override mirrors the search-bar score field at
-        # app.py:370 — without it, the bundled themes' QPushButton padding
-        # of `5px 12px` leaves no horizontal room for the +/- glyph and
-        # the buttons render empty under custom.qss.
-        _btn_style = "padding: 4px 6px;"
+        # Inline padding override matches the rest of the app's narrow
+        # toolbar buttons. The new bundled themes use `padding: 2px 8px`
+        # globally, but `2px 6px` here gives the +/- glyph a touch more
+        # room to breathe in a 25px-wide button.
+        _btn_style = "padding: 2px 6px;"
         minus = QPushButton("-")
         minus.setFixedWidth(25)
         minus.setStyleSheet(_btn_style)
