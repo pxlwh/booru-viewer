@@ -7,7 +7,7 @@ import threading
 import asyncio
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal, QObject
+from PySide6.QtCore import Qt, Signal, QObject, QTimer
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QWidget,
@@ -80,14 +80,20 @@ class BookmarksView(QWidget):
         top.addWidget(manage_btn)
 
         self._search_input = QLineEdit()
-        self._search_input.setPlaceholderText("Search bookmarks by tag...")
+        self._search_input.setPlaceholderText("Search bookmarks by tag (live, Enter to commit)")
+        # Enter still triggers an immediate search.
         self._search_input.returnPressed.connect(self._do_search)
+        # Live search via debounced timer: every keystroke restarts a
+        # 150ms one-shot, when the user stops typing the search runs.
+        # Cheap enough since each search is just one SQLite query.
+        self._search_debounce = QTimer(self)
+        self._search_debounce.setSingleShot(True)
+        self._search_debounce.setInterval(150)
+        self._search_debounce.timeout.connect(self._do_search)
+        self._search_input.textChanged.connect(
+            lambda _: self._search_debounce.start()
+        )
         top.addWidget(self._search_input, stretch=1)
-
-        search_btn = QPushButton("Search")
-        search_btn.setStyleSheet(_btn_style)
-        search_btn.clicked.connect(self._do_search)
-        top.addWidget(search_btn)
 
         layout.addLayout(top)
 

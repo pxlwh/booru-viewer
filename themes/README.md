@@ -354,6 +354,22 @@ QRubberBand {
 }
 ```
 
+### Library Count Label States
+
+The library tab's count label switches between three visual states depending on what `refresh()` finds. The state is exposed as a Qt dynamic property `libraryCountState` so themes target it via attribute selectors:
+
+```css
+QLabel[libraryCountState="empty"] {
+    color: #a6adc8;            /* dim text — search miss or empty folder */
+}
+QLabel[libraryCountState="error"] {
+    color: #f38ba8;            /* danger color — directory unreachable */
+    font-weight: bold;
+}
+```
+
+The `normal` state (`N files`) inherits the panel's default text color — no rule needed.
+
 ### Thumbnail Indicators and Selection Colors
 
 ```css

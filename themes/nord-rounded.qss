@@ -510,6 +510,27 @@ QRubberBand {
 
 
 
+
+/* ---------- Library count label states ---------- */
+/*
+ * The library tab's count label switches between three visual states
+ * depending on what refresh() found. The state is exposed as a Qt
+ * dynamic property `libraryCountState` so users can override these
+ * rules in their custom.qss without touching the Python.
+ *
+ *   normal  N files       — default text color, no rule needed
+ *   empty   no items       — dim text (no items found, search miss)
+ *   error   bad/unreachable — danger color + bold (real error)
+ */
+
+QLabel[libraryCountState="empty"] {
+    color: ${text_dim};
+}
+QLabel[libraryCountState="error"] {
+    color: ${danger};
+    font-weight: bold;
+}
+
 /* ---------- Thumbnail dot indicators (Qt properties on ThumbnailWidget) ---------- */
 
 ThumbnailWidget {

@@ -7,7 +7,7 @@ import os
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal, QObject
+from PySide6.QtCore import Qt, Signal, QObject, QTimer
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QWidget,
@@ -89,8 +89,20 @@ class LibraryView(QWidget):
         top.addWidget(refresh_btn)
 
         self._search_input = QLineEdit()
-        self._search_input.setPlaceholderText("Search tags...")
+        self._search_input.setPlaceholderText("Search tags (live, Enter to commit)")
+        # Enter still triggers an immediate refresh.
         self._search_input.returnPressed.connect(self.refresh)
+        # Live search via debounced timer. Library refresh is heavier
+        # than bookmarks (filesystem scan + DB query + thumbnail repop)
+        # so use a slightly longer 250ms debounce so the user has to pause
+        # a bit more between keystrokes before the work happens.
+        self._search_debounce = QTimer(self)
+        self._search_debounce.setSingleShot(True)
+        self._search_debounce.setInterval(250)
+        self._search_debounce.timeout.connect(self.refresh)
+        self._search_input.textChanged.connect(
+            lambda _: self._search_debounce.start()
+        )
         top.addWidget(self._search_input, stretch=1)
 
         layout.addLayout(top)
@@ -111,12 +123,28 @@ class LibraryView(QWidget):
     # Public
     # ------------------------------------------------------------------
 
+    def _set_count(self, text: str, state: str = "normal") -> None:
+        """Update the count label's text and visual state.
+
+        state ∈ {normal, empty, error}. The state is exposed as a Qt
+        dynamic property `libraryCountState` so themes can target it via
+        `QLabel[libraryCountState="error"]` selectors. Re-polishes the
+        widget so a property change at runtime takes effect immediately.
+        """
+        self._count_label.setText(text)
+        # Clear any inline stylesheet from earlier code paths so the
+        # theme's QSS rules can take over.
+        self._count_label.setStyleSheet("")
+        self._count_label.setProperty("libraryCountState", state)
+        st = self._count_label.style()
+        st.unpolish(self._count_label)
+        st.polish(self._count_label)
+
     def refresh(self) -> None:
         """Scan the selected folder, sort, display thumbnails."""
         root = saved_dir()
         if not root.exists() or not os.access(root, os.R_OK):
-            self._count_label.setText("Library directory unreachable")
-            self._count_label.setStyleSheet("color: #ff4444; font-weight: bold;")
+            self._set_count("Library directory unreachable", "error")
             self._grid.set_posts(0)
             self._files = []
             return
@@ -134,11 +162,14 @@ class LibraryView(QWidget):
                 self._files = []
 
         if self._files:
-            self._count_label.setText(f"{len(self._files)} files")
-            self._count_label.setStyleSheet("")
+            self._set_count(f"{len(self._files)} files", "normal")
+        elif query:
+            # Search returned nothing — not an error, just no matches.
+            self._set_count("No items match search", "empty")
         else:
-            self._count_label.setText("Library empty or directory unreachable")
-            self._count_label.setStyleSheet("color: #ff4444;")
+            # The library is genuinely empty (the directory exists and is
+            # readable, it just has no files in this folder selection).
+            self._set_count("Library is empty", "empty")
         thumbs = self._grid.set_posts(len(self._files))
 
         lib_thumb_dir = thumbnails_dir() / "library"
