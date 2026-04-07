@@ -278,9 +278,16 @@ class BooruApp(QMainWindow):
         self._setup_ui()
         self._setup_menu()
         self._load_sites()
-        # Restore window state (geometry, floating, maximized) on the next
-        # event-loop iteration — by then main.py has called show() and the
-        # window has been registered with the compositor.
+        # Debounced save for the main window state — fires from resizeEvent
+        # (and from the splitter timer's flush on close). Uses the same
+        # 300ms debounce pattern as the splitter saver.
+        self._main_window_save_timer = QTimer(self)
+        self._main_window_save_timer.setSingleShot(True)
+        self._main_window_save_timer.setInterval(300)
+        self._main_window_save_timer.timeout.connect(self._save_main_window_state)
+        # Restore window state (geometry, floating) on the next event-loop
+        # iteration — by then main.py has called show() and the window has
+        # been registered with the compositor.
         QTimer.singleShot(0, self._restore_main_window_state)
 
     def _setup_signals(self) -> None:
@@ -1487,15 +1494,28 @@ class BooruApp(QMainWindow):
         self._run_async(_dl)
 
     def _save_main_splitter_sizes(self) -> None:
-        """Persist the main grid/preview splitter sizes (debounced)."""
+        """Persist the main grid/preview splitter sizes (debounced).
+
+        Refuses to save when either side is collapsed (size 0). The user can
+        end up with a collapsed right panel transiently — e.g. while the
+        popout is open and the right panel is empty — and persisting that
+        state traps them next launch with no visible preview area until they
+        manually drag the splitter back.
+        """
         sizes = self._splitter.sizes()
-        if sum(sizes) > 0:
+        if len(sizes) >= 2 and all(s > 0 for s in sizes):
             self._db.set_setting(
                 "main_splitter_sizes", ",".join(str(s) for s in sizes)
             )
 
     def _hyprctl_main_window(self) -> dict | None:
-        """Look up this main window in hyprctl clients. None off Hyprland."""
+        """Look up this main window in hyprctl clients. None off Hyprland.
+
+        Matches by Wayland app_id (Hyprland reports it as `class`), which is
+        set in run() via setDesktopFileName. Title would also work but it
+        changes whenever the search bar updates the window title — class is
+        constant for the lifetime of the window.
+        """
         import os, subprocess, json
         if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
             return None
@@ -1505,67 +1525,100 @@ class BooruApp(QMainWindow):
                 capture_output=True, text=True, timeout=1,
             )
             for c in json.loads(result.stdout):
-                if c.get("title") == self.windowTitle():
+                cls = c.get("class") or c.get("initialClass")
+                if cls == "booru-viewer":
+                    # Skip the popout — it shares our class but has a
+                    # distinct title we set explicitly.
+                    if (c.get("title") or "").endswith("Popout"):
+                        continue
                     return c
         except Exception:
             pass
         return None
 
     def _save_main_window_state(self) -> None:
-        """Persist the main window's size, position, floating, maximized state.
+        """Persist the main window's last mode and (separately) the last
+        known floating geometry.
 
-        On Hyprland, queries hyprctl for the real geometry (Qt's frameGeometry
-        is unreliable for floating windows on Wayland). Maximized/fullscreen is
-        recorded separately so the next launch can re-maximize without
-        clobbering the underlying windowed geometry.
+        Two settings keys are used:
+          - main_window_was_floating ("1" / "0"): the *last* mode the window
+            was in (floating or tiled). Updated on every save.
+          - main_window_floating_geometry ("x,y,w,h"): the position+size the
+            window had the *last time it was actually floating*. Only updated
+            when the current state is floating, so a tile→close→reopen→float
+            sequence still has the user's old floating dimensions to use.
+
+        This split is important because Hyprland's resizeEvent for a tiled
+        window reports the tile slot size — saving that into the floating
+        slot would clobber the user's chosen floating dimensions every time
+        they tiled the window.
         """
         try:
-            self._db.set_setting(
-                "main_window_maximized",
-                "1" if self.isMaximized() else "0",
-            )
-            if self.isMaximized():
-                return  # don't overwrite the windowed-mode geometry
             win = self._hyprctl_main_window()
-            if win and win.get("at") and win.get("size"):
+            if win is None:
+                # Non-Hyprland fallback: just track Qt's frameGeometry as
+                # floating. There's no real tiled concept off-Hyprland.
+                g = self.frameGeometry()
+                self._db.set_setting(
+                    "main_window_floating_geometry",
+                    f"{g.x()},{g.y()},{g.width()},{g.height()}",
+                )
+                self._db.set_setting("main_window_was_floating", "1")
+                return
+            floating = bool(win.get("floating"))
+            self._db.set_setting(
+                "main_window_was_floating", "1" if floating else "0"
+            )
+            if floating and win.get("at") and win.get("size"):
                 x, y = win["at"]
                 w, h = win["size"]
-                floating = 1 if win.get("floating") else 0
                 self._db.set_setting(
-                    "main_window_geometry",
-                    f"{x},{y},{w},{h},{floating}",
+                    "main_window_floating_geometry", f"{x},{y},{w},{h}"
                 )
-                return
-            g = self.frameGeometry()
-            self._db.set_setting(
-                "main_window_geometry",
-                f"{g.x()},{g.y()},{g.width()},{g.height()},0",
-            )
+            # When tiled, intentionally do NOT touch floating_geometry —
+            # preserve the last good floating dimensions.
         except Exception:
             pass
 
     def _restore_main_window_state(self) -> None:
-        """One-shot restore of saved geometry, floating and maximized state.
+        """One-shot restore of saved floating geometry and last mode.
 
         Called from __init__ via QTimer.singleShot(0, ...) so it fires on the
         next event-loop iteration — by which time the window has been shown
         and (on Hyprland) registered with the compositor.
+
+        Entirely skipped when BOORU_VIEWER_NO_HYPR_RULES is set — that flag
+        means the user wants their own windowrules to handle the main
+        window. Even seeding Qt's geometry could fight a `windowrule = size`,
+        so we leave the initial Qt geometry alone too.
         """
-        if self._db.get_setting_bool("main_window_maximized"):
-            self.showMaximized()
+        from ..core.config import hypr_rules_enabled
+        if not hypr_rules_enabled():
             return
-        saved = self._db.get_setting("main_window_geometry")
-        if not saved:
+        # Migration: clear obsolete keys from earlier schemas so they can't
+        # interfere. main_window_maximized came from a buggy version that
+        # used Qt's isMaximized() which lies for Hyprland tiled windows.
+        # main_window_geometry was the combined-format key that's now split.
+        for stale in ("main_window_maximized", "main_window_geometry"):
+            if self._db.get_setting(stale):
+                self._db.set_setting(stale, "")
+
+        floating_geo = self._db.get_setting("main_window_floating_geometry")
+        was_floating = self._db.get_setting_bool("main_window_was_floating")
+        if not floating_geo:
             return
-        parts = saved.split(",")
-        if len(parts) != 5:
+        parts = floating_geo.split(",")
+        if len(parts) != 4:
             return
         try:
-            x, y, w, h, floating = (int(p) for p in parts)
+            x, y, w, h = (int(p) for p in parts)
         except ValueError:
             return
-        # Seed Qt with the size; Hyprland may ignore the position for the
-        # initial map, but we follow up with a hyprctl batch below.
+        # Seed Qt with the floating geometry — even if we're going to leave
+        # the window tiled now, this becomes the xdg-toplevel preferred size,
+        # which Hyprland uses when the user later toggles to floating. So
+        # mid-session float-toggle picks up the saved dimensions even when
+        # the window opened tiled.
         self.setGeometry(x, y, w, h)
         import os
         if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
@@ -1573,24 +1626,56 @@ class BooruApp(QMainWindow):
         # Slight delay so the window is registered before we try to find
         # its address. The popout uses the same pattern.
         QTimer.singleShot(
-            50, lambda: self._hyprctl_apply_main_state(x, y, w, h, bool(floating))
+            50, lambda: self._hyprctl_apply_main_state(x, y, w, h, was_floating)
         )
 
     def _hyprctl_apply_main_state(self, x: int, y: int, w: int, h: int, floating: bool) -> None:
-        """Apply saved floating/position/size to the main window via hyprctl."""
+        """Apply saved floating mode + geometry to the main window via hyprctl.
+
+        If floating==True, ensures the window is floating and resizes/moves it
+        to the saved dimensions.
+
+        If floating==False, the window is left tiled but we still "prime"
+        Hyprland's per-window floating cache by briefly toggling to floating,
+        applying the saved geometry, and toggling back. This is wrapped in
+        a transient `no_anim` so the toggles are instant. Without this prime,
+        a later mid-session togglefloating uses Hyprland's default size
+        (Qt's xdg-toplevel preferred size doesn't carry through). With it,
+        the user's saved floating dimensions are used.
+
+        Skipped entirely when BOORU_VIEWER_NO_HYPR_RULES is set — that flag
+        means the user wants their own windowrules to govern the main
+        window and the app should keep its hands off.
+        """
         import subprocess
+        from ..core.config import hypr_rules_enabled
+        if not hypr_rules_enabled():
+            return
         win = self._hyprctl_main_window()
         if not win:
             return
         addr = win.get("address")
         if not addr:
             return
-        cmds = []
-        if bool(win.get("floating")) != floating:
-            cmds.append(f"dispatch togglefloating address:{addr}")
+        cur_floating = bool(win.get("floating"))
+        cmds: list[str] = []
         if floating:
+            # Want floating: ensure floating, then size/move.
+            if not cur_floating:
+                cmds.append(f"dispatch togglefloating address:{addr}")
             cmds.append(f"dispatch resizewindowpixel exact {w} {h},address:{addr}")
             cmds.append(f"dispatch movewindowpixel exact {x} {y},address:{addr}")
+        else:
+            # Want tiled: prime the floating cache, then end on tiled. Use
+            # transient no_anim so the toggles don't visibly flash through
+            # a floating frame.
+            cmds.append(f"dispatch setprop address:{addr} no_anim 1")
+            if not cur_floating:
+                cmds.append(f"dispatch togglefloating address:{addr}")
+            cmds.append(f"dispatch resizewindowpixel exact {w} {h},address:{addr}")
+            cmds.append(f"dispatch movewindowpixel exact {x} {y},address:{addr}")
+            cmds.append(f"dispatch togglefloating address:{addr}")
+            cmds.append(f"dispatch setprop address:{addr} no_anim 0")
         if not cmds:
             return
         try:
@@ -2550,6 +2635,19 @@ class BooruApp(QMainWindow):
         super().resizeEvent(event)
         if hasattr(self, '_privacy_overlay') and self._privacy_on:
             self._privacy_overlay.setGeometry(self.rect())
+        # Capture window state proactively so the saved value is always
+        # fresh — closeEvent's hyprctl query can fail if the compositor has
+        # already started unmapping. Debounced via the 300ms timer.
+        if hasattr(self, '_main_window_save_timer'):
+            self._main_window_save_timer.start()
+
+    def moveEvent(self, event) -> None:
+        super().moveEvent(event)
+        # moveEvent is unreliable on Wayland for floating windows but it
+        # does fire on configure for some compositors — start the save
+        # timer regardless. resizeEvent is the more reliable trigger.
+        if hasattr(self, '_main_window_save_timer'):
+            self._main_window_save_timer.start()
 
     # -- Keyboard shortcuts --
 
@@ -2703,11 +2801,14 @@ class BooruApp(QMainWindow):
             self._library_view.refresh()
 
     def closeEvent(self, event) -> None:
-        # Flush any pending splitter save (debounce timer might still be
-        # running if the user dragged it within the last 300ms) and capture
-        # the final main window state. Both must run BEFORE _db.close().
+        # Flush any pending splitter / window-state saves (debounce timers
+        # may still be running if the user moved/resized within the last
+        # 300ms) and capture the final state. Both must run BEFORE
+        # _db.close().
         if self._main_splitter_save_timer.isActive():
             self._main_splitter_save_timer.stop()
+        if self._main_window_save_timer.isActive():
+            self._main_window_save_timer.stop()
         self._save_main_splitter_sizes()
         self._save_main_window_state()
         self._async_loop.call_soon_threadsafe(self._async_loop.stop)
@@ -2804,6 +2905,13 @@ def run() -> None:
     from ..core.config import data_dir
 
     app = QApplication(sys.argv)
+
+    # Set a stable Wayland app_id so Hyprland and other compositors can
+    # consistently identify our windows by class (not by title, which
+    # changes when search terms appear in the title bar). Qt translates
+    # setDesktopFileName into the xdg-shell app_id on Wayland.
+    app.setApplicationName("booru-viewer")
+    app.setDesktopFileName("booru-viewer")
 
     # mpv requires LC_NUMERIC=C — Qt resets the locale in QApplication(),
     # so we must restore it after Qt init but before creating any mpv instances.

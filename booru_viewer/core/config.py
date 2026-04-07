@@ -2,12 +2,40 @@
 
 from __future__ import annotations
 
+import os
 import platform
 import sys
 from pathlib import Path
 
 APPNAME = "booru-viewer"
 IS_WINDOWS = sys.platform == "win32"
+
+
+def hypr_rules_enabled() -> bool:
+    """Whether the in-code hyprctl dispatches that change window state
+    should run.
+
+    Returns False when BOORU_VIEWER_NO_HYPR_RULES is set in the environment.
+    Callers should skip any hyprctl `dispatch` that would mutate window
+    state (resize, move, togglefloating, setprop no_anim, the floating
+    "prime" sequence). Read-only queries (`hyprctl clients -j`) are still
+    fine — only mutations are blocked.
+
+    The popout's keep_aspect_ratio enforcement is gated by the separate
+    popout_aspect_lock_enabled() — it's a different concern.
+    """
+    return not os.environ.get("BOORU_VIEWER_NO_HYPR_RULES")
+
+
+def popout_aspect_lock_enabled() -> bool:
+    """Whether the popout's keep_aspect_ratio setprop should run.
+
+    Returns False when BOORU_VIEWER_NO_POPOUT_ASPECT_LOCK is set in the
+    environment. Independent of hypr_rules_enabled() so a ricer can free
+    up the popout's shape (e.g. for fixed-square or panoramic popouts)
+    while keeping the rest of the in-code hyprctl behavior, or vice versa.
+    """
+    return not os.environ.get("BOORU_VIEWER_NO_POPOUT_ASPECT_LOCK")
 
 
 def data_dir() -> Path:

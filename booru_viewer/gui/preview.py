@@ -438,45 +438,71 @@ class FullscreenPreview(QMainWindow):
         return None
 
     def _hyprctl_resize(self, w: int, h: int) -> None:
-        """Ask Hyprland to resize this window and lock aspect ratio. No-op on other WMs or tiled."""
+        """Ask Hyprland to resize this window and lock aspect ratio. No-op on other WMs or tiled.
+
+        Behavior is gated by two independent env vars (see core/config.py):
+          - BOORU_VIEWER_NO_HYPR_RULES: skip the resize and no_anim parts
+          - BOORU_VIEWER_NO_POPOUT_ASPECT_LOCK: skip the keep_aspect_ratio
+            setprop
+        Either, both, or neither may be set. The aspect-ratio carve-out
+        means a ricer can opt out of in-code window management while
+        still keeping mpv playback at the right shape (or vice versa).
+        """
         import os, subprocess
+        from ..core.config import hypr_rules_enabled, popout_aspect_lock_enabled
         if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
             return
+        rules_on = hypr_rules_enabled()
+        aspect_on = popout_aspect_lock_enabled()
+        if not rules_on and not aspect_on:
+            return  # nothing to dispatch
         win = self._hyprctl_get_window()
         if not win:
             return
         addr = win.get("address")
         if not addr:
             return
+        cmds: list[str] = []
         if not win.get("floating"):
-            # Tiled — don't resize (fights the layout), just set aspect lock
-            # and disable animations to prevent flashing on later transitions.
-            try:
-                subprocess.Popen(
-                    ["hyprctl", "--batch",
-                     f"dispatch setprop address:{addr} no_anim 1"
-                     f" ; dispatch setprop address:{addr} keep_aspect_ratio 1"],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                )
-            except FileNotFoundError:
-                pass
+            # Tiled — don't resize (fights the layout). Optionally set
+            # aspect lock and no_anim depending on the env vars.
+            if rules_on:
+                cmds.append(f"dispatch setprop address:{addr} no_anim 1")
+            if aspect_on:
+                cmds.append(f"dispatch setprop address:{addr} keep_aspect_ratio 1")
+        else:
+            if rules_on:
+                cmds.append(f"dispatch setprop address:{addr} no_anim 1")
+            if aspect_on:
+                cmds.append(f"dispatch setprop address:{addr} keep_aspect_ratio 0")
+            if rules_on:
+                cmds.append(f"dispatch resizewindowpixel exact {w} {h},address:{addr}")
+            if aspect_on:
+                cmds.append(f"dispatch setprop address:{addr} keep_aspect_ratio 1")
+        if not cmds:
             return
         try:
             subprocess.Popen(
-                ["hyprctl", "--batch",
-                 f"dispatch setprop address:{addr} no_anim 1"
-                 f" ; dispatch setprop address:{addr} keep_aspect_ratio 0"
-                 f" ; dispatch resizewindowpixel exact {w} {h},address:{addr}"
-                 f" ; dispatch setprop address:{addr} keep_aspect_ratio 1"],
+                ["hyprctl", "--batch", " ; ".join(cmds)],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
         except FileNotFoundError:
             pass
 
     def _hyprctl_resize_and_move(self, w: int, h: int, x: int, y: int) -> None:
-        """Atomically resize and move this window via a single hyprctl batch."""
+        """Atomically resize and move this window via a single hyprctl batch.
+
+        Gated by BOORU_VIEWER_NO_HYPR_RULES (resize/move/no_anim parts) and
+        BOORU_VIEWER_NO_POPOUT_ASPECT_LOCK (the keep_aspect_ratio parts) —
+        see core/config.py.
+        """
         import os, subprocess
+        from ..core.config import hypr_rules_enabled, popout_aspect_lock_enabled
         if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+            return
+        rules_on = hypr_rules_enabled()
+        aspect_on = popout_aspect_lock_enabled()
+        if not rules_on and not aspect_on:
             return
         win = self._hyprctl_get_window()
         if not win or not win.get("floating"):
@@ -484,14 +510,21 @@ class FullscreenPreview(QMainWindow):
         addr = win.get("address")
         if not addr:
             return
+        cmds: list[str] = []
+        if rules_on:
+            cmds.append(f"dispatch setprop address:{addr} no_anim 1")
+        if aspect_on:
+            cmds.append(f"dispatch setprop address:{addr} keep_aspect_ratio 0")
+        if rules_on:
+            cmds.append(f"dispatch resizewindowpixel exact {w} {h},address:{addr}")
+            cmds.append(f"dispatch movewindowpixel exact {x} {y},address:{addr}")
+        if aspect_on:
+            cmds.append(f"dispatch setprop address:{addr} keep_aspect_ratio 1")
+        if not cmds:
+            return
         try:
             subprocess.Popen(
-                ["hyprctl", "--batch",
-                 f"dispatch setprop address:{addr} no_anim 1"
-                 f" ; dispatch setprop address:{addr} keep_aspect_ratio 0"
-                 f" ; dispatch resizewindowpixel exact {w} {h},address:{addr}"
-                 f" ; dispatch movewindowpixel exact {x} {y},address:{addr}"
-                 f" ; dispatch setprop address:{addr} keep_aspect_ratio 1"],
+                ["hyprctl", "--batch", " ; ".join(cmds)],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
         except FileNotFoundError:
