@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal, QSize, QRect, QMimeData, QUrl, QPoint, Property
+from PySide6.QtCore import Qt, Signal, QSize, QRect, QRectF, QMimeData, QUrl, QPoint, Property
 from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QKeyEvent, QWheelEvent, QDrag, QMouseEvent
 from PySide6.QtWidgets import (
     QWidget,
@@ -125,17 +125,37 @@ class ThumbnailWidget(QWidget):
         elif self._hover:
             p.fillRect(content, window.lighter(130))
 
-        # Border (content area only)
+        # Border (content area only). Pen-width-aware geometry: a QPen
+        # centered on a QRect's geometric edge spills half a pixel out on
+        # each side, which on AA-on rendering blends with the cell
+        # background and makes the border read as thinner than the pen
+        # width — and uneven, since some sides land on integer pixels and
+        # some don't. Inset by half the pen width into a QRectF so the
+        # full pen width sits cleanly inside the content rect, and use
+        # drawRoundedRect for smooth corners that match the rest of the
+        # Fusion-style theming.
         if self._selected:
-            pen = QPen(highlight, BORDER_WIDTH)
+            pen_width = 3
+            pen_color = highlight
         elif self._multi_selected:
-            pen = QPen(highlight.darker(150), BORDER_WIDTH)
+            pen_width = 3
+            pen_color = highlight.darker(150)
         elif self._hover:
-            pen = QPen(highlight.lighter(150), 1)
+            pen_width = 1
+            pen_color = highlight.lighter(150)
         else:
-            pen = QPen(mid, 1)
+            pen_width = 1
+            pen_color = mid
+        pen = QPen(pen_color, pen_width)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
         p.setPen(pen)
-        p.drawRect(content.adjusted(0, 0, -1, -1))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        half = pen_width / 2.0
+        border_rect = QRectF(content).adjusted(half, half, -half, -half)
+        # 2px radius is subtle enough that it doesn't visibly leave window
+        # color showing through the gap between the rounded curve and the
+        # square pixmap corners.
+        p.drawRoundedRect(border_rect, 2, 2)
 
         # Thumbnail
         if self._pixmap:
