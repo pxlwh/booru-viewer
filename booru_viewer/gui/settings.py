@@ -41,7 +41,13 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self._db = db
         self.setWindowTitle("Settings")
-        self.setMinimumSize(550, 450)
+        # Set only a minimum WIDTH explicitly. Leaving the minimum height
+        # auto means Qt derives it from the layout's minimumSizeHint, which
+        # respects the cache spinboxes' setMinimumHeight floor. A hardcoded
+        # `setMinimumSize(550, 450)` was a hard floor that overrode the
+        # layout's needs and let the user drag the dialog below the height
+        # the cache tab actually requires, clipping the spinboxes.
+        self.setMinimumWidth(550)
 
         layout = QVBoxLayout(self)
 
@@ -69,6 +75,51 @@ class SettingsDialog(QDialog):
 
         layout.addLayout(btns)
 
+    @staticmethod
+    def _spinbox_row(spinbox: QSpinBox) -> QWidget:
+        """Wrap a QSpinBox in a horizontal layout with side-by-side
+        [-] [spinbox] [+] buttons. Mirrors the search-bar score field
+        pattern in app.py — QSpinBox's native vertical arrow buttons
+        cramp the value text and read poorly in dense form layouts;
+        explicit +/- buttons are clearer and respect the spinbox's
+        configured singleStep.
+        """
+        spinbox.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
+        # Hard minimum height. QSS `min-height` is a hint the QFormLayout
+        # can override under pressure (when the dialog is resized to its
+        # absolute minimum bounds), which causes the spinbox value text to
+        # vertically clip. setMinimumHeight is a Python-side floor that
+        # propagates up the layout chain — the dialog's own min size grows
+        # to accommodate it instead of squeezing the contents. 32px gives
+        # comfortable headroom for the 13px font + padding/border on every
+        # tested DPI/scale combo (smoke-tested at 1x and 1.5x).
+        spinbox.setMinimumHeight(32)
+        container = QWidget()
+        h = QHBoxLayout(container)
+        h.setContentsMargins(0, 0, 0, 0)
+        h.setSpacing(2)
+        h.addWidget(spinbox, 1)
+        # Inline padding override mirrors the search-bar score field at
+        # app.py:370 — without it, the bundled themes' QPushButton padding
+        # of `5px 12px` leaves no horizontal room for the +/- glyph and
+        # the buttons render empty under custom.qss.
+        _btn_style = "padding: 4px 6px;"
+        minus = QPushButton("-")
+        minus.setFixedWidth(25)
+        minus.setStyleSheet(_btn_style)
+        minus.clicked.connect(
+            lambda: spinbox.setValue(spinbox.value() - spinbox.singleStep())
+        )
+        plus = QPushButton("+")
+        plus.setFixedWidth(25)
+        plus.setStyleSheet(_btn_style)
+        plus.clicked.connect(
+            lambda: spinbox.setValue(spinbox.value() + spinbox.singleStep())
+        )
+        h.addWidget(minus)
+        h.addWidget(plus)
+        return container
+
     # -- General tab --
 
     def _build_general_tab(self) -> QWidget:
@@ -81,14 +132,14 @@ class SettingsDialog(QDialog):
         self._page_size = QSpinBox()
         self._page_size.setRange(10, 100)
         self._page_size.setValue(self._db.get_setting_int("page_size"))
-        form.addRow("Results per page:", self._page_size)
+        form.addRow("Results per page:", self._spinbox_row(self._page_size))
 
         # Thumbnail size
         self._thumb_size = QSpinBox()
         self._thumb_size.setRange(100, 400)
         self._thumb_size.setSingleStep(20)
         self._thumb_size.setValue(self._db.get_setting_int("thumbnail_size"))
-        form.addRow("Thumbnail size (px):", self._thumb_size)
+        form.addRow("Thumbnail size (px):", self._spinbox_row(self._thumb_size))
 
         # Default rating
         self._default_rating = QComboBox()
@@ -115,7 +166,7 @@ class SettingsDialog(QDialog):
         self._default_score = QSpinBox()
         self._default_score.setRange(0, 99999)
         self._default_score.setValue(self._db.get_setting_int("default_score"))
-        form.addRow("Default minimum score:", self._default_score)
+        form.addRow("Default minimum score:", self._spinbox_row(self._default_score))
 
         # Preload thumbnails
         self._preload = QCheckBox("Load thumbnails automatically")
@@ -198,15 +249,17 @@ class SettingsDialog(QDialog):
 
         self._max_cache = QSpinBox()
         self._max_cache.setRange(100, 50000)
+        self._max_cache.setSingleStep(100)
         self._max_cache.setSuffix(" MB")
         self._max_cache.setValue(self._db.get_setting_int("max_cache_mb"))
-        limits_layout.addRow("Max cache size:", self._max_cache)
+        limits_layout.addRow("Max cache size:", self._spinbox_row(self._max_cache))
 
         self._max_thumb_cache = QSpinBox()
         self._max_thumb_cache.setRange(50, 10000)
+        self._max_thumb_cache.setSingleStep(50)
         self._max_thumb_cache.setSuffix(" MB")
         self._max_thumb_cache.setValue(self._db.get_setting_int("max_thumb_cache_mb") or 500)
-        limits_layout.addRow("Max thumbnail cache:", self._max_thumb_cache)
+        limits_layout.addRow("Max thumbnail cache:", self._spinbox_row(self._max_thumb_cache))
 
         self._auto_evict = QCheckBox("Auto-evict oldest when limit reached")
         self._auto_evict.setChecked(self._db.get_setting_bool("auto_evict"))
