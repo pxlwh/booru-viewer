@@ -173,9 +173,21 @@ class FullscreenPreview(QMainWindow):
             self.setScreen(target_screen)
             self.setGeometry(target_screen.geometry())
         self._adjusting = False
+        # Position-restore handshake: setGeometry below seeds Qt with the saved
+        # size, but Hyprland ignores the position for child windows. The first
+        # _fit_to_content call after show() picks up _pending_position_restore
+        # and corrects the position via a hyprctl batch (no race with the
+        # resize). After that first fit, navigation center-pins from whatever
+        # position the user has dragged the window to.
+        self._first_fit_pending = True
+        self._pending_position_restore: tuple[int, int] | None = None
         # Restore saved state or start fullscreen
         if FullscreenPreview._saved_geometry and not FullscreenPreview._saved_fullscreen:
             self.setGeometry(FullscreenPreview._saved_geometry)
+            self._pending_position_restore = (
+                FullscreenPreview._saved_geometry.x(),
+                FullscreenPreview._saved_geometry.y(),
+            )
             self.show()
         else:
             self.showFullScreen()
@@ -249,7 +261,8 @@ class FullscreenPreview(QMainWindow):
         """Size window to fit content. Width preserved, height from aspect ratio, clamped to screen."""
         if self.isFullScreen() or content_w <= 0 or content_h <= 0:
             return
-        if self._is_hypr_floating() is False:
+        floating = self._is_hypr_floating()
+        if floating is False:
             self._hyprctl_resize(0, 0)  # tiled: just set keep_aspect_ratio
             return
         aspect = content_w / content_h
@@ -262,7 +275,24 @@ class FullscreenPreview(QMainWindow):
             h = max_h
             w = int(h * aspect)
         self.resize(w, h)
-        self._hyprctl_resize(w, h)
+        # Decide target top-left:
+        #   first fit after open with a saved position → restore it (one-shot)
+        #   any subsequent fit → center-pin from current Hyprland position
+        target: tuple[int, int] | None = None
+        if self._first_fit_pending and self._pending_position_restore:
+            target = self._pending_position_restore
+        elif floating is True:
+            win = self._hyprctl_get_window()
+            if win and win.get("at") and win.get("size"):
+                cx = win["at"][0] + win["size"][0] // 2
+                cy = win["at"][1] + win["size"][1] // 2
+                target = (cx - w // 2, cy - h // 2)
+        if target is not None:
+            self._hyprctl_resize_and_move(w, h, target[0], target[1])
+        else:
+            self._hyprctl_resize(w, h)
+        self._first_fit_pending = False
+        self._pending_position_restore = None
 
     def _show_overlay(self) -> None:
         """Show toolbar and video controls, restart auto-hide timer."""
@@ -396,6 +426,29 @@ class FullscreenPreview(QMainWindow):
                 ["hyprctl", "--batch",
                  f"dispatch setprop address:{addr} keep_aspect_ratio 0"
                  f" ; dispatch resizewindowpixel exact {w} {h},address:{addr}"
+                 f" ; dispatch setprop address:{addr} keep_aspect_ratio 1"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        except FileNotFoundError:
+            pass
+
+    def _hyprctl_resize_and_move(self, w: int, h: int, x: int, y: int) -> None:
+        """Atomically resize and move this window via a single hyprctl batch."""
+        import os, subprocess
+        if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+            return
+        win = self._hyprctl_get_window()
+        if not win or not win.get("floating"):
+            return
+        addr = win.get("address")
+        if not addr:
+            return
+        try:
+            subprocess.Popen(
+                ["hyprctl", "--batch",
+                 f"dispatch setprop address:{addr} keep_aspect_ratio 0"
+                 f" ; dispatch resizewindowpixel exact {w} {h},address:{addr}"
+                 f" ; dispatch movewindowpixel exact {x} {y},address:{addr}"
                  f" ; dispatch setprop address:{addr} keep_aspect_ratio 1"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
