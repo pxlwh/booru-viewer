@@ -261,7 +261,7 @@ class FullscreenPreview(QMainWindow):
             max_h = int(avail.height() * 0.85)  # 15% margin top+bottom
         else:
             max_w = max_h = 9999
-        min_w = int(max_w * 0.35) if aspect >= 1 else 0  # landscape minimum
+        min_w = int(max_w * 0.45) if aspect >= 1 else 0  # landscape minimum
         w = max(min(self.width(), max_w), min_w)
         new_h = int(w / aspect)
         if new_h > max_h:
