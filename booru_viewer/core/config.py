@@ -97,15 +97,6 @@ def db_path() -> Path:
     return data_dir() / "booru.db"
 
 
-# Green-on-black palette
-GREEN = "#00ff00"
-DARK_GREEN = "#00cc00"
-DIM_GREEN = "#009900"
-BG = "#000000"
-BG_LIGHT = "#111111"
-BG_LIGHTER = "#1a1a1a"
-BORDER = "#333333"
-
 # Defaults
 DEFAULT_THUMBNAIL_SIZE = (200, 200)
 DEFAULT_PAGE_SIZE = 40

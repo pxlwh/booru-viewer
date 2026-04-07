@@ -299,6 +299,27 @@ ThumbnailWidget {
 }
 ```
 
+### Info Panel Tag Categories
+
+The tag list in the info panel groups tags by category and colors each
+category. Defaults follow the booru convention (Danbooru, Gelbooru, etc.)
+so the panel reads naturally to anyone coming from a booru site. Override
+any of them via `qproperty-tag<Category>Color` on `InfoPanel`:
+
+```css
+InfoPanel {
+    qproperty-tagArtistColor: #f2ac08;     /* default: orange */
+    qproperty-tagCharacterColor: #00aa00;  /* default: green (booru convention) */
+    qproperty-tagCopyrightColor: #cc00ff;  /* default: magenta */
+    qproperty-tagSpeciesColor: #ee4444;    /* default: red */
+    qproperty-tagMetaColor: #888888;       /* default: gray */
+    qproperty-tagLoreColor: #888888;       /* default: gray */
+}
+```
+
+The General category has no color override — its tags use the panel's
+default text color so they fall in line with the rest of the theme.
+
 ## States
 
 | State | Description |
@@ -314,6 +335,6 @@ ThumbnailWidget {
 
 - `selection-background-color` on `QWidget` controls the **grid thumbnail selection border** and **hover highlight** (lighter version auto-derived)
 - Setting a custom QSS automatically switches to the Fusion Qt style for consistent rendering
-- Tag category colors (Artist, Character, etc.) in the info panel are set in code, not via QSS
+- Tag category colors (Artist, Character, Copyright, Species, Meta, Lore) are QSS-controllable via `qproperty-tag<Category>Color` on `InfoPanel` — see the Info Panel Tag Categories section above
 - Saved dot (green) and bookmark star (yellow) are QSS-controllable via `qproperty-savedColor` and `qproperty-bookmarkedColor` on `ThumbnailWidget`
 - Use `QLabel { background: transparent; }` to prevent labels from getting opaque backgrounds

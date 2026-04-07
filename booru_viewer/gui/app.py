@@ -9,8 +9,8 @@ import sys
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, Signal, QObject, QUrl
-from PySide6.QtGui import QPixmap, QAction, QKeySequence, QDesktopServices, QShortcut
+from PySide6.QtCore import Qt, QTimer, Signal, QObject, QUrl, Property
+from PySide6.QtGui import QPixmap, QAction, QKeySequence, QDesktopServices, QShortcut, QColor
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -109,6 +109,60 @@ class InfoPanel(QWidget):
 
     tag_clicked = Signal(str)
 
+    # Tag category colors. Defaults follow the booru convention (Danbooru,
+    # Gelbooru, etc.) so the panel reads naturally to anyone coming from a
+    # booru site. Each is exposed as a Qt Property so a custom.qss can
+    # override it via `qproperty-tag<Category>Color` selectors on
+    # `InfoPanel`. An empty string means "use the default text color"
+    # (the General category) and is preserved as a sentinel.
+    _tag_artist_color = QColor("#f2ac08")
+    _tag_character_color = QColor("#0a0")
+    _tag_copyright_color = QColor("#c0f")
+    _tag_species_color = QColor("#e44")
+    _tag_meta_color = QColor("#888")
+    _tag_lore_color = QColor("#888")
+
+    def _get_artist(self): return self._tag_artist_color
+    def _set_artist(self, c): self._tag_artist_color = QColor(c) if isinstance(c, str) else c
+    tagArtistColor = Property(QColor, _get_artist, _set_artist)
+
+    def _get_character(self): return self._tag_character_color
+    def _set_character(self, c): self._tag_character_color = QColor(c) if isinstance(c, str) else c
+    tagCharacterColor = Property(QColor, _get_character, _set_character)
+
+    def _get_copyright(self): return self._tag_copyright_color
+    def _set_copyright(self, c): self._tag_copyright_color = QColor(c) if isinstance(c, str) else c
+    tagCopyrightColor = Property(QColor, _get_copyright, _set_copyright)
+
+    def _get_species(self): return self._tag_species_color
+    def _set_species(self, c): self._tag_species_color = QColor(c) if isinstance(c, str) else c
+    tagSpeciesColor = Property(QColor, _get_species, _set_species)
+
+    def _get_meta(self): return self._tag_meta_color
+    def _set_meta(self, c): self._tag_meta_color = QColor(c) if isinstance(c, str) else c
+    tagMetaColor = Property(QColor, _get_meta, _set_meta)
+
+    def _get_lore(self): return self._tag_lore_color
+    def _set_lore(self, c): self._tag_lore_color = QColor(c) if isinstance(c, str) else c
+    tagLoreColor = Property(QColor, _get_lore, _set_lore)
+
+    def _category_color(self, category: str) -> str:
+        """Resolve a category name to a hex color string for inline QSS use.
+        Returns "" for the General category (no override → use default text
+        color) and unrecognized categories (so callers can render them with
+        no color attribute set)."""
+        cat = (category or "").lower()
+        m = {
+            "artist": self._tag_artist_color,
+            "character": self._tag_character_color,
+            "copyright": self._tag_copyright_color,
+            "species": self._tag_species_color,
+            "meta": self._tag_meta_color,
+            "lore": self._tag_lore_color,
+        }
+        c = m.get(cat)
+        return c.name() if c is not None else ""
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         layout = QVBoxLayout(self)
@@ -175,21 +229,12 @@ class InfoPanel(QWidget):
             if item.widget():
                 item.widget().deleteLater()
 
-        # Tag category colors
-        _CAT_COLORS = {
-            "Artist": "#f2ac08",
-            "Character": "#0a0",
-            "Copyright": "#c0f",
-            "Species": "#e44",
-            "General": "",
-            "Meta": "#888",
-            "Lore": "#888",
-        }
-
         if post.tag_categories:
-            # Display tags grouped by category
+            # Display tags grouped by category. Colors come from the
+            # tag*Color Qt Properties so a custom.qss can override any of
+            # them via `InfoPanel { qproperty-tagCharacterColor: ...; }`.
             for category, tags in post.tag_categories.items():
-                color = _CAT_COLORS.get(category, "")
+                color = self._category_color(category)
                 header = QLabel(f"{category}:")
                 header.setStyleSheet(
                     f"font-weight: bold; margin-top: 6px; margin-bottom: 2px;"
