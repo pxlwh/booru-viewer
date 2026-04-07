@@ -535,7 +535,40 @@ class BooruApp(QMainWindow):
         self._info_panel.hide()
         right.addWidget(self._info_panel)
 
-        right.setSizes([500, 0, 200])
+        # Restore the right splitter sizes (preview / dl_progress / info)
+        # from the persisted state. Falls back to the historic default if
+        # nothing is saved or the saved string is malformed.
+        saved_right = self._db.get_setting("right_splitter_sizes")
+        right_applied = False
+        if saved_right:
+            try:
+                parts = [int(p) for p in saved_right.split(",")]
+                if len(parts) == 3 and all(p >= 0 for p in parts) and sum(parts) > 0:
+                    right.setSizes(parts)
+                    right_applied = True
+            except ValueError:
+                pass
+        if not right_applied:
+            right.setSizes([500, 0, 200])
+
+        # Restore info panel visibility from the persisted state.
+        if self._db.get_setting_bool("info_panel_visible"):
+            self._info_panel.show()
+
+        # Flag set during popout open/close so the splitter saver below
+        # doesn't persist the temporary [0, 0, 1000] state the popout
+        # uses to give the info panel the full right column.
+        self._popout_active = False
+
+        # Debounced saver for the right splitter (same pattern as main).
+        self._right_splitter_save_timer = QTimer(self)
+        self._right_splitter_save_timer.setSingleShot(True)
+        self._right_splitter_save_timer.setInterval(300)
+        self._right_splitter_save_timer.timeout.connect(self._save_right_splitter_sizes)
+        right.splitterMoved.connect(
+            lambda *_: self._right_splitter_save_timer.start()
+        )
+
         self._splitter.addWidget(right)
 
         # Restore the persisted main-splitter sizes if present, otherwise
@@ -1557,6 +1590,22 @@ class BooruApp(QMainWindow):
                 "main_splitter_sizes", ",".join(str(s) for s in sizes)
             )
 
+    def _save_right_splitter_sizes(self) -> None:
+        """Persist the right splitter sizes (preview / dl_progress / info).
+
+        Skipped while the popout is open — the popout temporarily collapses
+        the preview pane and gives the info panel the full right column,
+        and we don't want that transient layout persisted as the user's
+        preferred state.
+        """
+        if getattr(self, '_popout_active', False):
+            return
+        sizes = self._right_splitter.sizes()
+        if len(sizes) == 3 and sum(sizes) > 0:
+            self._db.set_setting(
+                "right_splitter_sizes", ",".join(str(s) for s in sizes)
+            )
+
     def _hyprctl_main_window(self) -> dict | None:
         """Look up this main window in hyprctl clients. None off Hyprland.
 
@@ -2012,7 +2061,11 @@ class BooruApp(QMainWindow):
         if self._preview._stack.currentIndex() == 1:
             video_pos = self._preview._video_player.get_position_ms()
         # Clear the main preview — popout takes over
-        # Hide preview, expand info panel into the freed space
+        # Hide preview, expand info panel into the freed space.
+        # Mark popout as active so the right splitter saver doesn't persist
+        # this transient layout (which would lose the user's real preferred
+        # sizes between sessions).
+        self._popout_active = True
         self._info_was_visible = self._info_panel.isVisible()
         self._right_splitter_sizes = self._right_splitter.sizes()
         self._preview.clear()
@@ -2091,6 +2144,9 @@ class BooruApp(QMainWindow):
             self._info_panel.hide()
         if hasattr(self, '_right_splitter_sizes'):
             self._right_splitter.setSizes(self._right_splitter_sizes)
+        # Clear the popout-active flag now that the right splitter is back
+        # in its real shape — future splitterMoved events should persist.
+        self._popout_active = False
         # Sync video player state from popout back to preview
         if self._fullscreen_window:
             sv = self._fullscreen_window._video
@@ -2601,8 +2657,11 @@ class BooruApp(QMainWindow):
         self._log_text.setVisible(not self._log_text.isVisible())
 
     def _toggle_info(self) -> None:
-        self._info_panel.setVisible(not self._info_panel.isVisible())
-        if self._info_panel.isVisible() and 0 <= self._grid.selected_index < len(self._posts):
+        new_visible = not self._info_panel.isVisible()
+        self._info_panel.setVisible(new_visible)
+        # Persist the user's intent so it survives the next launch.
+        self._db.set_setting("info_panel_visible", "1" if new_visible else "0")
+        if new_visible and 0 <= self._grid.selected_index < len(self._posts):
             self._info_panel.set_post(self._posts[self._grid.selected_index])
 
     def _open_site_manager(self) -> None:
@@ -2858,7 +2917,10 @@ class BooruApp(QMainWindow):
             self._main_splitter_save_timer.stop()
         if self._main_window_save_timer.isActive():
             self._main_window_save_timer.stop()
+        if hasattr(self, '_right_splitter_save_timer') and self._right_splitter_save_timer.isActive():
+            self._right_splitter_save_timer.stop()
         self._save_main_splitter_sizes()
+        self._save_right_splitter_sizes()
         self._save_main_window_state()
         self._async_loop.call_soon_threadsafe(self._async_loop.stop)
         self._async_thread.join(timeout=2)
