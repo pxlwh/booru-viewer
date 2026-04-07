@@ -438,7 +438,15 @@ class FullscreenPreview(QMainWindow):
         # Save window state for next open
         FullscreenPreview._saved_fullscreen = self.isFullScreen()
         if not self.isFullScreen():
-            FullscreenPreview._saved_geometry = self.geometry()
+            # On Hyprland, Qt doesn't know the real position — ask the WM
+            win = self._hyprctl_get_window()
+            if win and win.get("at") and win.get("size"):
+                from PySide6.QtCore import QRect
+                x, y = win["at"]
+                w, h = win["size"]
+                FullscreenPreview._saved_geometry = QRect(x, y, w, h)
+            else:
+                FullscreenPreview._saved_geometry = self.frameGeometry()
         QApplication.instance().removeEventFilter(self)
         self.closed.emit()
         self._video.stop()
