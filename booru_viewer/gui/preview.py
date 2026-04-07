@@ -172,7 +172,6 @@ class FullscreenPreview(QMainWindow):
         if target_screen:
             self.setScreen(target_screen)
             self.setGeometry(target_screen.geometry())
-        self._user_resized = False
         self._adjusting = False
         # Restore saved state or start fullscreen
         if FullscreenPreview._saved_geometry and not FullscreenPreview._saved_fullscreen:
@@ -263,16 +262,14 @@ class FullscreenPreview(QMainWindow):
             max_h = int(avail.height() * 0.85)  # 15% margin top+bottom
         else:
             max_w = max_h = 9999
-        min_w = int(max_w * 0.45) if aspect >= 1 and not self._user_resized else 0
+        min_w = int(max_w * 0.45) if aspect >= 1 else 0  # landscape minimum
         w = max(min(self.width(), max_w), min_w)
         new_h = int(w / aspect)
         if new_h > max_h:
             new_h = max_h
             w = int(new_h * aspect)
-        self._adjusting = True
         self.resize(w, new_h)
         self._hyprctl_resize(w, new_h)
-        QTimer.singleShot(100, lambda: setattr(self, '_adjusting', False))
 
     def _show_overlay(self) -> None:
         """Show toolbar and video controls, restart auto-hide timer."""
@@ -454,16 +451,6 @@ class FullscreenPreview(QMainWindow):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        # Detect user manual resize
-        if not self.isFullScreen() and not self._adjusting:
-            screen = self.screen()
-            if screen:
-                min_landscape = int(screen.availableGeometry().width() * 0.45)
-                if event.size().width() >= min_landscape:
-                    # User stretched back to or beyond minimum — reset override
-                    self._user_resized = False
-                else:
-                    self._user_resized = True
         # Position floating overlays
         w = self.centralWidget().width()
         h = self.centralWidget().height()
