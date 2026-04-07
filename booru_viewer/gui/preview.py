@@ -254,7 +254,7 @@ class FullscreenPreview(QMainWindow):
             return
         aspect = content_w / content_h
         screen = self.screen()
-        max_h = int(screen.availableGeometry().height() * 0.85) if screen else 9999
+        max_h = int(screen.availableGeometry().height() * 0.90) if screen else 9999
         max_w = screen.availableGeometry().width() if screen else 9999
         w = min(self.width(), max_w)
         h = int(w / aspect)
