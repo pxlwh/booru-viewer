@@ -7,6 +7,7 @@ import hashlib
 import logging
 import os
 import tempfile
+import threading
 import zipfile
 from collections import OrderedDict, defaultdict
 from datetime import datetime
@@ -64,23 +65,48 @@ def _url_hash(url: str) -> str:
     return hashlib.sha256(url.encode()).hexdigest()[:16]
 
 
-# Shared httpx client for connection pooling (avoids per-request TLS handshakes)
+# Shared httpx client for connection pooling (avoids per-request TLS handshakes).
+# Lazily created on first download. Lock guards the check-and-set so concurrent
+# first-callers can't both build a client and leak one. Loop affinity is
+# guaranteed by routing all downloads through `core.concurrency.run_on_app_loop`
+# (see PR2).
 _shared_client: httpx.AsyncClient | None = None
+_shared_client_lock = threading.Lock()
 
 
 def _get_shared_client(referer: str = "") -> httpx.AsyncClient:
     global _shared_client
-    if _shared_client is None or _shared_client.is_closed:
-        _shared_client = httpx.AsyncClient(
-            headers={
-                "User-Agent": USER_AGENT,
-                "Accept": "image/*,video/*,*/*",
-            },
-            follow_redirects=True,
-            timeout=60.0,
-            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
-        )
-    return _shared_client
+    c = _shared_client
+    if c is not None and not c.is_closed:
+        return c
+    with _shared_client_lock:
+        c = _shared_client
+        if c is None or c.is_closed:
+            c = httpx.AsyncClient(
+                headers={
+                    "User-Agent": USER_AGENT,
+                    "Accept": "image/*,video/*,*/*",
+                },
+                follow_redirects=True,
+                timeout=60.0,
+                limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+            )
+            _shared_client = c
+        return c
+
+
+async def aclose_shared_client() -> None:
+    """Cleanly aclose the cache module's shared download client. Safe to call
+    once at app shutdown; no-op if not initialized."""
+    global _shared_client
+    with _shared_client_lock:
+        c = _shared_client
+        _shared_client = None
+    if c is not None and not c.is_closed:
+        try:
+            await c.aclose()
+        except Exception as e:
+            log.warning("cache shared client aclose failed: %s", e)
 
 
 _IMAGE_MAGIC = {

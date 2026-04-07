@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 
 import httpx
 
@@ -15,23 +16,56 @@ log = logging.getLogger("booru")
 class E621Client(BooruClient):
     api_type = "e621"
 
+    # Same shared-singleton pattern as BooruClient, but e621 needs a custom
+    # User-Agent (their TOS requires identifying the app + user). When the
+    # UA changes (api_user edit) we need to rebuild — and we explicitly
+    # close the old client to avoid leaking its connection pool.
     _e621_client: httpx.AsyncClient | None = None
     _e621_ua: str = ""
+    _e621_lock: threading.Lock = threading.Lock()
+    # Old clients pending aclose. We can't await from a sync property, so
+    # we stash them here and the app's shutdown coroutine drains them.
+    _e621_to_close: list[httpx.AsyncClient] = []
 
     @property
     def client(self) -> httpx.AsyncClient:
         ua = USER_AGENT
         if self.api_user:
             ua = f"{USER_AGENT} (by {self.api_user} on e621)"
-        if E621Client._e621_client is None or E621Client._e621_client.is_closed or E621Client._e621_ua != ua:
-            E621Client._e621_ua = ua
-            E621Client._e621_client = httpx.AsyncClient(
-                headers={"User-Agent": ua},
-                follow_redirects=True,
-                timeout=20.0,
-                limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
-            )
-        return E621Client._e621_client
+        # Fast path
+        c = E621Client._e621_client
+        if c is not None and not c.is_closed and E621Client._e621_ua == ua:
+            return c
+        with E621Client._e621_lock:
+            c = E621Client._e621_client
+            if c is None or c.is_closed or E621Client._e621_ua != ua:
+                # Stash old client for shutdown cleanup if it's still open.
+                if c is not None and not c.is_closed:
+                    E621Client._e621_to_close.append(c)
+                E621Client._e621_ua = ua
+                c = httpx.AsyncClient(
+                    headers={"User-Agent": ua},
+                    follow_redirects=True,
+                    timeout=20.0,
+                    limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+                )
+                E621Client._e621_client = c
+            return c
+
+    @classmethod
+    async def aclose_shared(cls) -> None:
+        """Cleanly aclose the active client and any UA-change leftovers."""
+        with cls._e621_lock:
+            current = cls._e621_client
+            cls._e621_client = None
+            pending = cls._e621_to_close
+            cls._e621_to_close = []
+        for c in [current, *pending]:
+            if c is not None and not c.is_closed:
+                try:
+                    await c.aclose()
+                except Exception as e:
+                    log.warning("E621Client aclose failed: %s", e)
 
     async def search(
         self, tags: str = "", page: int = 1, limit: int = DEFAULT_PAGE_SIZE

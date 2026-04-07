@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 import sqlite3
 import json
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -175,6 +177,13 @@ class Database:
     def __init__(self, path: Path | None = None) -> None:
         self._path = path or db_path()
         self._conn: sqlite3.Connection | None = None
+        # Single writer lock for the connection. Reads happen concurrently
+        # under WAL without contention; writes from multiple threads (Qt
+        # main + the persistent asyncio loop thread) need explicit
+        # serialization to avoid interleaved multi-statement methods.
+        # RLock so a writing method can call another writing method on the
+        # same thread without self-deadlocking.
+        self._write_lock = threading.RLock()
 
     @property
     def conn(self) -> sqlite3.Connection:
@@ -187,28 +196,49 @@ class Database:
             self._migrate()
         return self._conn
 
+    @contextmanager
+    def _write(self):
+        """Context manager for write methods.
+
+        Acquires the write lock for cross-thread serialization, then enters
+        sqlite3's connection context manager (which BEGINs and COMMIT/ROLLBACKs
+        atomically). Use this in place of `with self.conn:` whenever a method
+        writes — it composes the two guarantees we want:
+          1. Multi-statement atomicity (sqlite3 handles)
+          2. Cross-thread write serialization (the RLock handles)
+        Reads do not need this — they go through `self.conn.execute(...)` directly
+        and rely on WAL for concurrent-reader isolation.
+        """
+        with self._write_lock:
+            with self.conn:
+                yield self.conn
+
     def _migrate(self) -> None:
         """Add columns that may not exist in older databases.
 
         All ALTERs are wrapped in a single transaction so a crash partway
-        through can't leave the schema half-migrated.
+        through can't leave the schema half-migrated. Note: this runs from
+        the `conn` property's lazy init, where `_write_lock` exists but the
+        connection is being built — we only need to serialize writes via
+        the lock; the connection context manager handles atomicity.
         """
-        with self._conn:
-            cur = self._conn.execute("PRAGMA table_info(favorites)")
-            cols = {row[1] for row in cur.fetchall()}
-            if "folder" not in cols:
-                self._conn.execute("ALTER TABLE favorites ADD COLUMN folder TEXT")
-            self._conn.execute("CREATE INDEX IF NOT EXISTS idx_favorites_folder ON favorites(folder)")
-            # Add tag_categories to library_meta if missing
-            tables = {r[0] for r in self._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
-            if "library_meta" in tables:
-                cur = self._conn.execute("PRAGMA table_info(library_meta)")
-                meta_cols = {row[1] for row in cur.fetchall()}
-                if "tag_categories" not in meta_cols:
-                    self._conn.execute("ALTER TABLE library_meta ADD COLUMN tag_categories TEXT DEFAULT ''")
-            # Add tag_categories to favorites if missing
-            if "tag_categories" not in cols:
-                self._conn.execute("ALTER TABLE favorites ADD COLUMN tag_categories TEXT DEFAULT ''")
+        with self._write_lock:
+            with self._conn:
+                cur = self._conn.execute("PRAGMA table_info(favorites)")
+                cols = {row[1] for row in cur.fetchall()}
+                if "folder" not in cols:
+                    self._conn.execute("ALTER TABLE favorites ADD COLUMN folder TEXT")
+                self._conn.execute("CREATE INDEX IF NOT EXISTS idx_favorites_folder ON favorites(folder)")
+                # Add tag_categories to library_meta if missing
+                tables = {r[0] for r in self._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+                if "library_meta" in tables:
+                    cur = self._conn.execute("PRAGMA table_info(library_meta)")
+                    meta_cols = {row[1] for row in cur.fetchall()}
+                    if "tag_categories" not in meta_cols:
+                        self._conn.execute("ALTER TABLE library_meta ADD COLUMN tag_categories TEXT DEFAULT ''")
+                # Add tag_categories to favorites if missing
+                if "tag_categories" not in cols:
+                    self._conn.execute("ALTER TABLE favorites ADD COLUMN tag_categories TEXT DEFAULT ''")
 
     def close(self) -> None:
         if self._conn:
@@ -226,12 +256,12 @@ class Database:
         api_user: str | None = None,
     ) -> Site:
         now = datetime.now(timezone.utc).isoformat()
-        cur = self.conn.execute(
-            "INSERT INTO sites (name, url, api_type, api_key, api_user, added_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (name, url.rstrip("/"), api_type, api_key, api_user, now),
-        )
-        self.conn.commit()
+        with self._write():
+            cur = self.conn.execute(
+                "INSERT INTO sites (name, url, api_type, api_key, api_user, added_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (name, url.rstrip("/"), api_type, api_key, api_user, now),
+            )
         return Site(
             id=cur.lastrowid,  # type: ignore[arg-type]
             name=name,
@@ -261,7 +291,7 @@ class Database:
         ]
 
     def delete_site(self, site_id: int) -> None:
-        with self.conn:
+        with self._write():
             self.conn.execute("DELETE FROM favorites WHERE site_id = ?", (site_id,))
             self.conn.execute("DELETE FROM sites WHERE id = ?", (site_id,))
 
@@ -277,10 +307,10 @@ class Database:
         if not sets:
             return
         vals.append(site_id)
-        self.conn.execute(
-            f"UPDATE sites SET {', '.join(sets)} WHERE id = ?", vals
-        )
-        self.conn.commit()
+        with self._write():
+            self.conn.execute(
+                f"UPDATE sites SET {', '.join(sets)} WHERE id = ?", vals
+            )
 
     # -- Bookmarks --
 
@@ -300,7 +330,7 @@ class Database:
     ) -> Bookmark:
         now = datetime.now(timezone.utc).isoformat()
         cats_json = json.dumps(tag_categories) if tag_categories else ""
-        with self.conn:
+        with self._write():
             cur = self.conn.execute(
                 "INSERT OR IGNORE INTO favorites "
                 "(site_id, post_id, file_url, preview_url, tags, rating, score, source, cached_path, folder, favorited_at, tag_categories) "
@@ -342,26 +372,26 @@ class Database:
 
     def add_bookmarks_batch(self, bookmarks: list[dict]) -> None:
         """Add multiple bookmarks in a single transaction."""
-        for fav in bookmarks:
-            self.conn.execute(
-                "INSERT OR IGNORE INTO favorites "
-                "(site_id, post_id, file_url, preview_url, tags, rating, score, source, cached_path, folder, favorited_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (fav['site_id'], fav['post_id'], fav['file_url'], fav.get('preview_url'),
-                 fav.get('tags', ''), fav.get('rating'), fav.get('score'), fav.get('source'),
-                 fav.get('cached_path'), fav.get('folder'), fav.get('favorited_at', datetime.now(timezone.utc).isoformat())),
-            )
-        self.conn.commit()
+        with self._write():
+            for fav in bookmarks:
+                self.conn.execute(
+                    "INSERT OR IGNORE INTO favorites "
+                    "(site_id, post_id, file_url, preview_url, tags, rating, score, source, cached_path, folder, favorited_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (fav['site_id'], fav['post_id'], fav['file_url'], fav.get('preview_url'),
+                     fav.get('tags', ''), fav.get('rating'), fav.get('score'), fav.get('source'),
+                     fav.get('cached_path'), fav.get('folder'), fav.get('favorited_at', datetime.now(timezone.utc).isoformat())),
+                )
 
     # Back-compat shim
     add_favorites_batch = add_bookmarks_batch
 
     def remove_bookmark(self, site_id: int, post_id: int) -> None:
-        self.conn.execute(
-            "DELETE FROM favorites WHERE site_id = ? AND post_id = ?",
-            (site_id, post_id),
-        )
-        self.conn.commit()
+        with self._write():
+            self.conn.execute(
+                "DELETE FROM favorites WHERE site_id = ? AND post_id = ?",
+                (site_id, post_id),
+            )
 
     # Back-compat shim
     remove_favorite = remove_bookmark
@@ -436,11 +466,11 @@ class Database:
     _row_to_favorite = _row_to_bookmark
 
     def update_bookmark_cache_path(self, fav_id: int, cached_path: str) -> None:
-        self.conn.execute(
-            "UPDATE favorites SET cached_path = ? WHERE id = ?",
-            (cached_path, fav_id),
-        )
-        self.conn.commit()
+        with self._write():
+            self.conn.execute(
+                "UPDATE favorites SET cached_path = ? WHERE id = ?",
+                (cached_path, fav_id),
+            )
 
     # Back-compat shim
     update_favorite_cache_path = update_bookmark_cache_path
@@ -460,13 +490,13 @@ class Database:
 
     def add_folder(self, name: str) -> None:
         clean = _validate_folder_name(name.strip())
-        self.conn.execute(
-            "INSERT OR IGNORE INTO favorite_folders (name) VALUES (?)", (clean,)
-        )
-        self.conn.commit()
+        with self._write():
+            self.conn.execute(
+                "INSERT OR IGNORE INTO favorite_folders (name) VALUES (?)", (clean,)
+            )
 
     def remove_folder(self, name: str) -> None:
-        with self.conn:
+        with self._write():
             self.conn.execute(
                 "UPDATE favorites SET folder = NULL WHERE folder = ?", (name,)
             )
@@ -474,7 +504,7 @@ class Database:
 
     def rename_folder(self, old: str, new: str) -> None:
         new_name = _validate_folder_name(new.strip())
-        with self.conn:
+        with self._write():
             self.conn.execute(
                 "UPDATE favorites SET folder = ? WHERE folder = ?", (new_name, old)
             )
@@ -483,10 +513,10 @@ class Database:
             )
 
     def move_bookmark_to_folder(self, fav_id: int, folder: str | None) -> None:
-        self.conn.execute(
-            "UPDATE favorites SET folder = ? WHERE id = ?", (folder, fav_id)
-        )
-        self.conn.commit()
+        with self._write():
+            self.conn.execute(
+                "UPDATE favorites SET folder = ? WHERE id = ?", (folder, fav_id)
+            )
 
     # Back-compat shim
     move_favorite_to_folder = move_bookmark_to_folder
@@ -494,18 +524,18 @@ class Database:
     # -- Blacklist --
 
     def add_blacklisted_tag(self, tag: str) -> None:
-        self.conn.execute(
-            "INSERT OR IGNORE INTO blacklisted_tags (tag) VALUES (?)",
-            (tag.strip().lower(),),
-        )
-        self.conn.commit()
+        with self._write():
+            self.conn.execute(
+                "INSERT OR IGNORE INTO blacklisted_tags (tag) VALUES (?)",
+                (tag.strip().lower(),),
+            )
 
     def remove_blacklisted_tag(self, tag: str) -> None:
-        self.conn.execute(
-            "DELETE FROM blacklisted_tags WHERE tag = ?",
-            (tag.strip().lower(),),
-        )
-        self.conn.commit()
+        with self._write():
+            self.conn.execute(
+                "DELETE FROM blacklisted_tags WHERE tag = ?",
+                (tag.strip().lower(),),
+            )
 
     def get_blacklisted_tags(self) -> list[str]:
         rows = self.conn.execute("SELECT tag FROM blacklisted_tags ORDER BY tag").fetchall()
@@ -514,12 +544,12 @@ class Database:
     # -- Blacklisted Posts --
 
     def add_blacklisted_post(self, url: str) -> None:
-        self.conn.execute("INSERT OR IGNORE INTO blacklisted_posts (url) VALUES (?)", (url,))
-        self.conn.commit()
+        with self._write():
+            self.conn.execute("INSERT OR IGNORE INTO blacklisted_posts (url) VALUES (?)", (url,))
 
     def remove_blacklisted_post(self, url: str) -> None:
-        self.conn.execute("DELETE FROM blacklisted_posts WHERE url = ?", (url,))
-        self.conn.commit()
+        with self._write():
+            self.conn.execute("DELETE FROM blacklisted_posts WHERE url = ?", (url,))
 
     def get_blacklisted_posts(self) -> set[str]:
         rows = self.conn.execute("SELECT url FROM blacklisted_posts").fetchall()
@@ -531,14 +561,14 @@ class Database:
                           score: int = 0, rating: str = None, source: str = None,
                           file_url: str = None) -> None:
         cats_json = json.dumps(tag_categories) if tag_categories else ""
-        self.conn.execute(
-            "INSERT OR REPLACE INTO library_meta "
-            "(post_id, tags, tag_categories, score, rating, source, file_url, saved_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (post_id, tags, cats_json, score, rating, source, file_url,
-             datetime.now(timezone.utc).isoformat()),
-        )
-        self.conn.commit()
+        with self._write():
+            self.conn.execute(
+                "INSERT OR REPLACE INTO library_meta "
+                "(post_id, tags, tag_categories, score, rating, source, file_url, saved_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (post_id, tags, cats_json, score, rating, source, file_url,
+                 datetime.now(timezone.utc).isoformat()),
+            )
 
     def get_library_meta(self, post_id: int) -> dict | None:
         row = self.conn.execute("SELECT * FROM library_meta WHERE post_id = ?", (post_id,)).fetchone()
@@ -558,8 +588,8 @@ class Database:
         return {r["post_id"] for r in rows}
 
     def remove_library_meta(self, post_id: int) -> None:
-        self.conn.execute("DELETE FROM library_meta WHERE post_id = ?", (post_id,))
-        self.conn.commit()
+        with self._write():
+            self.conn.execute("DELETE FROM library_meta WHERE post_id = ?", (post_id,))
 
     # -- Settings --
 
@@ -576,11 +606,11 @@ class Database:
         return self.get_setting(key) == "1"
 
     def set_setting(self, key: str, value: str) -> None:
-        self.conn.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-            (key, str(value)),
-        )
-        self.conn.commit()
+        with self._write():
+            self.conn.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                (key, str(value)),
+            )
 
     def get_all_settings(self) -> dict[str, str]:
         result = dict(_DEFAULTS)
@@ -595,7 +625,7 @@ class Database:
         if not query.strip():
             return
         now = datetime.now(timezone.utc).isoformat()
-        with self.conn:
+        with self._write():
             # Remove duplicate if exists, keep latest
             self.conn.execute(
                 "DELETE FROM search_history WHERE query = ? AND (site_id = ? OR (site_id IS NULL AND ? IS NULL))",
@@ -619,21 +649,21 @@ class Database:
         return [r["query"] for r in rows]
 
     def clear_search_history(self) -> None:
-        self.conn.execute("DELETE FROM search_history")
-        self.conn.commit()
+        with self._write():
+            self.conn.execute("DELETE FROM search_history")
 
     def remove_search_history(self, query: str) -> None:
-        self.conn.execute("DELETE FROM search_history WHERE query = ?", (query,))
-        self.conn.commit()
+        with self._write():
+            self.conn.execute("DELETE FROM search_history WHERE query = ?", (query,))
 
     # -- Saved Searches --
 
     def add_saved_search(self, name: str, query: str, site_id: int | None = None) -> None:
-        self.conn.execute(
-            "INSERT OR REPLACE INTO saved_searches (name, query, site_id) VALUES (?, ?, ?)",
-            (name.strip(), query.strip(), site_id),
-        )
-        self.conn.commit()
+        with self._write():
+            self.conn.execute(
+                "INSERT OR REPLACE INTO saved_searches (name, query, site_id) VALUES (?, ?, ?)",
+                (name.strip(), query.strip(), site_id),
+            )
 
     def get_saved_searches(self) -> list[tuple[int, str, str]]:
         """Returns list of (id, name, query)."""
@@ -643,5 +673,5 @@ class Database:
         return [(r["id"], r["name"], r["query"]) for r in rows]
 
     def remove_saved_search(self, search_id: int) -> None:
-        self.conn.execute("DELETE FROM saved_searches WHERE id = ?", (search_id,))
-        self.conn.commit()
+        with self._write():
+            self.conn.execute("DELETE FROM saved_searches WHERE id = ?", (search_id,))

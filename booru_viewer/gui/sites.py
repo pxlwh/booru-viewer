@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
-import threading
-
-from PySide6.QtCore import Qt, Signal, QMetaObject, Q_ARG, Qt as QtNS
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -22,16 +19,34 @@ from PySide6.QtWidgets import (
 
 from ..core.db import Database, Site
 from ..core.api.detect import detect_site_type
+from ..core.concurrency import run_on_app_loop
 
 
 class SiteDialog(QDialog):
     """Dialog to add or edit a booru site."""
+
+    # Internal signals used to marshal worker results back to the GUI thread.
+    # Connected with QueuedConnection so emit() from the asyncio loop thread
+    # is always delivered on the Qt main thread.
+    _detect_done_sig = Signal(object, object)  # (result_or_None, error_or_None)
+    _test_done_sig = Signal(bool, str)
 
     def __init__(self, parent: QWidget | None = None, site: Site | None = None) -> None:
         super().__init__(parent)
         self._editing = site is not None
         self.setWindowTitle("Edit Site" if self._editing else "Add Site")
         self.setMinimumWidth(400)
+        # Set when the dialog is closed/destroyed so in-flight worker
+        # callbacks can short-circuit instead of poking a dead QObject.
+        self._closed = False
+        # Tracked so we can cancel pending coroutines on close.
+        self._inflight = []  # list[concurrent.futures.Future]
+        self._detect_done_sig.connect(
+            self._detect_finished, Qt.ConnectionType.QueuedConnection
+        )
+        self._test_done_sig.connect(
+            self._test_finished, Qt.ConnectionType.QueuedConnection
+        )
 
         layout = QVBoxLayout(self)
 
@@ -102,16 +117,22 @@ class SiteDialog(QDialog):
         api_key = self._key_input.text().strip() or None
         api_user = self._user_input.text().strip() or None
 
-        def _run():
+        async def _do_detect():
             try:
-                result = asyncio.run(detect_site_type(url, api_key=api_key, api_user=api_user))
-                self._detect_finished(result, None)
+                result = await detect_site_type(url, api_key=api_key, api_user=api_user)
+                if not self._closed:
+                    self._detect_done_sig.emit(result, None)
             except Exception as e:
-                self._detect_finished(None, e)
+                if not self._closed:
+                    self._detect_done_sig.emit(None, e)
 
-        threading.Thread(target=_run, daemon=True).start()
+        fut = run_on_app_loop(_do_detect())
+        self._inflight.append(fut)
+        fut.add_done_callback(lambda f: self._inflight.remove(f) if f in self._inflight else None)
 
-    def _detect_finished(self, result: str | None, error: Exception | None) -> None:
+    def _detect_finished(self, result, error) -> None:
+        if self._closed:
+            return
         self._detect_btn.setEnabled(True)
         if error:
             self._status_label.setText(f"Error: {error}")
@@ -132,24 +153,41 @@ class SiteDialog(QDialog):
         self._status_label.setText("Testing connection...")
         self._test_btn.setEnabled(False)
 
-        def _run():
-            import asyncio
-            from ..core.api.detect import client_for_type
+        from ..core.api.detect import client_for_type
+
+        async def _do_test():
             try:
                 client = client_for_type(api_type, url, api_key=api_key, api_user=api_user)
-                ok, detail = asyncio.run(client.test_connection())
-                self._test_finished(ok, detail)
+                ok, detail = await client.test_connection()
+                if not self._closed:
+                    self._test_done_sig.emit(ok, detail)
             except Exception as e:
-                self._test_finished(False, str(e))
+                if not self._closed:
+                    self._test_done_sig.emit(False, str(e))
 
-        threading.Thread(target=_run, daemon=True).start()
+        fut = run_on_app_loop(_do_test())
+        self._inflight.append(fut)
+        fut.add_done_callback(lambda f: self._inflight.remove(f) if f in self._inflight else None)
 
     def _test_finished(self, ok: bool, detail: str) -> None:
+        if self._closed:
+            return
         self._test_btn.setEnabled(True)
         if ok:
             self._status_label.setText(f"Connected! {detail}")
         else:
             self._status_label.setText(f"Failed: {detail}")
+
+    def closeEvent(self, event) -> None:
+        # Mark closed first so in-flight callbacks short-circuit, then
+        # cancel anything still pending so we don't tie up the loop.
+        self._closed = True
+        for fut in list(self._inflight):
+            try:
+                fut.cancel()
+            except Exception:
+                pass
+        super().closeEvent(event)
 
     def _try_parse_url(self, text: str) -> None:
         """Strip query params from pasted URLs like https://gelbooru.com/index.php?page=post&s=list&tags=all."""

@@ -312,10 +312,20 @@ class BooruApp(QMainWindow):
         self._async_thread = threading.Thread(target=self._async_loop.run_forever, daemon=True)
         self._async_thread.start()
 
+        # Register the persistent loop as the process-wide app loop. Anything
+        # that wants to schedule async work — `gui/sites.py`, `gui/bookmarks.py`,
+        # any future helper — calls `core.concurrency.run_on_app_loop` which
+        # uses this same loop. The whole point of PR2 is to never run async
+        # code on a throwaway loop again.
+        from ..core.concurrency import set_app_loop
+        set_app_loop(self._async_loop)
+
         # Reset shared HTTP clients from previous session
-        from ..core.cache import _get_shared_client
         from ..core.api.base import BooruClient
+        from ..core.api.e621 import E621Client
         BooruClient._shared_client = None
+        E621Client._e621_client = None
+        E621Client._e621_to_close = []
         import booru_viewer.core.cache as _cache_mod
         _cache_mod._shared_client = None
 
@@ -2927,6 +2937,26 @@ class BooruApp(QMainWindow):
         self._save_main_splitter_sizes()
         self._save_right_splitter_sizes()
         self._save_main_window_state()
+
+        # Cleanly shut the shared httpx pools down BEFORE stopping the loop
+        # so the connection pool / keepalive sockets / TLS state get released
+        # instead of being abandoned mid-flight. Has to run on the loop the
+        # clients were bound to.
+        try:
+            from ..core.api.base import BooruClient
+            from ..core.api.e621 import E621Client
+            from ..core.cache import aclose_shared_client
+
+            async def _close_all():
+                await BooruClient.aclose_shared()
+                await E621Client.aclose_shared()
+                await aclose_shared_client()
+
+            fut = asyncio.run_coroutine_threadsafe(_close_all(), self._async_loop)
+            fut.result(timeout=5)
+        except Exception as e:
+            log.warning(f"Shared httpx aclose failed: {e}")
+
         self._async_loop.call_soon_threadsafe(self._async_loop.stop)
         self._async_thread.join(timeout=2)
         if self._db.get_setting_bool("clear_cache_on_exit"):

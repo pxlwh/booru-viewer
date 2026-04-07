@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import logging
-import threading
-import asyncio
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal, QObject, QTimer
@@ -25,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from ..core.db import Database, Bookmark
 from ..core.cache import download_thumbnail
+from ..core.concurrency import run_on_app_loop
 from .grid import ThumbnailGrid
 
 log = logging.getLogger("booru")
@@ -173,13 +172,18 @@ class BookmarksView(QWidget):
                     thumb.set_pixmap(pix)
 
     def _load_thumb_async(self, index: int, url: str) -> None:
+        # Schedule the download on the persistent event loop instead of
+        # spawning a daemon thread that runs its own throwaway loop. This
+        # is the fix for the loop-affinity bug where the cache module's
+        # shared httpx client would get bound to the throwaway loop and
+        # then fail every subsequent use from the persistent loop.
         async def _dl():
             try:
                 path = await download_thumbnail(url)
                 self._signals.thumb_ready.emit(index, str(path))
             except Exception as e:
                 log.warning(f"Bookmark thumb {index} failed: {e}")
-        threading.Thread(target=lambda: asyncio.run(_dl()), daemon=True).start()
+        run_on_app_loop(_dl())
 
     def _on_thumb_ready(self, index: int, path: str) -> None:
         thumbs = self._grid._thumbs

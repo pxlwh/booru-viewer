@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
@@ -62,8 +63,18 @@ class BooruClient(ABC):
 
     api_type: str = ""
 
-    # Shared client across all BooruClient instances for connection reuse
+    # Shared httpx client across all BooruClient instances for connection
+    # reuse. Lazily created on first access; the threading.Lock guards the
+    # check-and-set so concurrent first-callers can't both build a client
+    # and leak one. The lock is per-class, lives for the process lifetime.
+    #
+    # Loop affinity: by convention every async call goes through
+    # `core.concurrency.run_on_app_loop`, which schedules on the persistent
+    # event loop in `gui/app.py`. The first lazy init therefore binds the
+    # client to that loop, and every subsequent use is on the same loop.
+    # This is the contract that PR2 enforces — see core/concurrency.py.
     _shared_client: httpx.AsyncClient | None = None
+    _shared_client_lock: threading.Lock = threading.Lock()
 
     def __init__(
         self,
@@ -77,15 +88,37 @@ class BooruClient(ABC):
 
     @property
     def client(self) -> httpx.AsyncClient:
-        if BooruClient._shared_client is None or BooruClient._shared_client.is_closed:
-            BooruClient._shared_client = httpx.AsyncClient(
-                headers={"User-Agent": USER_AGENT},
-                follow_redirects=True,
-                timeout=20.0,
-                event_hooks={"request": [self._log_request]},
-                limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
-            )
-        return BooruClient._shared_client
+        # Fast path: client exists and is open. No lock needed for the read.
+        c = BooruClient._shared_client
+        if c is not None and not c.is_closed:
+            return c
+        # Slow path: build it. Lock so two coroutines on the same loop don't
+        # both construct + leak.
+        with BooruClient._shared_client_lock:
+            c = BooruClient._shared_client
+            if c is None or c.is_closed:
+                c = httpx.AsyncClient(
+                    headers={"User-Agent": USER_AGENT},
+                    follow_redirects=True,
+                    timeout=20.0,
+                    event_hooks={"request": [self._log_request]},
+                    limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+                )
+                BooruClient._shared_client = c
+            return c
+
+    @classmethod
+    async def aclose_shared(cls) -> None:
+        """Cleanly aclose the shared client. Safe to call from any coroutine
+        running on the loop the client is bound to. No-op if not initialized."""
+        with cls._shared_client_lock:
+            c = cls._shared_client
+            cls._shared_client = None
+        if c is not None and not c.is_closed:
+            try:
+                await c.aclose()
+            except Exception as e:
+                log.warning("BooruClient shared aclose failed: %s", e)
 
     @staticmethod
     async def _log_request(request: httpx.Request) -> None:
@@ -124,7 +157,10 @@ class BooruClient(ABC):
         return resp  # unreachable in practice, satisfies type checker
 
     async def close(self) -> None:
-        pass  # shared client stays open
+        # Per-instance close is a no-op — the shared pool is owned by the
+        # class. Use `await BooruClient.aclose_shared()` from app shutdown
+        # to actually release the connection pool.
+        pass
 
     @abstractmethod
     async def search(
