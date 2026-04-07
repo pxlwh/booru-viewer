@@ -87,7 +87,7 @@ class LibraryView(QWidget):
         top.addWidget(refresh_btn)
 
         self._search_input = QLineEdit()
-        self._search_input.setPlaceholderText("Search tags (live, Enter to commit)")
+        self._search_input.setPlaceholderText("Search tags")
         # Enter still triggers an immediate refresh.
         self._search_input.returnPressed.connect(self.refresh)
         # Live search via debounced timer. Library refresh is heavier

@@ -31,7 +31,7 @@ class SearchBar(QWidget):
         layout.setSpacing(6)
 
         self._input = QLineEdit()
-        self._input.setPlaceholderText("Search tags... (supports -negatives)")
+        self._input.setPlaceholderText("Search tags...")
         self._input.returnPressed.connect(self._do_search)
 
         # Dropdown arrow inside search bar

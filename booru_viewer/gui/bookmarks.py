@@ -79,7 +79,7 @@ class BookmarksView(QWidget):
         top.addWidget(manage_btn)
 
         self._search_input = QLineEdit()
-        self._search_input.setPlaceholderText("Search bookmarks by tag (live, Enter to commit)")
+        self._search_input.setPlaceholderText("Search bookmarks by tag")
         # Enter still triggers an immediate search.
         self._search_input.returnPressed.connect(self._do_search)
         # Live search via debounced timer: every keystroke restarts a
