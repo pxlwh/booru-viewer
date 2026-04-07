@@ -905,6 +905,7 @@ class BooruApp(QMainWindow):
         QTimer.singleShot(100, self._clear_loading)
 
         from ..core.config import saved_dir, saved_folder_dir
+        from ..core.cache import cached_path_for, cache_dir
         site_id = self._site_combo.currentData()
 
         # Pre-scan saved directories once instead of per-post exists() calls
@@ -918,12 +919,22 @@ class BooruApp(QMainWindow):
             if d.exists():
                 _folder_saved[folder] = {int(f.stem) for f in d.iterdir() if f.is_file() and f.stem.isdigit()}
 
-        # Pre-fetch bookmarks for the site once (used for folder checks)
+        # Pre-fetch bookmarks for the site once and project to a post-id set
+        # so the per-post check below is an O(1) membership test instead of
+        # a synchronous SQLite query (was N queries on the GUI thread).
         _favs = self._db.get_bookmarks(site_id=site_id) if site_id else []
+        _bookmarked_ids: set[int] = {f.post_id for f in _favs}
+
+        # Pre-scan the cache dir into a name set so the per-post drag-path
+        # lookup is one stat-equivalent (one iterdir) instead of N stat calls.
+        _cd = cache_dir()
+        _cached_names: set[str] = set()
+        if _cd.exists():
+            _cached_names = {f.name for f in _cd.iterdir() if f.is_file()}
 
         for i, (post, thumb) in enumerate(zip(posts, thumbs)):
             # Bookmark status (DB)
-            if site_id and self._db.is_bookmarked(site_id, post.id):
+            if post.id in _bookmarked_ids:
                 thumb.set_bookmarked(True)
             # Saved status (filesystem) — independent of bookmark
             saved = post.id in _saved_ids
@@ -934,9 +945,8 @@ class BooruApp(QMainWindow):
                         break
             thumb.set_saved_locally(saved)
             # Set drag path from cache
-            from ..core.cache import cached_path_for
             cached = cached_path_for(post.file_url)
-            if cached.exists():
+            if cached.name in _cached_names:
                 thumb._cached_path = str(cached)
 
             if post.preview_url:
@@ -1012,12 +1022,22 @@ class BooruApp(QMainWindow):
             return
 
         from ..core.config import saved_dir
-        from ..core.cache import cached_path_for
+        from ..core.cache import cached_path_for, cache_dir
         site_id = self._site_combo.currentData()
         _sd = saved_dir()
         _saved_ids: set[int] = set()
         if _sd.exists():
             _saved_ids = {int(f.stem) for f in _sd.iterdir() if f.is_file() and f.stem.isdigit()}
+
+        # Pre-fetch bookmarks → set, and pre-scan cache dir → set, so the
+        # per-post checks below avoid N synchronous SQLite/stat calls on the
+        # GUI thread (matches the optimisation in _on_search_done).
+        _favs = self._db.get_bookmarks(site_id=site_id) if site_id else []
+        _bookmarked_ids: set[int] = {f.post_id for f in _favs}
+        _cd = cache_dir()
+        _cached_names: set[str] = set()
+        if _cd.exists():
+            _cached_names = {f.name for f in _cd.iterdir() if f.is_file()}
 
         posts = ss.append_queue[:]
         ss.append_queue.clear()
@@ -1027,11 +1047,11 @@ class BooruApp(QMainWindow):
 
         for i, (post, thumb) in enumerate(zip(posts, thumbs)):
             idx = start_idx + i
-            if site_id and self._db.is_bookmarked(site_id, post.id):
+            if post.id in _bookmarked_ids:
                 thumb.set_bookmarked(True)
             thumb.set_saved_locally(post.id in _saved_ids)
             cached = cached_path_for(post.file_url)
-            if cached.exists():
+            if cached.name in _cached_names:
                 thumb._cached_path = str(cached)
             if post.preview_url:
                 self._fetch_thumbnail(idx, post.preview_url)

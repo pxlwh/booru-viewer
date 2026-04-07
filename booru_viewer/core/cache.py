@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import zipfile
 from collections import OrderedDict
@@ -165,9 +166,11 @@ async def download_image(
         gif_path = local.with_suffix(".gif")
         if gif_path.exists():
             return gif_path
-        # If the zip is cached but not yet converted, convert it now
+        # If the zip is cached but not yet converted, convert it now.
+        # PIL frame iteration is CPU-bound and would block the asyncio
+        # loop for hundreds of ms — run it in a worker thread instead.
         if local.exists() and zipfile.is_zipfile(local):
-            return _convert_ugoira_to_gif(local)
+            return await asyncio.to_thread(_convert_ugoira_to_gif, local)
 
     # Check if animated PNG/WebP was already converted to gif
     if local.suffix.lower() in (".png", ".webp"):
@@ -180,7 +183,7 @@ async def download_image(
         if _is_valid_media(local):
             # Convert animated PNG/WebP on access if not yet converted
             if local.suffix.lower() in (".png", ".webp"):
-                converted = _convert_animated_to_gif(local)
+                converted = await asyncio.to_thread(_convert_animated_to_gif, local)
                 if converted != local:
                     return converted
             return local
@@ -233,12 +236,13 @@ async def download_image(
             local.unlink()
             raise ValueError("Downloaded file is not valid media")
 
-        # Convert ugoira zip to animated GIF
+        # Convert ugoira zip to animated GIF (PIL is sync + CPU-bound;
+        # off-load to a worker so we don't block the asyncio loop).
         if local.suffix.lower() == ".zip" and zipfile.is_zipfile(local):
-            local = _convert_ugoira_to_gif(local)
+            local = await asyncio.to_thread(_convert_ugoira_to_gif, local)
         # Convert animated PNG/WebP to GIF for Qt playback
         elif local.suffix.lower() in (".png", ".webp"):
-            local = _convert_animated_to_gif(local)
+            local = await asyncio.to_thread(_convert_animated_to_gif, local)
     finally:
         pass  # shared client stays open for connection reuse
     return local
