@@ -1,6 +1,6 @@
 /* booru-viewer — Tokyo Night
  *
- * Edit the @palette block below to recolor this theme. The body uses
+ * Edit the @palette block below to recolor this rounded variant. The body uses
  * ${...} placeholders that the app's _load_user_qss preprocessor
  * substitutes at load time. See themes/README.md for the full list of
  * placeholder names and what each one is used for.
@@ -515,6 +515,10 @@ QRubberBand {
 ThumbnailWidget {
     qproperty-savedColor: #22cc22;       /* green dot: saved to library — universal "confirmed" feel */
     qproperty-bookmarkedColor: #ffcc00;  /* yellow star: bookmarked */
+    qproperty-selectionColor: ${accent};
+    qproperty-multiSelectColor: ${accent_dim};
+    qproperty-hoverColor: ${accent};
+    qproperty-idleColor: ${border_strong};
 }
 
 /* ---------- Info panel tag category colors ---------- */

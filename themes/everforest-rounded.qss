@@ -1,6 +1,6 @@
-/* booru-viewer — Solarized Dark
+/* booru-viewer — Everforest Dark
  *
- * Edit the @palette block below to recolor this theme. The body uses
+ * Edit the @palette block below to recolor this rounded variant. The body uses
  * ${...} placeholders that the app's _load_user_qss preprocessor
  * substitutes at load time. See themes/README.md for the full list of
  * placeholder names and what each one is used for.
@@ -9,24 +9,24 @@
  */
 
 /* @palette
-   bg:             #002b36
-   bg_alt:         #001f27
-   bg_subtle:      #073642
-   bg_hover:       #0d4654
-   bg_active:      #586e75
-   text:           #93a1a1
-   text_dim:       #839496
-   text_disabled:  #586e75
-   border:         #073642
-   border_strong:  #0d4654
-   accent:         #268bd2
-   accent_text:    #002b36
-   accent_dim:     #2aa198
-   link:           #2aa198
-   danger:         #dc322f
-   success:        #859900
-   warning:        #b58900
-   overlay_bg:     rgba(0, 43, 54, 200)
+   bg:             #2d353b
+   bg_alt:         #232a2e
+   bg_subtle:      #343f44
+   bg_hover:       #3d484d
+   bg_active:      #4f585e
+   text:           #d3c6aa
+   text_dim:       #9da9a0
+   text_disabled:  #7a8478
+   border:         #343f44
+   border_strong:  #3d484d
+   accent:         #a7c080
+   accent_text:    #2d353b
+   accent_dim:     #83c092
+   link:           #7fbbb3
+   danger:         #e67e80
+   success:        #a7c080
+   warning:        #dbbc7f
+   overlay_bg:     rgba(45, 53, 59, 200)
 */
 
 /* ---------- Base ---------- */
@@ -515,6 +515,10 @@ QRubberBand {
 ThumbnailWidget {
     qproperty-savedColor: #22cc22;       /* green dot: saved to library — universal "confirmed" feel */
     qproperty-bookmarkedColor: #ffcc00;  /* yellow star: bookmarked */
+    qproperty-selectionColor: ${accent};
+    qproperty-multiSelectColor: ${accent_dim};
+    qproperty-hoverColor: ${accent};
+    qproperty-idleColor: ${border_strong};
 }
 
 /* ---------- Info panel tag category colors ---------- */

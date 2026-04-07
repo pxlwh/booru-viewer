@@ -1,6 +1,6 @@
-/* booru-viewer — Everforest Dark
+/* booru-viewer — Tokyo Night
  *
- * Edit the @palette block below to recolor this theme. The body uses
+ * Edit the @palette block below to recolor this square variant. The body uses
  * ${...} placeholders that the app's _load_user_qss preprocessor
  * substitutes at load time. See themes/README.md for the full list of
  * placeholder names and what each one is used for.
@@ -9,24 +9,24 @@
  */
 
 /* @palette
-   bg:             #2d353b
-   bg_alt:         #232a2e
-   bg_subtle:      #343f44
-   bg_hover:       #3d484d
-   bg_active:      #4f585e
-   text:           #d3c6aa
-   text_dim:       #9da9a0
-   text_disabled:  #7a8478
-   border:         #343f44
-   border_strong:  #3d484d
-   accent:         #a7c080
-   accent_text:    #2d353b
-   accent_dim:     #83c092
-   link:           #7fbbb3
-   danger:         #e67e80
-   success:        #a7c080
-   warning:        #dbbc7f
-   overlay_bg:     rgba(45, 53, 59, 200)
+   bg:             #1a1b26
+   bg_alt:         #16161e
+   bg_subtle:      #24283b
+   bg_hover:       #292e42
+   bg_active:      #3b4261
+   text:           #c0caf5
+   text_dim:       #a9b1d6
+   text_disabled:  #565f89
+   border:         #24283b
+   border_strong:  #292e42
+   accent:         #7aa2f7
+   accent_text:    #1a1b26
+   accent_dim:     #7dcfff
+   link:           #7dcfff
+   danger:         #f7768e
+   success:        #9ece6a
+   warning:        #e0af68
+   overlay_bg:     rgba(26, 27, 38, 200)
 */
 
 /* ---------- Base ---------- */
@@ -59,7 +59,6 @@ QPushButton {
     background-color: ${bg_subtle};
     color: ${text};
     border: 1px solid ${border_strong};
-    border-radius: 4px;
     padding: 5px 12px;
     min-height: 18px;
 }
@@ -96,7 +95,6 @@ QToolButton {
     background-color: transparent;
     color: ${text};
     border: 1px solid transparent;
-    border-radius: 4px;
     padding: 4px;
 }
 QToolButton:hover {
@@ -113,7 +111,6 @@ QLineEdit, QSpinBox, QDoubleSpinBox, QTextEdit, QPlainTextEdit {
     background-color: ${bg_subtle};
     color: ${text};
     border: 1px solid ${border_strong};
-    border-radius: 4px;
     padding: 4px 8px;
     /* min-height ensures the painted text fits inside the widget bounds
      * even when a parent layout (e.g. QFormLayout inside a QGroupBox)
@@ -144,7 +141,6 @@ QComboBox {
     background-color: ${bg_subtle};
     color: ${text};
     border: 1px solid ${border_strong};
-    border-radius: 4px;
     padding: 4px 8px;
     min-height: 20px;
 }
@@ -178,7 +174,6 @@ QScrollBar:vertical {
 }
 QScrollBar::handle:vertical {
     background: ${bg_hover};
-    border-radius: 4px;
     min-height: 24px;
     margin: 1px;
 }
@@ -203,7 +198,6 @@ QScrollBar:horizontal {
 }
 QScrollBar::handle:horizontal {
     background: ${bg_hover};
-    border-radius: 4px;
     min-width: 24px;
     margin: 1px;
 }
@@ -318,14 +312,12 @@ QSlider::handle:horizontal:hover {
 QSlider::groove:vertical {
     background: ${bg_subtle};
     width: 4px;
-    border-radius: 2px;
 }
 QSlider::handle:vertical {
     background: ${accent};
     width: 12px;
     height: 12px;
     margin: 0 -5px;
-    border-radius: 6px;
 }
 
 /* ---------- Progress ---------- */
@@ -334,13 +326,11 @@ QProgressBar {
     background-color: ${bg_subtle};
     color: ${text};
     border: 1px solid ${border};
-    border-radius: 3px;
     text-align: center;
     height: 6px;
 }
 QProgressBar::chunk {
     background-color: ${accent};
-    border-radius: 3px;
 }
 
 /* ---------- Checkboxes & radio buttons ---------- */
@@ -357,7 +347,6 @@ QCheckBox::indicator, QRadioButton::indicator {
     border: 1px solid ${border_strong};
 }
 QCheckBox::indicator {
-    border-radius: 3px;
 }
 QRadioButton::indicator {
     border-radius: 7px;
@@ -381,7 +370,6 @@ QToolTip {
     color: ${text};
     border: 1px solid ${border_strong};
     padding: 4px 6px;
-    border-radius: 3px;
 }
 
 /* ---------- Item views (lists, trees, tables) ---------- */
@@ -454,7 +442,6 @@ QGroupBox {
     background: transparent;
     color: ${text};
     border: 1px solid ${border};
-    border-radius: 4px;
     margin-top: 10px;
     padding-top: 8px;
 }
@@ -515,6 +502,10 @@ QRubberBand {
 ThumbnailWidget {
     qproperty-savedColor: #22cc22;       /* green dot: saved to library — universal "confirmed" feel */
     qproperty-bookmarkedColor: #ffcc00;  /* yellow star: bookmarked */
+    qproperty-selectionColor: ${accent};
+    qproperty-multiSelectColor: ${accent_dim};
+    qproperty-hoverColor: ${accent};
+    qproperty-idleColor: ${border_strong};
 }
 
 /* ---------- Info panel tag category colors ---------- */

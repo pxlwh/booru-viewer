@@ -66,14 +66,21 @@ slots that the body actually uses need to be defined.
 
 ## Included Themes
 
-| Theme | File | Preview |
-|-------|------|---------|
-| Nord | [nord.qss](nord.qss) | <picture><img src="../screenshots/themes/nord.png" width="300"></picture> |
-| Catppuccin Mocha | [catppuccin-mocha.qss](catppuccin-mocha.qss) | <picture><img src="../screenshots/themes/catppuccin-mocha.png" width="300"></picture> |
-| Gruvbox | [gruvbox.qss](gruvbox.qss) | <picture><img src="../screenshots/themes/gruvbox.png" width="300"></picture> |
-| Solarized Dark | [solarized-dark.qss](solarized-dark.qss) | <picture><img src="../screenshots/themes/solarized-dark.png" width="300"></picture> |
-| Tokyo Night | [tokyo-night.qss](tokyo-night.qss) | <picture><img src="../screenshots/themes/tokyo-night.png" width="300"></picture> |
-| Everforest | [everforest.qss](everforest.qss) | <picture><img src="../screenshots/themes/everforest.png" width="300"></picture> |
+Each theme ships in two corner-radius variants:
+
+- **`*-rounded.qss`** — 4px radius on buttons, inputs, dropdowns, scrollbar handles, group boxes, tabs etc. The "default" Fusion-style look.
+- **`*-square.qss`** — every `border-radius:` declaration stripped *except* the one on `QRadioButton::indicator`, so radio buttons stay circular while everything else (buttons, inputs, scrollbars, tabs, group boxes, tooltips, progress bars, checkbox indicators) renders square.
+
+Pick whichever matches your overall desktop aesthetic. Both variants share the same `@palette` block, so you can swap one for the other and your colors carry over.
+
+| Theme | Rounded | Square |
+|-------|---------|--------|
+| Nord | [nord-rounded.qss](nord-rounded.qss) | [nord-square.qss](nord-square.qss) |
+| Catppuccin Mocha | [catppuccin-mocha-rounded.qss](catppuccin-mocha-rounded.qss) | [catppuccin-mocha-square.qss](catppuccin-mocha-square.qss) |
+| Gruvbox | [gruvbox-rounded.qss](gruvbox-rounded.qss) | [gruvbox-square.qss](gruvbox-square.qss) |
+| Solarized Dark | [solarized-dark-rounded.qss](solarized-dark-rounded.qss) | [solarized-dark-square.qss](solarized-dark-square.qss) |
+| Tokyo Night | [tokyo-night-rounded.qss](tokyo-night-rounded.qss) | [tokyo-night-square.qss](tokyo-night-square.qss) |
+| Everforest | [everforest-rounded.qss](everforest-rounded.qss) | [everforest-square.qss](everforest-square.qss) |
 
 ## Widget Targets
 
@@ -347,14 +354,20 @@ QRubberBand {
 }
 ```
 
-### Thumbnail Indicators
+### Thumbnail Indicators and Selection Colors
 
 ```css
 ThumbnailWidget {
-    qproperty-savedColor: #22cc22;       /* green dot: saved to library */
-    qproperty-bookmarkedColor: #ffcc00;  /* yellow star: bookmarked */
+    qproperty-savedColor: #22cc22;        /* green dot: saved to library */
+    qproperty-bookmarkedColor: #ffcc00;   /* yellow star: bookmarked */
+    qproperty-selectionColor: #cba6f7;    /* selected cell border (3px) */
+    qproperty-multiSelectColor: #b4befe;  /* multi-select fill + border */
+    qproperty-hoverColor: #cba6f7;        /* hover border (1px) */
+    qproperty-idleColor: #45475a;         /* idle 1px border */
 }
 ```
+
+All four selection colors default to your system palette (`Highlight` + a derived idle color from `Mid`) so a `custom.qss` without these qproperties still picks up the theme. Override any of them to retint individual cell states without touching the global palette.
 
 ### Info Panel Tag Categories
 

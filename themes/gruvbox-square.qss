@@ -1,0 +1,588 @@
+/* booru-viewer — Gruvbox Dark
+ *
+ * Edit the @palette block below to recolor this square variant. The body uses
+ * ${...} placeholders that the app's _load_user_qss preprocessor
+ * substitutes at load time. See themes/README.md for the full list of
+ * placeholder names and what each one is used for.
+ *
+ * The same dialect works in any custom.qss you put in your data dir.
+ */
+
+/* @palette
+   bg:             #282828
+   bg_alt:         #1d2021
+   bg_subtle:      #3c3836
+   bg_hover:       #504945
+   bg_active:      #665c54
+   text:           #ebdbb2
+   text_dim:       #d5c4a1
+   text_disabled:  #928374
+   border:         #3c3836
+   border_strong:  #504945
+   accent:         #d79921
+   accent_text:    #282828
+   accent_dim:     #fabd2f
+   link:           #83a598
+   danger:         #fb4934
+   success:        #b8bb26
+   warning:        #fabd2f
+   overlay_bg:     rgba(40, 40, 40, 200)
+*/
+
+/* ---------- Base ---------- */
+
+QWidget {
+    background-color: ${bg};
+    color: ${text};
+    font-size: 13px;
+    selection-background-color: ${accent};
+    selection-color: ${accent_text};
+}
+
+QWidget:disabled {
+    color: ${text_disabled};
+}
+
+/* Labels should never paint an opaque background — they sit on top of
+ * other widgets in many places (toolbars, info panels, overlays). */
+QLabel {
+    background: transparent;
+}
+
+QMainWindow, QDialog {
+    background-color: ${bg};
+}
+
+/* ---------- Buttons ---------- */
+
+QPushButton {
+    background-color: ${bg_subtle};
+    color: ${text};
+    border: 1px solid ${border_strong};
+    padding: 5px 12px;
+    min-height: 18px;
+}
+QPushButton:hover {
+    background-color: ${bg_hover};
+    border-color: ${accent};
+}
+QPushButton:pressed {
+    background-color: ${bg_active};
+}
+QPushButton:checked {
+    background-color: ${accent};
+    color: ${accent_text};
+    border-color: ${accent};
+}
+QPushButton:checked:hover {
+    background-color: ${accent_dim};
+    border-color: ${accent_dim};
+}
+QPushButton:disabled {
+    background-color: ${bg_alt};
+    color: ${text_disabled};
+    border-color: ${border};
+}
+QPushButton:flat {
+    background: transparent;
+    border: none;
+}
+QPushButton:flat:hover {
+    background-color: ${bg_hover};
+}
+
+QToolButton {
+    background-color: transparent;
+    color: ${text};
+    border: 1px solid transparent;
+    padding: 4px;
+}
+QToolButton:hover {
+    background-color: ${bg_hover};
+    border-color: ${border_strong};
+}
+QToolButton:pressed, QToolButton:checked {
+    background-color: ${bg_active};
+}
+
+/* ---------- Inputs ---------- */
+
+QLineEdit, QSpinBox, QDoubleSpinBox, QTextEdit, QPlainTextEdit {
+    background-color: ${bg_subtle};
+    color: ${text};
+    border: 1px solid ${border_strong};
+    padding: 4px 8px;
+    /* min-height ensures the painted text fits inside the widget bounds
+     * even when a parent layout (e.g. QFormLayout inside a QGroupBox)
+     * compresses the natural sizeHint. Without this, spinboxes in dense
+     * forms render with the top of the value text clipped. */
+    min-height: 20px;
+    selection-background-color: ${accent};
+    selection-color: ${accent_text};
+}
+QLineEdit:focus,
+QSpinBox:focus,
+QDoubleSpinBox:focus,
+QTextEdit:focus,
+QPlainTextEdit:focus {
+    border-color: ${accent};
+}
+QLineEdit:disabled,
+QSpinBox:disabled,
+QDoubleSpinBox:disabled,
+QTextEdit:disabled,
+QPlainTextEdit:disabled {
+    background-color: ${bg_alt};
+    color: ${text_disabled};
+    border-color: ${border};
+}
+
+QComboBox {
+    background-color: ${bg_subtle};
+    color: ${text};
+    border: 1px solid ${border_strong};
+    padding: 4px 8px;
+    min-height: 20px;
+}
+QComboBox:hover {
+    border-color: ${accent};
+}
+QComboBox:focus {
+    border-color: ${accent};
+}
+QComboBox::drop-down {
+    border: none;
+    width: 18px;
+}
+QComboBox QAbstractItemView {
+    background-color: ${bg_subtle};
+    color: ${text};
+    border: 1px solid ${border_strong};
+    selection-background-color: ${accent};
+    selection-color: ${accent_text};
+    outline: none;
+    padding: 2px;
+}
+
+/* ---------- Scrollbars ---------- */
+
+QScrollBar:vertical {
+    background: ${bg};
+    width: 10px;
+    border: none;
+    margin: 0;
+}
+QScrollBar::handle:vertical {
+    background: ${bg_hover};
+    min-height: 24px;
+    margin: 1px;
+}
+QScrollBar::handle:vertical:hover {
+    background: ${bg_active};
+}
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    height: 0;
+    border: none;
+}
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {
+    background: transparent;
+}
+
+QScrollBar:horizontal {
+    background: ${bg};
+    height: 10px;
+    border: none;
+    margin: 0;
+}
+QScrollBar::handle:horizontal {
+    background: ${bg_hover};
+    min-width: 24px;
+    margin: 1px;
+}
+QScrollBar::handle:horizontal:hover {
+    background: ${bg_active};
+}
+QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal {
+    width: 0;
+    border: none;
+}
+QScrollBar::add-page:horizontal,
+QScrollBar::sub-page:horizontal {
+    background: transparent;
+}
+
+QScrollArea {
+    background: transparent;
+    border: none;
+}
+
+/* ---------- Menus ---------- */
+
+QMenuBar {
+    background-color: ${bg};
+    color: ${text};
+    border-bottom: 1px solid ${border};
+}
+QMenuBar::item {
+    background: transparent;
+    padding: 4px 10px;
+}
+QMenuBar::item:selected {
+    background-color: ${bg_hover};
+    color: ${text};
+}
+QMenuBar::item:pressed {
+    background-color: ${bg_active};
+}
+
+QMenu {
+    background-color: ${bg_subtle};
+    color: ${text};
+    border: 1px solid ${border_strong};
+    padding: 4px 0;
+}
+QMenu::item {
+    background: transparent;
+    padding: 5px 24px 5px 24px;
+}
+QMenu::item:selected {
+    background-color: ${accent};
+    color: ${accent_text};
+}
+QMenu::item:disabled {
+    color: ${text_disabled};
+}
+QMenu::separator {
+    height: 1px;
+    background: ${border};
+    margin: 4px 8px;
+}
+QMenu::icon {
+    padding-left: 6px;
+}
+
+/* ---------- Status bar ---------- */
+
+QStatusBar {
+    background-color: ${bg};
+    color: ${text_dim};
+    border-top: 1px solid ${border};
+}
+QStatusBar::item {
+    border: none;
+}
+
+/* ---------- Splitters ---------- */
+
+QSplitter::handle {
+    background: ${border};
+}
+QSplitter::handle:horizontal {
+    width: 2px;
+}
+QSplitter::handle:vertical {
+    height: 2px;
+}
+QSplitter::handle:hover {
+    background: ${accent};
+}
+
+/* ---------- Sliders ---------- */
+
+QSlider::groove:horizontal {
+    background: ${bg_subtle};
+    height: 4px;
+}
+QSlider::sub-page:horizontal {
+    background: ${accent};
+}
+QSlider::handle:horizontal {
+    background: ${accent};
+    width: 12px;
+    height: 12px;
+    margin: -5px 0;
+}
+QSlider::handle:horizontal:hover {
+    background: ${accent_dim};
+}
+
+QSlider::groove:vertical {
+    background: ${bg_subtle};
+    width: 4px;
+}
+QSlider::handle:vertical {
+    background: ${accent};
+    width: 12px;
+    height: 12px;
+    margin: 0 -5px;
+}
+
+/* ---------- Progress ---------- */
+
+QProgressBar {
+    background-color: ${bg_subtle};
+    color: ${text};
+    border: 1px solid ${border};
+    text-align: center;
+    height: 6px;
+}
+QProgressBar::chunk {
+    background-color: ${accent};
+}
+
+/* ---------- Checkboxes & radio buttons ---------- */
+
+QCheckBox, QRadioButton {
+    background: transparent;
+    color: ${text};
+    spacing: 6px;
+}
+QCheckBox::indicator, QRadioButton::indicator {
+    width: 14px;
+    height: 14px;
+    background-color: ${bg_subtle};
+    border: 1px solid ${border_strong};
+}
+QCheckBox::indicator {
+}
+QRadioButton::indicator {
+    border-radius: 7px;
+}
+QCheckBox::indicator:hover, QRadioButton::indicator:hover {
+    border-color: ${accent};
+}
+QCheckBox::indicator:checked, QRadioButton::indicator:checked {
+    background-color: ${accent};
+    border-color: ${accent};
+}
+QCheckBox::indicator:disabled, QRadioButton::indicator:disabled {
+    background-color: ${bg_alt};
+    border-color: ${border};
+}
+
+/* ---------- Tooltips ---------- */
+
+QToolTip {
+    background-color: ${bg_subtle};
+    color: ${text};
+    border: 1px solid ${border_strong};
+    padding: 4px 6px;
+}
+
+/* ---------- Item views (lists, trees, tables) ---------- */
+
+QListView, QListWidget, QTreeView, QTreeWidget, QTableView, QTableWidget {
+    background-color: ${bg};
+    alternate-background-color: ${bg_alt};
+    color: ${text};
+    border: 1px solid ${border};
+    selection-background-color: ${accent};
+    selection-color: ${accent_text};
+    outline: none;
+}
+QListView::item, QListWidget::item,
+QTreeView::item, QTreeWidget::item,
+QTableView::item, QTableWidget::item {
+    padding: 4px;
+}
+QListView::item:hover, QListWidget::item:hover,
+QTreeView::item:hover, QTreeWidget::item:hover,
+QTableView::item:hover, QTableWidget::item:hover {
+    background-color: ${bg_hover};
+}
+QListView::item:selected, QListWidget::item:selected,
+QTreeView::item:selected, QTreeWidget::item:selected,
+QTableView::item:selected, QTableWidget::item:selected {
+    background-color: ${accent};
+    color: ${accent_text};
+}
+
+QHeaderView::section {
+    background-color: ${bg_subtle};
+    color: ${text};
+    border: none;
+    border-right: 1px solid ${border};
+    padding: 4px 8px;
+}
+QHeaderView::section:hover {
+    background-color: ${bg_hover};
+}
+
+/* ---------- Tabs ---------- */
+
+QTabWidget::pane {
+    border: 1px solid ${border};
+    top: -1px;
+}
+QTabBar::tab {
+    background: ${bg_subtle};
+    color: ${text_dim};
+    border: 1px solid ${border};
+    border-bottom: none;
+    padding: 6px 14px;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+}
+QTabBar::tab:selected {
+    background: ${bg};
+    color: ${text};
+    border-color: ${border_strong};
+}
+QTabBar::tab:hover:!selected {
+    background: ${bg_hover};
+    color: ${text};
+}
+
+/* ---------- Group boxes ---------- */
+
+QGroupBox {
+    background: transparent;
+    color: ${text};
+    border: 1px solid ${border};
+    margin-top: 10px;
+    padding-top: 8px;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 0 6px;
+    color: ${text_dim};
+}
+
+/* ---------- Frames ---------- */
+
+QFrame[frameShape="4"], /* HLine */
+QFrame[frameShape="5"]  /* VLine */ {
+    background: ${border};
+    color: ${border};
+}
+
+/* ---------- Toolbars ---------- */
+
+QToolBar {
+    background: ${bg};
+    border: none;
+    spacing: 4px;
+    padding: 2px;
+}
+QToolBar::separator {
+    background: ${border};
+    width: 1px;
+    margin: 4px 4px;
+}
+
+/* ---------- Dock widgets ---------- */
+
+QDockWidget {
+    color: ${text};
+    titlebar-close-icon: none;
+}
+QDockWidget::title {
+    background: ${bg_subtle};
+    padding: 4px;
+    border: 1px solid ${border};
+}
+
+/* ---------- Rubber band (multi-select drag rectangle) ---------- */
+
+QRubberBand {
+    background: ${accent};
+    border: 1px solid ${accent};
+    /* Qt blends rubber band at ~30% so this reads as a translucent
+     * accent-tinted rectangle without needing rgba(). */
+}
+
+
+
+/* ---------- Thumbnail dot indicators (Qt properties on ThumbnailWidget) ---------- */
+
+ThumbnailWidget {
+    qproperty-savedColor: #22cc22;       /* green dot: saved to library — universal "confirmed" feel */
+    qproperty-bookmarkedColor: #ffcc00;  /* yellow star: bookmarked */
+    qproperty-selectionColor: ${accent};
+    qproperty-multiSelectColor: ${accent_dim};
+    qproperty-hoverColor: ${accent};
+    qproperty-idleColor: ${border_strong};
+}
+
+/* ---------- Info panel tag category colors ---------- */
+
+InfoPanel {
+    qproperty-tagArtistColor: ${warning};
+    qproperty-tagCharacterColor: ${success};
+    qproperty-tagCopyrightColor: ${accent};
+    qproperty-tagSpeciesColor: ${danger};
+    qproperty-tagMetaColor: ${text_dim};
+    qproperty-tagLoreColor: ${text_dim};
+}
+
+/* ---------- Video player letterbox / pillarbox color (mpv background) ---------- */
+
+VideoPlayer {
+    qproperty-letterboxColor: ${bg};
+}
+
+/* ---------- Popout overlay bars (slideshow toolbar + slideshow controls + embedded preview controls) ---------- */
+/*
+ * The popout window's translucent toolbar (top) and transport controls
+ * (bottom) float over the video content. The bg color comes from the
+ * @palette overlay_bg slot. Children get the classic overlay treatment:
+ * transparent backgrounds, near-white text, hairline borders.
+ */
+
+QWidget#_slideshow_toolbar,
+QWidget#_slideshow_controls,
+QWidget#_preview_controls {
+    background: ${overlay_bg};
+}
+
+QWidget#_slideshow_toolbar *,
+QWidget#_slideshow_controls *,
+QWidget#_preview_controls * {
+    background: transparent;
+    color: white;
+    border: none;
+}
+
+QWidget#_slideshow_toolbar QPushButton,
+QWidget#_slideshow_controls QPushButton,
+QWidget#_preview_controls QPushButton {
+    background: transparent;
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 80);
+    padding: 2px 6px;
+}
+QWidget#_slideshow_toolbar QPushButton:hover,
+QWidget#_slideshow_controls QPushButton:hover,
+QWidget#_preview_controls QPushButton:hover {
+    background: rgba(255, 255, 255, 30);
+}
+
+QWidget#_slideshow_toolbar QSlider::groove:horizontal,
+QWidget#_slideshow_controls QSlider::groove:horizontal,
+QWidget#_preview_controls QSlider::groove:horizontal {
+    background: rgba(255, 255, 255, 40);
+    height: 4px;
+}
+QWidget#_slideshow_toolbar QSlider::handle:horizontal,
+QWidget#_slideshow_controls QSlider::handle:horizontal,
+QWidget#_preview_controls QSlider::handle:horizontal {
+    background: ${accent};
+    width: 10px;
+    margin: -4px 0;
+}
+QWidget#_slideshow_toolbar QSlider::sub-page:horizontal,
+QWidget#_slideshow_controls QSlider::sub-page:horizontal,
+QWidget#_preview_controls QSlider::sub-page:horizontal {
+    background: ${accent};
+}
+
+QWidget#_slideshow_toolbar QLabel,
+QWidget#_slideshow_controls QLabel,
+QWidget#_preview_controls QLabel {
+    background: transparent;
+    color: white;
+}
