@@ -63,6 +63,7 @@ class FullscreenPreview(QMainWindow):
     """Fullscreen media viewer with navigation — images, GIFs, and video."""
 
     navigate = Signal(int)  # direction: -1/+1 for left/right, -cols/+cols for up/down
+    play_next_requested = Signal()  # video ended in "Next" mode (wrap-aware)
     bookmark_requested = Signal()
     save_toggle_requested = Signal()  # save or unsave depending on state
     blacklist_tag_requested = Signal(str)  # tag name
@@ -90,7 +91,7 @@ class FullscreenPreview(QMainWindow):
         self._stack.addWidget(self._viewer)
 
         self._video = VideoPlayer()
-        self._video.play_next.connect(lambda: self.navigate.emit(1))
+        self._video.play_next.connect(self.play_next_requested)
         self._video.video_size.connect(self._on_video_size)
         self._stack.addWidget(self._video)
 
@@ -1190,6 +1191,7 @@ class ImagePreview(QWidget):
     blacklist_tag_requested = Signal(str)
     blacklist_post_requested = Signal()
     navigate = Signal(int)  # -1 = prev, +1 = next
+    play_next_requested = Signal()  # video ended in "Next" mode (wrap-aware)
     fullscreen_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -1257,7 +1259,7 @@ class ImagePreview(QWidget):
         # Video player (index 1)
         self._video_player = VideoPlayer()
         self._video_player.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._video_player.play_next.connect(lambda: self.navigate.emit(1))
+        self._video_player.play_next.connect(self.play_next_requested)
         self._stack.addWidget(self._video_player)
 
         # Info label

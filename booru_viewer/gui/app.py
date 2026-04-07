@@ -460,6 +460,7 @@ class BooruApp(QMainWindow):
         self._preview.blacklist_tag_requested.connect(self._blacklist_tag_from_popout)
         self._preview.blacklist_post_requested.connect(self._blacklist_post_from_popout)
         self._preview.navigate.connect(self._navigate_preview)
+        self._preview.play_next_requested.connect(self._on_video_end_next)
         self._preview.fullscreen_requested.connect(self._open_fullscreen_preview)
         self._preview.set_folders_callback(self._db.get_folders)
         self._fullscreen_window = None
@@ -1667,8 +1668,13 @@ class BooruApp(QMainWindow):
             if 0 <= idx < len(self._posts):
                 self._open_in_browser(self._posts[idx])
 
-    def _navigate_preview(self, direction: int) -> None:
-        """Navigate to prev/next post in the preview. direction: -1 or +1."""
+    def _navigate_preview(self, direction: int, wrap: bool = False) -> None:
+        """Navigate to prev/next post in the preview. direction: -1 or +1.
+
+        wrap=True wraps to the start (or end) of the bookmarks/library lists
+        when running off the edge — used for the video-end "Next" auto-advance
+        on tabs that don't have pagination.
+        """
         if self._stack.currentIndex() == 1:
             # Bookmarks view
             grid = self._bookmarks_view._grid
@@ -1677,12 +1683,20 @@ class BooruApp(QMainWindow):
             if 0 <= idx < len(favs):
                 grid._select(idx)
                 self._on_bookmark_activated(favs[idx])
+            elif wrap and favs:
+                idx = 0 if direction > 0 else len(favs) - 1
+                grid._select(idx)
+                self._on_bookmark_activated(favs[idx])
         elif self._stack.currentIndex() == 2:
             # Library view
             grid = self._library_view._grid
             files = self._library_view._files
             idx = grid.selected_index + direction
             if 0 <= idx < len(files):
+                grid._select(idx)
+                self._library_view.file_activated.emit(str(files[idx]))
+            elif wrap and files:
+                idx = 0 if direction > 0 else len(files) - 1
                 grid._select(idx)
                 self._library_view.file_activated.emit(str(files[idx]))
         else:
@@ -1697,6 +1711,22 @@ class BooruApp(QMainWindow):
             elif idx < 0 and direction < 0 and self._current_page > 1 and not self._infinite_scroll:
                 self._search.nav_page_turn = "last"
                 self._prev_page()
+
+    def _on_video_end_next(self) -> None:
+        """Auto-advance from end of video in 'Next' mode.
+
+        Wraps to start on bookmarks/library tabs (where there is no
+        pagination), so a single video looping with Next mode keeps moving
+        through the list indefinitely instead of stopping at the end. Browse
+        tab keeps its existing page-turn behaviour.
+        """
+        self._navigate_preview(1, wrap=True)
+        # Sync popout if it's open
+        if self._fullscreen_window and self._preview._current_path:
+            self._update_fullscreen(
+                self._preview._current_path,
+                self._preview._info_label.text(),
+            )
 
     def _is_post_saved(self, post_id: int) -> bool:
         """Check if a post is saved in the library (any folder)."""
@@ -1880,6 +1910,7 @@ class BooruApp(QMainWindow):
         monitor = self._db.get_setting("slideshow_monitor")
         self._fullscreen_window = FullscreenPreview(grid_cols=cols, show_actions=show_actions, monitor=monitor, parent=self)
         self._fullscreen_window.navigate.connect(self._navigate_fullscreen)
+        self._fullscreen_window.play_next_requested.connect(self._on_video_end_next)
         if show_actions:
             self._fullscreen_window.bookmark_requested.connect(self._bookmark_from_preview)
             self._fullscreen_window.save_toggle_requested.connect(self._save_toggle_from_popout)
