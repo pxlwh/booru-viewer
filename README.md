@@ -1,8 +1,8 @@
 # booru-viewer
 
-Local desktop app for browsing, searching, and saving images from booru-style imageboards.
+A booru client for people who keep what they save and rice what they run.
 
-Qt6 GUI, cross-platform (Linux + Windows), fully themeable.
+Qt6 desktop app for Linux and Windows. Browse, search, and archive Danbooru, e621, Gelbooru, and Moebooru. Fully themeable.
 
 If you find this useful, consider buying me a coffee:
 
@@ -32,16 +32,30 @@ If you find this useful, consider buying me a coffee:
 
 Supports custom styling via `custom.qss` — see [Theming](#theming).
 
+## Why booru-viewer
+
+There are a few other desktop booru clients worth knowing about. [ahoviewer](https://github.com/ahodesuka/ahoviewer) is the most mature one. [Grabber](https://github.com/Bionus/imgbrd-grabber) is the most popular. [Hydrus](https://github.com/hydrusnetwork/hydrus) is a full local-first media tagging system that happens to import from boorus, which puts it in a different category entirely.
+
+ahoviewer is the closest to what this is, but its "save" opens a file dialog and dumps the file into a folder you organize yourself. Most ricers who want a daily-driver booru client end up wrestling with Hydrus, scripting Grabber from the CLI, or just keeping browser tabs open.
+
+Two things are different here:
+
+**You bookmark and save like you do in a web browser.** Bookmark is a pointer. Save actually writes the file. Library items live as `12345.jpg` in `~/.local/share/booru-viewer/saved/` and you can open them in Thunar or whatever you use. The difference from ahoviewer is that the tags, source, score, and folder all live in SQLite next to the files. You don't have to invent filenames or build a folder hierarchy. Search by tag, find what you saved. Your images are normal files on disk. If the database breaks, your saves don't go with it.
+
+**It's built for tiling Wayland.** Hyprland integration with opt-out env vars if you want your own window rules. Wayland `app_id` set so `windowrule = float, class:^(booru-viewer)$` works. The whole UI is themeable through a `@palette` preprocessor. Six bundled themes ship: Catppuccin, Nord, Gruvbox, Tokyo Night, Everforest, Solarized. Each comes in rounded and square. No other client in the space cares whether you're on GNOME or Hyprland.
+
 ## Features
 
+booru-viewer has three tabs that map to three commitment levels: **Browse** for live search against booru APIs, **Bookmarks** for posts you've starred for later, **Library** for files you've actually saved to disk.
+
 ### Browsing
-- Supports **Danbooru, Gelbooru, Moebooru, and e621**
+- Supports **Danbooru, e621, Gelbooru, and Moebooru**
 - Auto-detect site API type — just paste the URL
 - Tag search with autocomplete, history dropdown, and saved searches
 - Rating and score filtering (server-side `score:>=N`)
 - **Media type filter** — dropdown: All / Animated / Video / GIF / Audio
 - Blacklisted tags and posts (client-side filtering with backfill)
-- Thumbnail grid with keyboard navigation
+- Thumbnail grid with keyboard navigation, multi-select (Ctrl/Shift+Click, Ctrl+A), bulk context menus, and drag thumbnails out as files
 - **Infinite scroll** — optional, auto-loads more posts at bottom
 - **Start from page** — jump to any page number on search
 - **Page cache** — prev/next loads from memory, no duplicates
@@ -66,20 +80,22 @@ Supports custom styling via `custom.qss` — see [Theming](#theming).
 - Bidirectional sync — clicking posts in the main grid updates the popout
 - Video position and player state synced between preview and popout
 
-### Bookmarks & Library
-- Bookmark posts, organize into folders
-- Three-tab layout: Browse, Bookmarks, and Library
-- Save to library (unsorted or per-folder), drag-and-drop thumbnails as files
-- Multi-select (Ctrl/Shift+Click, Ctrl+A) with bulk actions
-- Bulk context menus in both Browse and Bookmarks tabs
-- Unsave from Library available in grid, preview, and popout (only shown when post is saved)
+### Bookmarks
+- **Bookmark** posts you might want later — lightweight pointers in the database, like clicking the star in your browser
+- Group bookmarks into folders, separate from Library's folders
+- Search bookmarks by tag
+- Bulk save, unbookmark, or remove from the multi-select context menu
 - Import/export bookmarks as JSON
+- Unbookmark from grid, preview, or popout
 
 ### Library
-- Dedicated tab for browsing saved files on disk
-- Folder sidebar with configurable library directory
+- **Save** posts you want to keep — real files on disk in `saved/`, named by post ID, browsable in any file manager
+- One-click promotion from bookmark to library when you decide to commit
+- **Tag search across saved metadata** — type to filter by indexed tags, no filename conventions required
+- On-disk folder organization with configurable library directory and folder sidebar — save unsorted or to a named subfolder
 - Sort by date, name, or size
 - Video thumbnail generation (ffmpeg if available, placeholder fallback)
+- Unsave from grid, preview, and popout (only shown when post is saved)
 - Unreachable directory detection
 
 ### Search
@@ -268,6 +284,8 @@ A template is also available in Settings > Theme > Create from Template.
 
 ### Included Themes
 
+Each theme ships in two variants: `*-rounded.qss` (4px corner radius) and `*-square.qss` (no corner radius except radio buttons). Same colors, different geometry.
+
 <picture><img src="screenshots/themes/nord.png" alt="Nord" width="400"></picture> <picture><img src="screenshots/themes/catppuccin-mocha.png" alt="Catppuccin Mocha" width="400"></picture>
 
 <picture><img src="screenshots/themes/gruvbox.png" alt="Gruvbox" width="400"></picture> <picture><img src="screenshots/themes/solarized-dark.png" alt="Solarized Dark" width="400"></picture>
@@ -291,6 +309,8 @@ A template is also available in Settings > Theme > Create from Template.
 | Cache | `~/.local/share/booru-viewer/cache/` | `%APPDATA%\booru-viewer\cache\` |
 | Library | `~/.local/share/booru-viewer/saved/` | `%APPDATA%\booru-viewer\saved\` |
 | Theme | `~/.local/share/booru-viewer/custom.qss` | `%APPDATA%\booru-viewer\custom.qss` |
+
+To back up everything: copy `saved/` for the files themselves and `booru.db` for bookmarks, folders, and tag metadata. The two are independent — restoring one without the other still works. The `saved/` folder is browsable on its own in any file manager, and the database can be re-populated from the booru sites for any post IDs you still have on disk.
 
 ## Privacy
 
