@@ -231,12 +231,12 @@ class FullscreenPreview(QMainWindow):
             if not self.isFullScreen():
                 pix = self._viewer._pixmap
                 if pix and not pix.isNull():
-                    self._adjust_to_aspect(pix.width(), pix.height())
+                    self._fit_to_content(pix.width(), pix.height())
         self._show_overlay()
 
     def _on_video_size(self, w: int, h: int) -> None:
         if not self.isFullScreen() and w > 0 and h > 0:
-            self._adjust_to_aspect(w, h)
+            self._fit_to_content(w, h)
 
     def _is_hypr_floating(self) -> bool | None:
         """Check if this window is floating in Hyprland. None if not on Hyprland."""
@@ -245,36 +245,24 @@ class FullscreenPreview(QMainWindow):
             return None  # not Hyprland
         return bool(win.get("floating"))
 
-    def _adjust_to_aspect(self, content_w: int, content_h: int) -> None:
-        """Resize windowed popout height to match content aspect ratio. Position untouched."""
+    def _fit_to_content(self, content_w: int, content_h: int) -> None:
+        """Size window to fit content. Width preserved, height from aspect ratio, clamped to screen."""
         if self.isFullScreen() or content_w <= 0 or content_h <= 0:
             return
-        floating = self._is_hypr_floating()
-        # On Hyprland tiled: skip resize entirely, just set the aspect lock prop
-        if floating is False:
-            self._hyprctl_resize(0, 0)  # only sets keep_aspect_ratio
+        if self._is_hypr_floating() is False:
+            self._hyprctl_resize(0, 0)  # tiled: just set keep_aspect_ratio
             return
         aspect = content_w / content_h
         screen = self.screen()
-        if screen:
-            avail = screen.availableGeometry()
-            max_w = avail.width()
-            max_h = int(avail.height() * 0.85)  # 15% margin top+bottom
-        else:
-            max_w = max_h = 9999
-        w = self.width()
-        # If current width makes landscape content too small, scale up
-        new_h = int(w / aspect)
-        if aspect >= 1 and new_h < 250:
-            w = int(max_h * 0.5 * aspect)
-            new_h = int(w / aspect)
-        w = min(w, max_w)
-        new_h = int(w / aspect)
-        if new_h > max_h:
-            new_h = max_h
-            w = int(new_h * aspect)
-        self.resize(w, new_h)
-        self._hyprctl_resize(w, new_h)
+        max_h = int(screen.availableGeometry().height() * 0.85) if screen else 9999
+        max_w = screen.availableGeometry().width() if screen else 9999
+        w = min(self.width(), max_w)
+        h = int(w / aspect)
+        if h > max_h:
+            h = max_h
+            w = int(h * aspect)
+        self.resize(w, h)
+        self._hyprctl_resize(w, h)
 
     def _show_overlay(self) -> None:
         """Show toolbar and video controls, restart auto-hide timer."""
@@ -415,7 +403,7 @@ class FullscreenPreview(QMainWindow):
             pass
 
     def _exit_fullscreen(self) -> None:
-        """Leave fullscreen into an aspect-ratio-respecting window."""
+        """Leave fullscreen — sizes to content aspect ratio using current width."""
         content_w, content_h = 0, 0
         if self._stack.currentIndex() == 1:
             mpv = self._video._mpv
@@ -430,29 +418,10 @@ class FullscreenPreview(QMainWindow):
             pix = self._viewer._pixmap
             if pix and not pix.isNull():
                 content_w, content_h = pix.width(), pix.height()
-
-        screen = self.screen()
-        if content_w > 0 and content_h > 0 and screen:
-            avail = screen.availableGeometry()
-            max_w = int(avail.width() * 0.6)
-            max_h = int(avail.height() * 0.6)
-            aspect = content_w / content_h
-            if max_w / max_h > aspect:
-                win_h = max_h
-                win_w = int(win_h * aspect)
-            else:
-                win_w = max_w
-                win_h = int(win_w / aspect)
-            x = avail.x() + (avail.width() - win_w) // 2
-            y = avail.y() + (avail.height() - win_h) // 2
-            geo = self.geometry()
-            geo.setRect(x, y, win_w, win_h)
-            FullscreenPreview._saved_geometry = geo
         FullscreenPreview._saved_fullscreen = False
         self.showNormal()
-        if content_w > 0 and content_h > 0 and screen:
-            self.resize(win_w, win_h)
-            self._hyprctl_resize(win_w, win_h)
+        if content_w > 0 and content_h > 0:
+            self._fit_to_content(content_w, content_h)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
