@@ -7,6 +7,63 @@ Copy any `.qss` file from this folder to your data directory as `custom.qss`:
 
 Restart the app after changing themes.
 
+## Recoloring a theme — `@palette` blocks and `${...}` vars
+
+Qt's QSS dialect has no native variables, so booru-viewer adds a small
+preprocessor that runs before the stylesheet is handed to Qt. Each
+bundled theme starts with an `@palette` header block listing the colors
+the rest of the file uses, and the body references them as `${name}`:
+
+```css
+/* @palette
+   bg:             #1e1e2e
+   accent:         #cba6f7
+   text:           #cdd6f4
+*/
+
+QWidget {
+    background-color: ${bg};
+    color: ${text};
+    selection-background-color: ${accent};
+}
+```
+
+To recolor a theme, **edit the `@palette` block at the top — that's the
+only place hex literals appear**. The body picks up the new values
+automatically. Save and restart the app.
+
+The preprocessor is opt-in: a `custom.qss` without an `@palette` block
+loads as plain Qt-standard QSS, so existing hand-written themes still
+work unchanged. Unknown `${name}` references are left in place verbatim
+and a warning is logged so typos are visible.
+
+### Available palette slots
+
+The bundled themes define 17 standard color slots. You can add more in
+your own `@palette` block (or remove ones you don't reference) — only
+slots that the body actually uses need to be defined.
+
+| Slot | Used for |
+|---|---|
+| `bg` | Window background, scroll area, menu bar |
+| `bg_alt` | Alternate row stripes in lists/trees, disabled inputs |
+| `bg_subtle` | Buttons and inputs at rest, dropdown panels, tooltips |
+| `bg_hover` | Surfaces under cursor hover, scrollbar handles |
+| `bg_active` | Surfaces while pressed, scrollbar handles on hover |
+| `text` | Primary foreground text |
+| `text_dim` | Secondary text — status bar, group titles, placeholders |
+| `text_disabled` | Disabled control text |
+| `border` | Subtle dividers between adjacent surfaces |
+| `border_strong` | More visible borders, default focus rings |
+| `accent` | Selection background, focused borders, checked buttons |
+| `accent_text` | Foreground used on top of accent backgrounds |
+| `accent_dim` | Softer accent variant for hover-on-accent surfaces |
+| `link` | Hyperlinks (info panel source URL) |
+| `danger` | Destructive action color (Clear All button etc.) |
+| `success` | Positive action color (also Character tag default) |
+| `warning` | Warning color (also Artist tag default) |
+| `overlay_bg` | Translucent background for the popout's floating top toolbar and bottom transport controls. Should be `rgba(...)` so video shows through. |
+
 ## Included Themes
 
 | Theme | File | Preview |

@@ -516,7 +516,11 @@ class BooruApp(QMainWindow):
         self._preview.fullscreen_requested.connect(self._open_fullscreen_preview)
         self._preview.set_folders_callback(self._db.get_folders)
         self._fullscreen_window = None
-        self._preview.setMinimumWidth(300)
+        # Wide enough that the preview toolbar (Bookmark, Save, BL Tag,
+        # BL Post, [stretch], Popout) has room to lay out all five buttons
+        # at their fixed widths plus spacing without clipping the rightmost
+        # one or compressing the row visually.
+        self._preview.setMinimumWidth(380)
         right.addWidget(self._preview)
 
         self._dl_progress = QProgressBar()
@@ -2946,6 +2950,69 @@ def _apply_windows_dark_mode(app: QApplication) -> None:
         log.warning(f"Operation failed: {e}")
 
 
+def _load_user_qss(path: Path) -> str:
+    """Load a QSS file with optional @palette variable substitution.
+
+    Qt's QSS dialect has no native variables, so we add a tiny preprocessor:
+
+        /* @palette
+           accent:        #cba6f7
+           bg:            #1e1e2e
+           text:          #cdd6f4
+        */
+
+        QWidget {
+            background-color: ${bg};
+            color: ${text};
+            selection-background-color: ${accent};
+        }
+
+    The header comment block is parsed for `name: value` pairs and any
+    `${name}` reference elsewhere in the file is substituted with the
+    corresponding value before the QSS is handed to Qt. This lets users
+    recolor a bundled theme by editing the palette block alone, without
+    hunting through the body for every hex literal.
+
+    Backward compatibility: a file without an @palette block is returned
+    as-is, so plain hand-written Qt-standard QSS still loads unchanged.
+    Unknown ${name} references are left in place verbatim and logged as
+    warnings so typos are visible in the log.
+    """
+    import re
+    text = path.read_text()
+    palette_match = re.search(r'/\*\s*@palette\b(.*?)\*/', text, re.DOTALL)
+    if not palette_match:
+        return text
+
+    palette: dict[str, str] = {}
+    for raw_line in palette_match.group(1).splitlines():
+        # Strip leading whitespace and any leading * from C-style continuation
+        line = raw_line.strip().lstrip('*').strip()
+        if not line or ':' not in line:
+            continue
+        key, value = line.split(':', 1)
+        key = key.strip()
+        value = value.strip().rstrip(';').strip()
+        # Allow trailing comments on the same line
+        if '/*' in value:
+            value = value.split('/*', 1)[0].strip()
+        if key and value:
+            palette[key] = value
+
+    refs = set(re.findall(r'\$\{([a-zA-Z_][a-zA-Z0-9_]*)\}', text))
+    missing = refs - palette.keys()
+    if missing:
+        log.warning(
+            f"QSS @palette: unknown vars {sorted(missing)} in {path.name} "
+            f"— left in place verbatim, fix the @palette block to define them"
+        )
+
+    def replace(m):
+        return palette.get(m.group(1), m.group(0))
+
+    return re.sub(r'\$\{([a-zA-Z_][a-zA-Z0-9_]*)\}', replace, text)
+
+
 def run() -> None:
     from ..core.config import data_dir
 
@@ -2977,7 +3044,10 @@ def run() -> None:
             from PySide6.QtCore import QPoint as _QP
 
             import re
-            css_text = custom_css.read_text()
+            # Run through the @palette preprocessor (see _load_user_qss
+            # for the dialect). Plain Qt-standard QSS files without an
+            # @palette block are returned unchanged.
+            css_text = _load_user_qss(custom_css)
 
             # Extract text color for arrows
             m = re.search(r'QWidget\s*\{[^}]*?(?:^|\s)color\s*:\s*(#[0-9a-fA-F]{3,8})', css_text, re.MULTILINE)

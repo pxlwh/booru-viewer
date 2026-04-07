@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QPointF, Signal, QTimer
-from PySide6.QtGui import QPixmap, QPainter, QWheelEvent, QMouseEvent, QKeyEvent, QMovie
+from PySide6.QtCore import Qt, QPointF, Signal, QTimer, Property
+from PySide6.QtGui import QPixmap, QPainter, QWheelEvent, QMouseEvent, QKeyEvent, QMovie, QColor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QMainWindow,
     QStackedWidget, QPushButton, QSlider, QMenu, QInputDialog, QStyle,
@@ -23,40 +23,13 @@ def _is_video(path: str) -> bool:
     return Path(path).suffix.lower() in VIDEO_EXTENSIONS
 
 
-def _overlay_css(obj_name: str) -> str:
-    """Generate overlay CSS scoped to a specific object name for specificity."""
-    return f"""
-    QWidget#{obj_name} * {{
-        background: transparent;
-        color: white;
-        border: none;
-    }}
-    QWidget#{obj_name} QPushButton {{
-        background: transparent;
-        color: white;
-        border: 1px solid rgba(255, 255, 255, 80);
-        padding: 2px 6px;
-    }}
-    QWidget#{obj_name} QPushButton:hover {{
-        background: rgba(255, 255, 255, 30);
-    }}
-    QWidget#{obj_name} QSlider::groove:horizontal {{
-        background: rgba(255, 255, 255, 40);
-        height: 4px;
-    }}
-    QWidget#{obj_name} QSlider::handle:horizontal {{
-        background: white;
-        width: 10px;
-        margin: -4px 0;
-    }}
-    QWidget#{obj_name} QSlider::sub-page:horizontal {{
-        background: rgba(255, 255, 255, 120);
-    }}
-    QWidget#{obj_name} QLabel {{
-        background: transparent;
-        color: white;
-    }}
-    """
+## Overlay styling for the popout's translucent toolbar / controls bar
+## now lives in the bundled themes (themes/*.qss). The widgets get their
+## object names set in code (FullscreenPreview / VideoPlayer) so theme QSS
+## rules can target them via #_slideshow_toolbar / #_slideshow_controls /
+## #_preview_controls. Users can override the look by editing the
+## overlay_bg slot in their @palette block, or by adding more specific
+## QSS rules in their custom.qss.
 
 
 class FullscreenPreview(QMainWindow):
@@ -97,30 +70,44 @@ class FullscreenPreview(QMainWindow):
 
         self.setCentralWidget(central)
 
-        # Floating toolbar — overlays on top of media, translucent
+        # Floating toolbar — overlays on top of media, translucent.
+        # Set the object name BEFORE the widget is polished by Qt so that
+        # the bundled-theme `QWidget#_slideshow_toolbar` selector matches
+        # on the very first style computation. Setting it later requires
+        # an explicit unpolish/polish cycle, which we want to avoid.
         self._toolbar = QWidget(central)
+        self._toolbar.setObjectName("_slideshow_toolbar")
         toolbar = QHBoxLayout(self._toolbar)
         toolbar.setContentsMargins(8, 4, 8, 4)
 
+        # Same compact-padding override as the embedded preview toolbar —
+        # bundled themes' default `padding: 5px 12px` is too wide for these
+        # short labels in narrow fixed slots.
+        _tb_btn_style = "padding: 3px 6px;"
+
         self._bookmark_btn = QPushButton("Bookmark")
-        self._bookmark_btn.setMaximumWidth(80)
+        self._bookmark_btn.setMaximumWidth(90)
+        self._bookmark_btn.setStyleSheet(_tb_btn_style)
         self._bookmark_btn.clicked.connect(self.bookmark_requested)
         toolbar.addWidget(self._bookmark_btn)
 
         self._save_btn = QPushButton("Save")
         self._save_btn.setMaximumWidth(70)
+        self._save_btn.setStyleSheet(_tb_btn_style)
         self._save_btn.clicked.connect(self.save_toggle_requested)
         toolbar.addWidget(self._save_btn)
         self._is_saved = False
 
         self._bl_tag_btn = QPushButton("BL Tag")
-        self._bl_tag_btn.setMaximumWidth(60)
+        self._bl_tag_btn.setMaximumWidth(65)
+        self._bl_tag_btn.setStyleSheet(_tb_btn_style)
         self._bl_tag_btn.setToolTip("Blacklist a tag")
         self._bl_tag_btn.clicked.connect(self._show_bl_tag_menu)
         toolbar.addWidget(self._bl_tag_btn)
 
         self._bl_post_btn = QPushButton("BL Post")
-        self._bl_post_btn.setMaximumWidth(65)
+        self._bl_post_btn.setMaximumWidth(70)
+        self._bl_post_btn.setStyleSheet(_tb_btn_style)
         self._bl_post_btn.setToolTip("Blacklist this post")
         self._bl_post_btn.clicked.connect(self.blacklist_post_requested)
         toolbar.addWidget(self._bl_post_btn)
@@ -138,12 +125,28 @@ class FullscreenPreview(QMainWindow):
 
         self._toolbar.raise_()
 
-        # Reparent video controls bar to central widget so it overlays properly
+        # Reparent video controls bar to central widget so it overlays properly.
+        # The translucent overlay styling (background, transparent buttons,
+        # white-on-dark text) lives in the bundled themes — see the
+        # `Popout overlay bars` section of any themes/*.qss. The object names
+        # are what those rules target.
+        #
+        # The toolbar's object name is set above, in its constructor block,
+        # so the first style poll picks it up. The controls bar was already
+        # polished as a child of VideoPlayer before being reparented here,
+        # so we have to force an unpolish/polish round-trip after setting
+        # its object name to make Qt re-evaluate the style with the new
+        # `#_slideshow_controls` selector.
         self._video._controls_bar.setParent(central)
-        self._toolbar.setStyleSheet("QWidget#_slideshow_toolbar { background: rgba(0,0,0,160); }" + _overlay_css("_slideshow_toolbar"))
-        self._toolbar.setObjectName("_slideshow_toolbar")
-        self._video._controls_bar.setStyleSheet("QWidget#_slideshow_controls { background: rgba(0,0,0,160); }" + _overlay_css("_slideshow_controls"))
         self._video._controls_bar.setObjectName("_slideshow_controls")
+        cb_style = self._video._controls_bar.style()
+        cb_style.unpolish(self._video._controls_bar)
+        cb_style.polish(self._video._controls_bar)
+        # Same trick on the toolbar — it might have been polished by the
+        # central widget's parent before our object name took effect.
+        tb_style = self._toolbar.style()
+        tb_style.unpolish(self._toolbar)
+        tb_style.polish(self._toolbar)
         self._video._controls_bar.raise_()
         self._toolbar.raise_()
 
@@ -889,8 +892,54 @@ class VideoPlayer(QWidget):
     media_ready = Signal()     # emitted when media is loaded and duration is known
     video_size = Signal(int, int)  # (width, height) emitted when video dimensions are known
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    # QSS-controllable letterbox / pillarbox color. mpv paints the area
+    # around the video frame in this color instead of the default black,
+    # so portrait videos in a landscape preview slot (or vice versa) blend
+    # into the panel theme instead of sitting in a hard black box.
+    # Set via `VideoPlayer { qproperty-letterboxColor: ${bg}; }` in a theme.
+    # The class default below is just a fallback; __init__ replaces it
+    # with the current palette's Window color so systems without a custom
+    # QSS (e.g. Windows dark/light mode driven entirely by QPalette) get
+    # a letterbox that automatically matches the OS background.
+    _letterbox_color = QColor("#000000")
+
+    def _get_letterbox_color(self): return self._letterbox_color
+    def _set_letterbox_color(self, c):
+        self._letterbox_color = QColor(c) if isinstance(c, str) else c
+        self._apply_letterbox_color()
+    letterboxColor = Property(QColor, _get_letterbox_color, _set_letterbox_color)
+
+    def _apply_letterbox_color(self) -> None:
+        """Push the current letterbox color into mpv. No-op if mpv hasn't
+        been initialized yet — _ensure_mpv() calls this after creating the
+        instance so a QSS-set property still takes effect on first use."""
+        if self._mpv is None:
+            return
+        try:
+            self._mpv['background'] = 'color'
+            self._mpv['background-color'] = self._letterbox_color.name()
+        except Exception:
+            pass
+
+    def __init__(self, parent: QWidget | None = None, embed_controls: bool = True) -> None:
+        """
+        embed_controls: When True (default), the transport controls bar is
+        added to this VideoPlayer's own layout below the video — used by the
+        popout window which then reparents the bar to its overlay layer.
+        When False, the controls bar is constructed but never inserted into
+        any layout, leaving the embedded preview a clean video surface with
+        no transport controls visible. Use the popout for playback control.
+        """
         super().__init__(parent)
+        # Initialize the letterbox color from the current palette's Window
+        # role so dark/light mode (or any system without a custom QSS)
+        # gets a sensible default that matches the surrounding panel.
+        # The QSS qproperty-letterboxColor on the bundled themes still
+        # overrides this — Qt calls the setter during widget polish,
+        # which happens AFTER __init__ when the widget is shown.
+        from PySide6.QtGui import QPalette
+        self._letterbox_color = self.palette().color(QPalette.ColorRole.Window)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -908,8 +957,15 @@ class VideoPlayer(QWidget):
         controls = QHBoxLayout(self._controls_bar)
         controls.setContentsMargins(4, 2, 4, 2)
 
+        # Compact-padding override matches the top preview toolbar so the
+        # bottom controls bar reads as part of the same panel rather than
+        # as a stamped-in overlay. Bundled themes' default `padding: 5px 12px`
+        # is too wide for short labels in narrow button slots.
+        _ctrl_btn_style = "padding: 3px 6px;"
+
         self._play_btn = QPushButton("Play")
         self._play_btn.setMaximumWidth(65)
+        self._play_btn.setStyleSheet(_ctrl_btn_style)
         self._play_btn.clicked.connect(self._toggle_play)
         controls.addWidget(self._play_btn)
 
@@ -936,12 +992,14 @@ class VideoPlayer(QWidget):
 
         self._mute_btn = QPushButton("Mute")
         self._mute_btn.setMaximumWidth(80)
+        self._mute_btn.setStyleSheet(_ctrl_btn_style)
         self._mute_btn.clicked.connect(self._toggle_mute)
         controls.addWidget(self._mute_btn)
 
         self._autoplay = True
         self._autoplay_btn = QPushButton("Auto")
         self._autoplay_btn.setMaximumWidth(70)
+        self._autoplay_btn.setStyleSheet(_ctrl_btn_style)
         self._autoplay_btn.setCheckable(True)
         self._autoplay_btn.setChecked(True)
         self._autoplay_btn.setToolTip("Auto-play videos when selected")
@@ -951,19 +1009,22 @@ class VideoPlayer(QWidget):
 
         self._loop_state = 0  # 0=Loop, 1=Once, 2=Next
         self._loop_btn = QPushButton("Loop")
-        self._loop_btn.setMaximumWidth(55)
+        self._loop_btn.setMaximumWidth(60)
+        self._loop_btn.setStyleSheet(_ctrl_btn_style)
         self._loop_btn.setToolTip("Loop: repeat / Once: stop at end / Next: advance")
         self._loop_btn.clicked.connect(self._cycle_loop)
         controls.addWidget(self._loop_btn)
 
-        # Style controls to match the translucent overlay look
-        self._controls_bar.setObjectName("_preview_controls")
-        self._controls_bar.setStyleSheet(
-            "QWidget#_preview_controls { background: rgba(0,0,0,160); }" + _overlay_css("_preview_controls")
-        )
-        # Add to layout — in preview panel this is part of the normal layout.
-        # FullscreenPreview reparents it to float as an overlay.
-        layout.addWidget(self._controls_bar)
+        # NO styleSheet here. The popout (FullscreenPreview) re-applies its
+        # own `_slideshow_controls` overlay styling after reparenting the
+        # bar to its central widget — see FullscreenPreview.__init__ — so
+        # the popout still gets the floating dark-translucent look. The
+        # embedded preview leaves the bar unstyled so it inherits the
+        # panel theme and visually matches the Bookmark/Save/BL Tag bar
+        # at the top of the panel rather than looking like a stamped-in
+        # overlay box.
+        if embed_controls:
+            layout.addWidget(self._controls_bar)
 
         self._eof_pending = False
 
@@ -992,6 +1053,10 @@ class VideoPlayer(QWidget):
         self._mpv.observe_property('eof-reached', self._on_eof_reached)
         self._mpv.observe_property('video-params', self._on_video_params)
         self._pending_video_size: tuple[int, int] | None = None
+        # Push any QSS-set letterbox color into mpv now that the instance
+        # exists. The qproperty-letterboxColor setter is a no-op if mpv
+        # hasn't been initialized yet, so we have to (re)apply on init.
+        self._apply_letterbox_color()
         return self._mpv
 
     # -- Public API (used by app.py for state sync) --
@@ -1247,24 +1312,37 @@ class ImagePreview(QWidget):
         tb.setContentsMargins(2, 1, 2, 1)
         tb.setSpacing(4)
 
+        # Compact toolbar buttons. The bundled themes set
+        # `QPushButton { padding: 5px 12px }` which eats 24px of horizontal
+        # space — too much for these short labels in fixed-width slots.
+        # Override with tighter padding inline so the labels (Unbookmark,
+        # Unsave, BL Tag, BL Post, Popout) fit cleanly under any theme.
+        # Same pattern as the search-bar score buttons in app.py and the
+        # settings dialog spinbox +/- buttons.
+        _tb_btn_style = "padding: 3px 6px;"
+
         self._bookmark_btn = QPushButton("Bookmark")
-        self._bookmark_btn.setFixedWidth(80)
+        self._bookmark_btn.setFixedWidth(100)
+        self._bookmark_btn.setStyleSheet(_tb_btn_style)
         self._bookmark_btn.clicked.connect(self.bookmark_requested)
         tb.addWidget(self._bookmark_btn)
 
         self._save_btn = QPushButton("Save")
-        self._save_btn.setFixedWidth(50)
+        self._save_btn.setFixedWidth(60)
+        self._save_btn.setStyleSheet(_tb_btn_style)
         self._save_btn.clicked.connect(self._on_save_clicked)
         tb.addWidget(self._save_btn)
 
         self._bl_tag_btn = QPushButton("BL Tag")
-        self._bl_tag_btn.setFixedWidth(55)
+        self._bl_tag_btn.setFixedWidth(60)
+        self._bl_tag_btn.setStyleSheet(_tb_btn_style)
         self._bl_tag_btn.setToolTip("Blacklist a tag")
         self._bl_tag_btn.clicked.connect(self._show_bl_tag_menu)
         tb.addWidget(self._bl_tag_btn)
 
         self._bl_post_btn = QPushButton("BL Post")
-        self._bl_post_btn.setFixedWidth(60)
+        self._bl_post_btn.setFixedWidth(65)
+        self._bl_post_btn.setStyleSheet(_tb_btn_style)
         self._bl_post_btn.setToolTip("Blacklist this post")
         self._bl_post_btn.clicked.connect(self.blacklist_post_requested)
         tb.addWidget(self._bl_post_btn)
@@ -1272,7 +1350,8 @@ class ImagePreview(QWidget):
         tb.addStretch()
 
         self._popout_btn = QPushButton("Popout")
-        self._popout_btn.setFixedWidth(60)
+        self._popout_btn.setFixedWidth(65)
+        self._popout_btn.setStyleSheet(_tb_btn_style)
         self._popout_btn.setToolTip("Open in popout")
         self._popout_btn.clicked.connect(self.fullscreen_requested)
         tb.addWidget(self._popout_btn)
@@ -1289,11 +1368,30 @@ class ImagePreview(QWidget):
         self._image_viewer.close_requested.connect(self.close_requested)
         self._stack.addWidget(self._image_viewer)
 
-        # Video player (index 1)
-        self._video_player = VideoPlayer()
+        # Video player (index 1). embed_controls=False keeps the
+        # transport controls bar out of the VideoPlayer's own layout —
+        # we reparent it below the stack a few lines down so the controls
+        # sit *under* the media rather than overlaying it.
+        self._video_player = VideoPlayer(embed_controls=False)
         self._video_player.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._video_player.play_next.connect(self.play_next_requested)
         self._stack.addWidget(self._video_player)
+
+        # Place the video controls bar in the preview panel's own layout,
+        # underneath the stack. The bar exists as a child of VideoPlayer
+        # but is not in any layout (because of embed_controls=False); we
+        # adopt it here as a sibling of the stack so it lays out cleanly
+        # below the media rather than floating on top of it. The popout
+        # uses its own separate VideoPlayer instance and reparents that
+        # instance's controls bar to its own central widget as an overlay.
+        self._stack_video_controls = self._video_player._controls_bar
+        self._stack_video_controls.setParent(self)
+        layout.addWidget(self._stack_video_controls)
+        # Only visible when the stack is showing the video player.
+        self._stack_video_controls.hide()
+        self._stack.currentChanged.connect(
+            lambda idx: self._stack_video_controls.setVisible(idx == 1)
+        )
 
         # Info label
         self._info_label = QLabel()
