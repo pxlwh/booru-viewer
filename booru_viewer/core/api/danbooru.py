@@ -31,7 +31,9 @@ class DanbooruClient(BooruClient):
         resp.raise_for_status()
         try:
             data = resp.json()
-        except Exception:
+        except Exception as e:
+            log.warning("Danbooru search JSON parse failed: %s: %s — body: %s",
+                        type(e).__name__, e, resp.text[:200])
             return []
 
         # Some Danbooru forks wrap in {"posts": [...]}
@@ -97,7 +99,9 @@ class DanbooruClient(BooruClient):
             )
             resp.raise_for_status()
             return [item.get("value", item.get("label", "")) for item in resp.json()]
-        except Exception:
+        except Exception as e:
+            log.warning("Danbooru autocomplete failed for %r: %s: %s",
+                        query, type(e).__name__, e)
             return []
 
     @staticmethod

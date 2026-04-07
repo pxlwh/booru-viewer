@@ -139,5 +139,7 @@ class GelbooruClient(BooruClient):
             if isinstance(data, dict):
                 data = data.get("tag", [])
             return [t.get("name", "") for t in data if t.get("name")]
-        except Exception:
+        except Exception as e:
+            log.warning("Gelbooru autocomplete failed for %r: %s: %s",
+                        query, type(e).__name__, e)
             return []

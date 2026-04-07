@@ -51,7 +51,9 @@ class E621Client(BooruClient):
         resp.raise_for_status()
         try:
             data = resp.json()
-        except Exception:
+        except Exception as e:
+            log.warning("e621 search JSON parse failed: %s: %s — body: %s",
+                        type(e).__name__, e, resp.text[:200])
             return []
 
         # e621 wraps posts in {"posts": [...]}
@@ -123,7 +125,9 @@ class E621Client(BooruClient):
             )
             resp.raise_for_status()
             return [item.get("name", "") for item in resp.json() if item.get("name")]
-        except Exception:
+        except Exception as e:
+            log.warning("e621 autocomplete failed for %r: %s: %s",
+                        query, type(e).__name__, e)
             return []
 
     @staticmethod

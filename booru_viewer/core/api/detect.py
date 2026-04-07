@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import httpx
 
 from ..config import USER_AGENT
@@ -10,6 +12,8 @@ from .gelbooru import GelbooruClient
 from .moebooru import MoebooruClient
 from .e621 import E621Client
 from .base import BooruClient
+
+log = logging.getLogger("booru")
 
 
 async def detect_site_type(
@@ -61,8 +65,9 @@ async def detect_site_type(
                 if "e621" in url or "e926" in url:
                     return "e621"
                 return "danbooru"
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Danbooru/e621 probe failed for %s: %s: %s",
+                        url, type(e).__name__, e)
 
         # Try Gelbooru — /index.php?page=dapi
         try:
@@ -84,8 +89,9 @@ async def detect_site_type(
             elif resp.status_code in (401, 403):
                 if "gelbooru" in url or "safebooru.org" in url or "rule34" in url:
                     return "gelbooru"
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Gelbooru probe failed for %s: %s: %s",
+                        url, type(e).__name__, e)
 
         # Try Moebooru — /post.json (singular)
         try:
@@ -100,8 +106,9 @@ async def detect_site_type(
                     return "moebooru"
             elif resp.status_code in (401, 403):
                 return "moebooru"
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Moebooru probe failed for %s: %s: %s",
+                        url, type(e).__name__, e)
 
     return None
 

@@ -86,10 +86,22 @@ def saved_dir() -> Path:
 
 
 def saved_folder_dir(folder: str) -> Path:
-    """Return a subfolder inside saved images."""
-    path = saved_dir() / folder
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+    """Return a subfolder inside saved images, refusing path traversal.
+
+    Folder names should normally be filtered by `db._validate_folder_name`
+    before reaching the filesystem, but this is a defense-in-depth check:
+    resolve the candidate path and ensure it's still inside `saved_dir()`.
+    Anything that escapes (`..`, absolute paths, symlink shenanigans) raises
+    ValueError instead of silently writing to disk wherever the string points.
+    """
+    base = saved_dir().resolve()
+    candidate = (base / folder).resolve()
+    try:
+        candidate.relative_to(base)
+    except ValueError as e:
+        raise ValueError(f"Folder escapes saved directory: {folder!r}") from e
+    candidate.mkdir(parents=True, exist_ok=True)
+    return candidate
 
 
 def db_path() -> Path:

@@ -25,8 +25,15 @@ def main() -> None:
             if platform == "gtk":
                 # Use xdg-desktop-portal which routes to GTK portal (Thunar)
                 os.environ.setdefault("QT_QPA_PLATFORMTHEME", "xdgdesktopportal")
-        except Exception:
-            pass
+        except Exception as e:
+            # Surface DB-init failures to stderr — silently swallowing meant
+            # users debugging "why is my file picker the wrong one" had no
+            # signal at all when the DB was missing or corrupt.
+            print(
+                f"booru-viewer: file_dialog_platform DB probe failed: "
+                f"{type(e).__name__}: {e}",
+                file=sys.stderr,
+            )
 
     from booru_viewer.gui.app import run
     run()

@@ -96,7 +96,7 @@ class BooruClient(ABC):
     async def _request(
         self, method: str, url: str, *, params: dict | None = None
     ) -> httpx.Response:
-        """Issue an HTTP request with a single retry on 429/503/timeout."""
+        """Issue an HTTP request with a single retry on 429/503/timeout/network error."""
         for attempt in range(2):
             try:
                 resp = await self.client.request(method, url, params=params)
@@ -114,10 +114,12 @@ class BooruClient(ABC):
                         wait = 2.0
                 log.info(f"Retrying {url} after {resp.status_code} (wait {wait}s)")
                 await asyncio.sleep(wait)
-            except httpx.TimeoutException:
+            except (httpx.TimeoutException, httpx.ConnectError, httpx.NetworkError) as e:
+                # Retry on transient DNS/TCP/timeout failures. Without this,
+                # a single DNS hiccup or RST blows up the whole search.
                 if attempt == 1:
                     raise
-                log.info(f"Retrying {url} after timeout")
+                log.info(f"Retrying {url} after {type(e).__name__}: {e}")
                 await asyncio.sleep(1.0)
         return resp  # unreachable in practice, satisfies type checker
 
@@ -139,11 +141,18 @@ class BooruClient(ABC):
         return []
 
     async def test_connection(self) -> tuple[bool, str]:
-        """Test connection. Returns (success, detail_message)."""
+        """Test connection. Returns (success, detail_message).
+
+        Deliberately does NOT echo the response body in the error string —
+        when used from `detect_site_type` (which follows redirects), echoing
+        the body of an arbitrary HTTP response back into UI text becomes a
+        body-leak gadget if the URL ever points anywhere unexpected.
+        """
         try:
             posts = await self.search(limit=1)
             return True, f"OK — got {len(posts)} post(s)"
         except httpx.HTTPStatusError as e:
-            return False, f"HTTP {e.response.status_code}: {e.response.text[:200]}"
+            reason = e.response.reason_phrase or ""
+            return False, f"HTTP {e.response.status_code} {reason}".strip()
         except Exception as e:
             return False, str(e)

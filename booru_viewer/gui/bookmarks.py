@@ -223,7 +223,11 @@ class BookmarksView(QWidget):
     def _new_folder(self) -> None:
         name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
         if ok and name.strip():
-            self._db.add_folder(name.strip())
+            try:
+                self._db.add_folder(name.strip())
+            except ValueError as e:
+                QMessageBox.warning(self, "Invalid Folder Name", str(e))
+                return
             self._refresh_folders()
 
     def _on_context_menu(self, index: int, pos) -> None:
@@ -297,7 +301,11 @@ class BookmarksView(QWidget):
         elif action == save_lib_new:
             name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
             if ok and name.strip():
-                self._db.add_folder(name.strip())
+                try:
+                    self._db.add_folder(name.strip())
+                except ValueError as e:
+                    QMessageBox.warning(self, "Invalid Folder Name", str(e))
+                    return
                 self._copy_to_library(fav, name.strip())
                 self._db.move_bookmark_to_folder(fav.id, name.strip())
                 self.refresh()
@@ -343,7 +351,11 @@ class BookmarksView(QWidget):
         elif action == move_new:
             name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
             if ok and name.strip():
-                self._db.add_folder(name.strip())
+                try:
+                    self._db.add_folder(name.strip())
+                except ValueError as e:
+                    QMessageBox.warning(self, "Invalid Folder Name", str(e))
+                    return
                 self._db.move_bookmark_to_folder(fav.id, name.strip())
                 self._copy_to_library(fav, name.strip())
                 self.refresh()

@@ -2241,10 +2241,14 @@ class BooruApp(QMainWindow):
         elif action == save_lib_unsorted:
             self._save_to_library(post, None)
         elif action == save_lib_new:
-            from PySide6.QtWidgets import QInputDialog
+            from PySide6.QtWidgets import QInputDialog, QMessageBox
             name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
             if ok and name.strip():
-                self._db.add_folder(name.strip())
+                try:
+                    self._db.add_folder(name.strip())
+                except ValueError as e:
+                    QMessageBox.warning(self, "Invalid Folder Name", str(e))
+                    return
                 self._save_to_library(post, name.strip())
         elif id(action) in save_lib_folders:
             self._save_to_library(post, save_lib_folders[id(action)])
@@ -2372,10 +2376,14 @@ class BooruApp(QMainWindow):
         elif action == save_unsorted:
             self._bulk_save(indices, posts, None)
         elif action == save_new:
-            from PySide6.QtWidgets import QInputDialog
+            from PySide6.QtWidgets import QInputDialog, QMessageBox
             name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
             if ok and name.strip():
-                self._db.add_folder(name.strip())
+                try:
+                    self._db.add_folder(name.strip())
+                except ValueError as e:
+                    QMessageBox.warning(self, "Invalid Folder Name", str(e))
+                    return
                 self._bulk_save(indices, posts, name.strip())
         elif id(action) in save_folder_actions:
             self._bulk_save(indices, posts, save_folder_actions[id(action)])
@@ -3009,6 +3017,61 @@ def _apply_windows_dark_mode(app: QApplication) -> None:
         log.warning(f"Operation failed: {e}")
 
 
+# Base popout overlay style — always loaded *before* the user QSS so the
+# floating top toolbar (`#_slideshow_toolbar`) and bottom video controls
+# (`#_slideshow_controls`) get a sane translucent-black-with-white-text
+# look on themes that don't define their own overlay rules. Bundled themes
+# in `themes/` redefine the same selectors with their @palette colors and
+# win on tie (last rule of equal specificity wins in QSS), so anyone using
+# a packaged theme keeps the themed overlay; anyone with a stripped-down
+# custom.qss still gets a usable overlay instead of bare letterbox.
+_BASE_POPOUT_OVERLAY_QSS = """
+QWidget#_slideshow_toolbar,
+QWidget#_slideshow_controls {
+    background: rgba(0, 0, 0, 160);
+}
+QWidget#_slideshow_toolbar *,
+QWidget#_slideshow_controls * {
+    background: transparent;
+    color: white;
+    border: none;
+}
+QWidget#_slideshow_toolbar QPushButton,
+QWidget#_slideshow_controls QPushButton {
+    background: transparent;
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 80);
+    padding: 2px 6px;
+}
+QWidget#_slideshow_toolbar QPushButton:hover,
+QWidget#_slideshow_controls QPushButton:hover {
+    background: rgba(255, 255, 255, 30);
+}
+QWidget#_slideshow_toolbar QSlider::groove:horizontal,
+QWidget#_slideshow_controls QSlider::groove:horizontal {
+    background: rgba(255, 255, 255, 40);
+    height: 4px;
+    border: none;
+}
+QWidget#_slideshow_toolbar QSlider::handle:horizontal,
+QWidget#_slideshow_controls QSlider::handle:horizontal {
+    background: white;
+    width: 10px;
+    margin: -4px 0;
+    border: none;
+}
+QWidget#_slideshow_toolbar QSlider::sub-page:horizontal,
+QWidget#_slideshow_controls QSlider::sub-page:horizontal {
+    background: white;
+}
+QWidget#_slideshow_toolbar QLabel,
+QWidget#_slideshow_controls QLabel {
+    background: transparent;
+    color: white;
+}
+"""
+
+
 def _load_user_qss(path: Path) -> str:
     """Load a QSS file with optional @palette variable substitution.
 
@@ -3141,7 +3204,10 @@ def run() -> None:
                     super().drawPrimitive(element, option, painter, widget)
 
             app.setStyle(_DarkArrowStyle("Fusion"))
-            app.setStyleSheet(css_text)
+            # Prepend the base overlay defaults so even minimal custom.qss
+            # files get a usable popout overlay. User rules with the same
+            # selectors come last and win on tie.
+            app.setStyleSheet(_BASE_POPOUT_OVERLAY_QSS + "\n" + css_text)
 
             # Extract selection color for grid highlight
             pal = app.palette()
@@ -3151,6 +3217,11 @@ def run() -> None:
             app.setPalette(pal)
         except Exception as e:
             log.warning(f"Operation failed: {e}")
+    else:
+        # No custom.qss — still install the popout overlay defaults so the
+        # floating toolbar/controls have a sane background instead of bare
+        # letterbox color.
+        app.setStyleSheet(_BASE_POPOUT_OVERLAY_QSS)
 
     # Set app icon (works in taskbar on all platforms)
     from PySide6.QtGui import QIcon

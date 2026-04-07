@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import json
 from dataclasses import dataclass, field
@@ -9,6 +10,35 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .config import db_path
+
+
+def _validate_folder_name(name: str) -> str:
+    """Reject folder names that could break out of the saved-images dir.
+
+    Folder names hit the filesystem in `core.config.saved_folder_dir` (joined
+    with `saved_dir()` and `mkdir`'d). Without this guard, an attacker — or a
+    user pasting nonsense — could create / delete files anywhere by passing
+    `..` segments, an absolute path, or an OS-native separator. We refuse
+    those at write time so the DB never stores a poisoned name in the first
+    place.
+
+    Permits anything else (Unicode, spaces, parentheses, hyphens) so existing
+    folders like `miku(lewd)` keep working.
+    """
+    if not name:
+        raise ValueError("Folder name cannot be empty")
+    if name in (".", ".."):
+        raise ValueError(f"Invalid folder name: {name!r}")
+    if "/" in name or "\\" in name or os.sep in name:
+        raise ValueError(f"Folder name may not contain path separators: {name!r}")
+    if name.startswith(".") or name.startswith("~"):
+        raise ValueError(f"Folder name may not start with {name[0]!r}: {name!r}")
+    # Reject any embedded `..` segment (e.g. `foo..bar` is fine, but `..` alone
+    # is already caught above; this catches `..` inside slash-rejected paths
+    # if someone tries to be clever — defensive belt for the suspenders).
+    if ".." in name.split(os.sep):
+        raise ValueError(f"Invalid folder name: {name!r}")
+    return name
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS sites (
@@ -158,25 +188,27 @@ class Database:
         return self._conn
 
     def _migrate(self) -> None:
-        """Add columns that may not exist in older databases."""
-        cur = self._conn.execute("PRAGMA table_info(favorites)")
-        cols = {row[1] for row in cur.fetchall()}
-        if "folder" not in cols:
-            self._conn.execute("ALTER TABLE favorites ADD COLUMN folder TEXT")
-            self._conn.commit()
-        self._conn.execute("CREATE INDEX IF NOT EXISTS idx_favorites_folder ON favorites(folder)")
-        # Add tag_categories to library_meta if missing
-        tables = {r[0] for r in self._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
-        if "library_meta" in tables:
-            cur = self._conn.execute("PRAGMA table_info(library_meta)")
-            meta_cols = {row[1] for row in cur.fetchall()}
-            if "tag_categories" not in meta_cols:
-                self._conn.execute("ALTER TABLE library_meta ADD COLUMN tag_categories TEXT DEFAULT ''")
-                self._conn.commit()
-        # Add tag_categories to favorites if missing
-        if "tag_categories" not in cols:
-            self._conn.execute("ALTER TABLE favorites ADD COLUMN tag_categories TEXT DEFAULT ''")
-            self._conn.commit()
+        """Add columns that may not exist in older databases.
+
+        All ALTERs are wrapped in a single transaction so a crash partway
+        through can't leave the schema half-migrated.
+        """
+        with self._conn:
+            cur = self._conn.execute("PRAGMA table_info(favorites)")
+            cols = {row[1] for row in cur.fetchall()}
+            if "folder" not in cols:
+                self._conn.execute("ALTER TABLE favorites ADD COLUMN folder TEXT")
+            self._conn.execute("CREATE INDEX IF NOT EXISTS idx_favorites_folder ON favorites(folder)")
+            # Add tag_categories to library_meta if missing
+            tables = {r[0] for r in self._conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+            if "library_meta" in tables:
+                cur = self._conn.execute("PRAGMA table_info(library_meta)")
+                meta_cols = {row[1] for row in cur.fetchall()}
+                if "tag_categories" not in meta_cols:
+                    self._conn.execute("ALTER TABLE library_meta ADD COLUMN tag_categories TEXT DEFAULT ''")
+            # Add tag_categories to favorites if missing
+            if "tag_categories" not in cols:
+                self._conn.execute("ALTER TABLE favorites ADD COLUMN tag_categories TEXT DEFAULT ''")
 
     def close(self) -> None:
         if self._conn:
@@ -229,9 +261,9 @@ class Database:
         ]
 
     def delete_site(self, site_id: int) -> None:
-        self.conn.execute("DELETE FROM favorites WHERE site_id = ?", (site_id,))
-        self.conn.execute("DELETE FROM sites WHERE id = ?", (site_id,))
-        self.conn.commit()
+        with self.conn:
+            self.conn.execute("DELETE FROM favorites WHERE site_id = ?", (site_id,))
+            self.conn.execute("DELETE FROM sites WHERE id = ?", (site_id,))
 
     def update_site(self, site_id: int, **fields: str | None) -> None:
         allowed = {"name", "url", "api_type", "api_key", "api_user", "enabled"}
@@ -268,15 +300,30 @@ class Database:
     ) -> Bookmark:
         now = datetime.now(timezone.utc).isoformat()
         cats_json = json.dumps(tag_categories) if tag_categories else ""
-        cur = self.conn.execute(
-            "INSERT OR IGNORE INTO favorites "
-            "(site_id, post_id, file_url, preview_url, tags, rating, score, source, cached_path, folder, favorited_at, tag_categories) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (site_id, post_id, file_url, preview_url, tags, rating, score, source, cached_path, folder, now, cats_json),
-        )
-        self.conn.commit()
+        with self.conn:
+            cur = self.conn.execute(
+                "INSERT OR IGNORE INTO favorites "
+                "(site_id, post_id, file_url, preview_url, tags, rating, score, source, cached_path, folder, favorited_at, tag_categories) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (site_id, post_id, file_url, preview_url, tags, rating, score, source, cached_path, folder, now, cats_json),
+            )
+            if cur.rowcount == 0:
+                # Row already existed (UNIQUE collision on site_id, post_id);
+                # INSERT OR IGNORE leaves lastrowid stale, so re-SELECT the
+                # actual id. Without this, the returned Bookmark.id is bogus
+                # (e.g. 0) and any subsequent update keyed on that id silently
+                # no-ops — see app.py update_bookmark_cache_path callsite.
+                row = self.conn.execute(
+                    "SELECT id, favorited_at FROM favorites WHERE site_id = ? AND post_id = ?",
+                    (site_id, post_id),
+                ).fetchone()
+                bm_id = row["id"]
+                bookmarked_at = row["favorited_at"]
+            else:
+                bm_id = cur.lastrowid
+                bookmarked_at = now
         return Bookmark(
-            id=cur.lastrowid,  # type: ignore[arg-type]
+            id=bm_id,
             site_id=site_id,
             post_id=post_id,
             file_url=file_url,
@@ -287,7 +334,7 @@ class Database:
             source=source,
             cached_path=cached_path,
             folder=folder,
-            bookmarked_at=now,
+            bookmarked_at=bookmarked_at,
         )
 
     # Back-compat shim
@@ -347,8 +394,16 @@ class Database:
             params.append(folder)
         if search:
             for tag in search.strip().split():
-                q += " AND tags LIKE ?"
-                params.append(f"%{tag}%")
+                # Escape SQL LIKE wildcards in user input. Without ESCAPE,
+                # `_` matches any single char and `%` matches any sequence,
+                # so searching `cat_ear` would also match `catear`/`catxear`.
+                escaped = (
+                    tag.replace("\\", "\\\\")
+                       .replace("%", "\\%")
+                       .replace("_", "\\_")
+                )
+                q += " AND tags LIKE ? ESCAPE '\\'"
+                params.append(f"%{escaped}%")
         q += " ORDER BY favorited_at DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
         rows = self.conn.execute(q, params).fetchall()
@@ -404,26 +459,28 @@ class Database:
         return [r["name"] for r in rows]
 
     def add_folder(self, name: str) -> None:
+        clean = _validate_folder_name(name.strip())
         self.conn.execute(
-            "INSERT OR IGNORE INTO favorite_folders (name) VALUES (?)", (name.strip(),)
+            "INSERT OR IGNORE INTO favorite_folders (name) VALUES (?)", (clean,)
         )
         self.conn.commit()
 
     def remove_folder(self, name: str) -> None:
-        self.conn.execute(
-            "UPDATE favorites SET folder = NULL WHERE folder = ?", (name,)
-        )
-        self.conn.execute("DELETE FROM favorite_folders WHERE name = ?", (name,))
-        self.conn.commit()
+        with self.conn:
+            self.conn.execute(
+                "UPDATE favorites SET folder = NULL WHERE folder = ?", (name,)
+            )
+            self.conn.execute("DELETE FROM favorite_folders WHERE name = ?", (name,))
 
     def rename_folder(self, old: str, new: str) -> None:
-        self.conn.execute(
-            "UPDATE favorites SET folder = ? WHERE folder = ?", (new.strip(), old)
-        )
-        self.conn.execute(
-            "UPDATE favorite_folders SET name = ? WHERE name = ?", (new.strip(), old)
-        )
-        self.conn.commit()
+        new_name = _validate_folder_name(new.strip())
+        with self.conn:
+            self.conn.execute(
+                "UPDATE favorites SET folder = ? WHERE folder = ?", (new_name, old)
+            )
+            self.conn.execute(
+                "UPDATE favorite_folders SET name = ? WHERE name = ?", (new_name, old)
+            )
 
     def move_bookmark_to_folder(self, fav_id: int, folder: str | None) -> None:
         self.conn.execute(
@@ -538,21 +595,21 @@ class Database:
         if not query.strip():
             return
         now = datetime.now(timezone.utc).isoformat()
-        # Remove duplicate if exists, keep latest
-        self.conn.execute(
-            "DELETE FROM search_history WHERE query = ? AND (site_id = ? OR (site_id IS NULL AND ? IS NULL))",
-            (query.strip(), site_id, site_id),
-        )
-        self.conn.execute(
-            "INSERT INTO search_history (query, site_id, searched_at) VALUES (?, ?, ?)",
-            (query.strip(), site_id, now),
-        )
-        # Keep only last 50
-        self.conn.execute(
-            "DELETE FROM search_history WHERE id NOT IN "
-            "(SELECT id FROM search_history ORDER BY searched_at DESC LIMIT 50)"
-        )
-        self.conn.commit()
+        with self.conn:
+            # Remove duplicate if exists, keep latest
+            self.conn.execute(
+                "DELETE FROM search_history WHERE query = ? AND (site_id = ? OR (site_id IS NULL AND ? IS NULL))",
+                (query.strip(), site_id, site_id),
+            )
+            self.conn.execute(
+                "INSERT INTO search_history (query, site_id, searched_at) VALUES (?, ?, ?)",
+                (query.strip(), site_id, now),
+            )
+            # Keep only last 50
+            self.conn.execute(
+                "DELETE FROM search_history WHERE id NOT IN "
+                "(SELECT id FROM search_history ORDER BY searched_at DESC LIMIT 50)"
+            )
 
     def get_search_history(self, limit: int = 20) -> list[str]:
         rows = self.conn.execute(

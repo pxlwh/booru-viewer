@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
+import os
+import tempfile
 import zipfile
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
@@ -14,6 +17,31 @@ import httpx
 from PIL import Image
 
 from .config import cache_dir, thumbnails_dir, USER_AGENT
+
+log = logging.getLogger("booru")
+
+# Hard cap on a single download. Anything advertising larger via
+# Content-Length is rejected before allocating; the running-total guard
+# in the chunk loop catches lying servers. Generous enough for typical
+# booru uploads (long doujinshi/HD video) without leaving the door open
+# to multi-GB OOM/disk-fill from a hostile or misconfigured site.
+MAX_DOWNLOAD_BYTES = 500 * 1024 * 1024  # 500 MB
+
+# Threshold above which we stream to a tempfile + atomic os.replace
+# instead of buffering. Below this, the existing path is fine and the
+# regression risk of the streaming rewrite is zero.
+STREAM_TO_DISK_THRESHOLD = 50 * 1024 * 1024  # 50 MB
+
+# Cap PIL's auto-DOS guard at 256M pixels (~1 GB raw). Default warns
+# silently above ~89M; we want a hard fail so DecompressionBombError
+# can be caught and treated as a download failure.
+Image.MAX_IMAGE_PIXELS = 256 * 1024 * 1024
+
+# Defends `_convert_ugoira_to_gif` against zip bombs. A real ugoira is
+# typically <500 frames at 1080p; these caps comfortably allow legit
+# content while refusing million-frame archives.
+UGOIRA_MAX_FRAMES = 5000
+UGOIRA_MAX_UNCOMPRESSED_BYTES = 500 * 1024 * 1024  # 500 MB
 
 # Track all outgoing connections: {host: [timestamp, ...]}
 _connection_log: OrderedDict[str, list[str]] = OrderedDict()
@@ -67,20 +95,27 @@ _IMAGE_MAGIC = {
 
 
 def _is_valid_media(path: Path) -> bool:
-    """Check if a file looks like actual media, not an HTML error page."""
+    """Check if a file looks like actual media, not an HTML error page.
+
+    On transient IO errors (file locked, EBUSY, permissions hiccup), returns
+    True so the caller does NOT delete the cached file. The previous behavior
+    treated IO errors as "invalid", causing a delete + re-download loop on
+    every access while the underlying issue persisted.
+    """
     try:
         with open(path, "rb") as f:
             header = f.read(16)
-        if not header or header.startswith(b'<') or header.startswith(b'<!'):
-            return False
-        # Check for known magic bytes
-        for magic in _IMAGE_MAGIC:
-            if header.startswith(magic):
-                return True
-        # If not a known type but not HTML, assume it's ok
-        return b'<html' not in header.lower() and b'<!doctype' not in header.lower()
-    except Exception:
+    except OSError as e:
+        log.warning("Cannot read %s for validation (%s); treating as valid", path, e)
+        return True
+    if not header or header.startswith(b'<') or header.startswith(b'<!'):
         return False
+    # Check for known magic bytes
+    for magic in _IMAGE_MAGIC:
+        if header.startswith(magic):
+            return True
+    # If not a known type but not HTML, assume it's ok
+    return b'<html' not in header.lower() and b'<!doctype' not in header.lower()
 
 
 def _ext_from_url(url: str) -> str:
@@ -91,48 +126,86 @@ def _ext_from_url(url: str) -> str:
 
 
 def _convert_ugoira_to_gif(zip_path: Path) -> Path:
-    """Convert a Pixiv ugoira zip (numbered JPEG/PNG frames) to an animated GIF."""
+    """Convert a Pixiv ugoira zip (numbered JPEG/PNG frames) to an animated GIF.
+
+    Defends against zip bombs by capping frame count and cumulative
+    uncompressed size, both checked from `ZipInfo` headers BEFORE any
+    decompression. Falls back to returning the original zip on any error
+    so the caller still has a usable file.
+    """
     import io
     gif_path = zip_path.with_suffix(".gif")
     if gif_path.exists():
         return gif_path
     _IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        names = sorted(n for n in zf.namelist() if Path(n).suffix.lower() in _IMG_EXTS)
-        frames = []
-        for name in names:
-            try:
-                data = zf.read(name)
-                frames.append(Image.open(io.BytesIO(data)).convert("RGBA"))
-            except Exception:
-                continue
-    if not frames:
-        # Can't convert — just return the zip path as-is
+    try:
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            infos = [zi for zi in zf.infolist()
+                     if Path(zi.filename).suffix.lower() in _IMG_EXTS]
+            if len(infos) > UGOIRA_MAX_FRAMES:
+                log.warning(
+                    "Ugoira %s has %d frames (cap %d); skipping conversion",
+                    zip_path.name, len(infos), UGOIRA_MAX_FRAMES,
+                )
+                return zip_path
+            total_uncompressed = sum(zi.file_size for zi in infos)
+            if total_uncompressed > UGOIRA_MAX_UNCOMPRESSED_BYTES:
+                log.warning(
+                    "Ugoira %s uncompressed size %d exceeds cap %d; skipping",
+                    zip_path.name, total_uncompressed, UGOIRA_MAX_UNCOMPRESSED_BYTES,
+                )
+                return zip_path
+            infos.sort(key=lambda zi: zi.filename)
+            frames = []
+            for zi in infos:
+                try:
+                    data = zf.read(zi)
+                    with Image.open(io.BytesIO(data)) as im:
+                        frames.append(im.convert("RGBA"))
+                except Exception as e:
+                    log.debug("Skipping ugoira frame %s: %s", zi.filename, e)
+                    continue
+    except (zipfile.BadZipFile, OSError) as e:
+        log.warning("Ugoira zip read failed for %s: %s", zip_path.name, e)
         return zip_path
-    frames[0].save(
-        gif_path, save_all=True, append_images=frames[1:],
-        duration=80, loop=0, disposal=2,
-    )
+    if not frames:
+        return zip_path
+    try:
+        frames[0].save(
+            gif_path, save_all=True, append_images=frames[1:],
+            duration=80, loop=0, disposal=2,
+        )
+    except Exception as e:
+        log.warning("Ugoira GIF write failed for %s: %s", zip_path.name, e)
+        return zip_path
     if gif_path.exists():
         zip_path.unlink()
     return gif_path
 
 
 def _convert_animated_to_gif(source_path: Path) -> Path:
-    """Convert animated PNG or WebP to GIF for Qt playback."""
+    """Convert animated PNG or WebP to GIF for Qt playback.
+
+    Writes a `.failed` sentinel sibling on conversion failure so we don't
+    re-attempt every access — re-trying on every paint of a malformed
+    file used to chew CPU silently.
+    """
     gif_path = source_path.with_suffix(".gif")
     if gif_path.exists():
         return gif_path
+    sentinel = source_path.with_suffix(source_path.suffix + ".convfailed")
+    if sentinel.exists():
+        return source_path
     try:
-        img = Image.open(source_path)
-        if not getattr(img, 'is_animated', False):
-            return source_path  # not animated, keep as-is
-        frames = []
-        durations = []
-        for i in range(img.n_frames):
-            img.seek(i)
-            frames.append(img.convert("RGBA").copy())
-            durations.append(img.info.get("duration", 80))
+        with Image.open(source_path) as img:
+            if not getattr(img, 'is_animated', False):
+                return source_path  # not animated, keep as-is
+            frames = []
+            durations = []
+            for i in range(img.n_frames):
+                img.seek(i)
+                frames.append(img.convert("RGBA").copy())
+                durations.append(img.info.get("duration", 80))
         if not frames:
             return source_path
         frames[0].save(
@@ -142,9 +215,37 @@ def _convert_animated_to_gif(source_path: Path) -> Path:
         if gif_path.exists():
             source_path.unlink()
             return gif_path
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning("Animated->GIF conversion failed for %s: %s", source_path.name, e)
+        try:
+            sentinel.touch()
+        except OSError:
+            pass
     return source_path
+
+
+def _referer_for(parsed) -> str:
+    """Build a Referer header value for booru CDNs that gate downloads.
+
+    Uses proper hostname suffix matching instead of substring `in` to avoid
+    `imgblahgelbooru.attacker.com` falsely mapping to `gelbooru.com`.
+    """
+    netloc = parsed.netloc
+    bare = netloc.split(":", 1)[0].lower()  # strip any port
+    referer_host = netloc
+    if bare.endswith(".gelbooru.com") or bare == "gelbooru.com":
+        referer_host = "gelbooru.com"
+    elif bare.endswith(".donmai.us") or bare == "donmai.us":
+        referer_host = "danbooru.donmai.us"
+    return f"{parsed.scheme}://{referer_host}/"
+
+
+# Per-URL coalescing locks. When two callers race on the same URL (e.g.
+# grid prefetch + an explicit click on the same thumbnail), only one
+# does the actual download; the other waits and reads the cached file.
+# Loop-bound, but the existing module is already loop-bound, so this
+# doesn't make anything worse and is fixed cleanly in PR2.
+_url_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 
 
 async def download_image(
@@ -161,75 +262,45 @@ async def download_image(
     filename = _url_hash(url) + _ext_from_url(url)
     local = dest_dir / filename
 
-    # Check if a ugoira zip was already converted to gif
-    if local.suffix.lower() == ".zip":
-        gif_path = local.with_suffix(".gif")
-        if gif_path.exists():
-            return gif_path
-        # If the zip is cached but not yet converted, convert it now.
-        # PIL frame iteration is CPU-bound and would block the asyncio
-        # loop for hundreds of ms — run it in a worker thread instead.
-        if local.exists() and zipfile.is_zipfile(local):
-            return await asyncio.to_thread(_convert_ugoira_to_gif, local)
+    async with _url_locks[_url_hash(url)]:
+        # Check if a ugoira zip was already converted to gif
+        if local.suffix.lower() == ".zip":
+            gif_path = local.with_suffix(".gif")
+            if gif_path.exists():
+                return gif_path
+            # If the zip is cached but not yet converted, convert it now.
+            # PIL frame iteration is CPU-bound and would block the asyncio
+            # loop for hundreds of ms — run it in a worker thread instead.
+            if local.exists() and zipfile.is_zipfile(local):
+                return await asyncio.to_thread(_convert_ugoira_to_gif, local)
 
-    # Check if animated PNG/WebP was already converted to gif
-    if local.suffix.lower() in (".png", ".webp"):
-        gif_path = local.with_suffix(".gif")
-        if gif_path.exists():
-            return gif_path
+        # Check if animated PNG/WebP was already converted to gif
+        if local.suffix.lower() in (".png", ".webp"):
+            gif_path = local.with_suffix(".gif")
+            if gif_path.exists():
+                return gif_path
 
-    # Validate cached file isn't corrupt (e.g. HTML error page saved as image)
-    if local.exists():
-        if _is_valid_media(local):
-            # Convert animated PNG/WebP on access if not yet converted
-            if local.suffix.lower() in (".png", ".webp"):
-                converted = await asyncio.to_thread(_convert_animated_to_gif, local)
-                if converted != local:
-                    return converted
-            return local
-        else:
-            local.unlink()  # Remove corrupt cache entry
+        # Validate cached file isn't corrupt (e.g. HTML error page saved as image)
+        if local.exists():
+            if _is_valid_media(local):
+                # Convert animated PNG/WebP on access if not yet converted
+                if local.suffix.lower() in (".png", ".webp"):
+                    converted = await asyncio.to_thread(_convert_animated_to_gif, local)
+                    if converted != local:
+                        return converted
+                return local
+            else:
+                local.unlink()  # Remove corrupt cache entry
 
-    # Extract referer from URL domain (needed for Gelbooru CDN etc.)
-    parsed = urlparse(url)
-    # Map CDN hostnames back to the main site
-    referer_host = parsed.netloc
-    if referer_host.startswith("img") and "gelbooru" in referer_host:
-        referer_host = "gelbooru.com"
-    elif referer_host.startswith("cdn") and "donmai" in referer_host:
-        referer_host = "danbooru.donmai.us"
-    referer = f"{parsed.scheme}://{referer_host}/"
+        parsed = urlparse(url)
+        referer = _referer_for(parsed)
+        log_connection(url)
+        req_headers = {"Referer": referer}
 
-    log_connection(url)
+        if client is None:
+            client = _get_shared_client()
 
-    req_headers = {"Referer": referer}
-
-    own_client = client is None
-    if own_client:
-        client = _get_shared_client()
-    try:
-        if progress_callback:
-            async with client.stream("GET", url, headers=req_headers) as resp:
-                resp.raise_for_status()
-                content_type = resp.headers.get("content-type", "")
-                if "text/html" in content_type:
-                    raise ValueError(f"Server returned HTML instead of media (possible captcha/block)")
-                total = int(resp.headers.get("content-length", 0))
-                downloaded = 0
-                chunks = []
-                async for chunk in resp.aiter_bytes(8192):
-                    chunks.append(chunk)
-                    downloaded += len(chunk)
-                    progress_callback(downloaded, total)
-                data = b"".join(chunks)
-                local.write_bytes(data)
-        else:
-            resp = await client.get(url, headers=req_headers)
-            resp.raise_for_status()
-            content_type = resp.headers.get("content-type", "")
-            if "text/html" in content_type:
-                raise ValueError(f"Server returned HTML instead of media (possible captcha/block)")
-            local.write_bytes(resp.content)
+        await _do_download(client, url, req_headers, local, progress_callback)
 
         # Verify the downloaded file
         if not _is_valid_media(local):
@@ -243,9 +314,80 @@ async def download_image(
         # Convert animated PNG/WebP to GIF for Qt playback
         elif local.suffix.lower() in (".png", ".webp"):
             local = await asyncio.to_thread(_convert_animated_to_gif, local)
-    finally:
-        pass  # shared client stays open for connection reuse
     return local
+
+
+async def _do_download(
+    client: httpx.AsyncClient,
+    url: str,
+    req_headers: dict,
+    local: Path,
+    progress_callback,
+) -> None:
+    """Perform the actual HTTP fetch and write to `local`.
+
+    Splits on size: small/unknown payloads buffer in memory and write atomically;
+    large payloads stream to a tempfile in the same directory and `os.replace`
+    on completion. The split keeps the existing fast-path for thumbnails (which
+    is the vast majority of downloads) while preventing OOM on multi-hundred-MB
+    videos. Both paths enforce `MAX_DOWNLOAD_BYTES` against the advertised
+    Content-Length AND the running total (servers can lie about length).
+    """
+    async with client.stream("GET", url, headers=req_headers) as resp:
+        resp.raise_for_status()
+        content_type = resp.headers.get("content-type", "")
+        if "text/html" in content_type:
+            raise ValueError("Server returned HTML instead of media (possible captcha/block)")
+
+        try:
+            total = int(resp.headers.get("content-length", 0))
+        except (TypeError, ValueError):
+            total = 0
+        if total > MAX_DOWNLOAD_BYTES:
+            raise ValueError(
+                f"Download too large: {total} bytes (cap {MAX_DOWNLOAD_BYTES})"
+            )
+
+        if total >= STREAM_TO_DISK_THRESHOLD:
+            # Large download: stream to tempfile in the same dir, atomic replace.
+            local.parent.mkdir(parents=True, exist_ok=True)
+            fd, tmp_name = tempfile.mkstemp(
+                prefix=f".{local.name}.", suffix=".part", dir=str(local.parent)
+            )
+            tmp_path = Path(tmp_name)
+            try:
+                downloaded = 0
+                with os.fdopen(fd, "wb") as out:
+                    async for chunk in resp.aiter_bytes(64 * 1024):
+                        out.write(chunk)
+                        downloaded += len(chunk)
+                        if downloaded > MAX_DOWNLOAD_BYTES:
+                            raise ValueError(
+                                f"Download exceeded cap mid-stream: {downloaded} bytes"
+                            )
+                        if progress_callback:
+                            progress_callback(downloaded, total)
+                os.replace(tmp_path, local)
+            except BaseException:
+                try:
+                    tmp_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                raise
+        else:
+            # Small/unknown size: buffer in memory, write whole.
+            chunks: list[bytes] = []
+            downloaded = 0
+            async for chunk in resp.aiter_bytes(8192):
+                chunks.append(chunk)
+                downloaded += len(chunk)
+                if downloaded > MAX_DOWNLOAD_BYTES:
+                    raise ValueError(
+                        f"Download exceeded cap mid-stream: {downloaded} bytes"
+                    )
+                if progress_callback:
+                    progress_callback(downloaded, total)
+            local.write_bytes(b"".join(chunks))
 
 
 async def download_thumbnail(

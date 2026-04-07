@@ -77,6 +77,10 @@ class FullscreenPreview(QMainWindow):
         # an explicit unpolish/polish cycle, which we want to avoid.
         self._toolbar = QWidget(central)
         self._toolbar.setObjectName("_slideshow_toolbar")
+        # Plain QWidget ignores QSS `background:` declarations unless this
+        # attribute is set — without it the toolbar paints transparently
+        # and the popout buttons sit on bare letterbox color.
+        self._toolbar.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         toolbar = QHBoxLayout(self._toolbar)
         toolbar.setContentsMargins(8, 4, 8, 4)
 
@@ -139,6 +143,9 @@ class FullscreenPreview(QMainWindow):
         # `#_slideshow_controls` selector.
         self._video._controls_bar.setParent(central)
         self._video._controls_bar.setObjectName("_slideshow_controls")
+        # Same fix as the toolbar above — plain QWidget needs this attribute
+        # for the QSS `background: ${overlay_bg}` rule to render.
+        self._video._controls_bar.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         cb_style = self._video._controls_bar.style()
         cb_style.unpolish(self._video._controls_bar)
         cb_style.polish(self._video._controls_bar)

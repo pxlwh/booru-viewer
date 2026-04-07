@@ -25,7 +25,9 @@ class MoebooruClient(BooruClient):
         resp.raise_for_status()
         try:
             data = resp.json()
-        except Exception:
+        except Exception as e:
+            log.warning("Moebooru search JSON parse failed: %s: %s — body: %s",
+                        type(e).__name__, e, resp.text[:200])
             return []
         if isinstance(data, dict):
             data = data.get("posts", data.get("post", []))
@@ -93,5 +95,7 @@ class MoebooruClient(BooruClient):
             )
             resp.raise_for_status()
             return [t["name"] for t in resp.json() if "name" in t]
-        except Exception:
+        except Exception as e:
+            log.warning("Moebooru autocomplete failed for %r: %s: %s",
+                        query, type(e).__name__, e)
             return []
