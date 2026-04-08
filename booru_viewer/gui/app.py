@@ -51,28 +51,6 @@ from .settings import SettingsDialog
 log = logging.getLogger("booru")
 
 
-class LogHandler(logging.Handler, QObject):
-    """Logging handler that emits to a QTextEdit."""
-
-    log_signal = Signal(str)
-
-    def __init__(self, widget: QTextEdit) -> None:
-        logging.Handler.__init__(self)
-        QObject.__init__(self)
-        self._widget = widget
-        self.log_signal.connect(self._append)
-        self.setFormatter(logging.Formatter("%(asctime)s  %(levelname)-5s  %(message)s", datefmt="%H:%M:%S"))
-
-    def emit(self, record: logging.LogRecord) -> None:
-        msg = self.format(record)
-        self.log_signal.emit(msg)
-
-    def _append(self, msg: str) -> None:
-        self._widget.append(msg)
-        sb = self._widget.verticalScrollBar()
-        sb.setValue(sb.maximum())
-
-
 class AsyncSignals(QObject):
     """Signals for async worker results."""
     search_done = Signal(list)
@@ -3598,3 +3576,4 @@ def run() -> None:
 
 # -- Refactor compatibility shims (deleted in commit 14) --
 from .search_state import SearchState  # re-export for refactor compat
+from .log_handler import LogHandler  # re-export for refactor compat
