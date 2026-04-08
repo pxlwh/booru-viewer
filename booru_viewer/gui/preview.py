@@ -435,7 +435,9 @@ class FullscreenPreview(QMainWindow):
 
         return (round(x), round(y), round(w), round(h))
 
-    def _derive_viewport_for_fit(self, floating: bool | None) -> Viewport | None:
+    def _derive_viewport_for_fit(
+        self, floating: bool | None, win: dict | None = None
+    ) -> Viewport | None:
         """Build a viewport from existing state at the start of a fit call.
 
         This is the scoped (recompute-from-current-state) approach. The
@@ -452,6 +454,13 @@ class FullscreenPreview(QMainWindow):
           3. Navigation fit on non-Hyprland: derive from `self.geometry()`
              for the same reason.
 
+        `win` may be passed in by the caller (typically `_fit_to_content`,
+        which already fetched it for the floating check) to skip the
+        otherwise-redundant `_hyprctl_get_window()` subprocess call.
+        Each `hyprctl clients -j` is ~3ms of subprocess.run on the GUI
+        thread, and reusing the cached dict cuts the per-fit count from
+        three calls to one.
+
         Returns None only if every source fails (Hyprland reports no
         window AND non-Hyprland geometry is invalid), in which case the
         caller should fall back to the existing pixel-space code path.
@@ -465,7 +474,8 @@ class FullscreenPreview(QMainWindow):
                 long_side=float(max(pw, ph)),
             )
         if floating is True:
-            win = self._hyprctl_get_window()
+            if win is None:
+                win = self._hyprctl_get_window()
             if win and win.get("at") and win.get("size"):
                 wx, wy = win["at"]
                 ww, wh = win["size"]
@@ -512,6 +522,12 @@ class FullscreenPreview(QMainWindow):
             return
         import os
         on_hypr = bool(os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"))
+        # Cache the hyprctl window query — `_hyprctl_get_window()` is a
+        # ~3ms subprocess.run call on the GUI thread, and the helpers
+        # below would each fire it again if we didn't pass it down.
+        # Threading the dict through cuts the per-fit subprocess count
+        # from three to one, eliminating ~6ms of UI freeze per navigation.
+        win = None
         if on_hypr:
             win = self._hyprctl_get_window()
             if win is None:
@@ -531,7 +547,7 @@ class FullscreenPreview(QMainWindow):
         screen = self.screen()
         if screen is None:
             return
-        viewport = self._derive_viewport_for_fit(floating)
+        viewport = self._derive_viewport_for_fit(floating, win=win)
         if viewport is None:
             # No source for a viewport (Hyprland reported no window AND
             # Qt geometry is invalid). Bail without dispatching — clearing
@@ -543,7 +559,7 @@ class FullscreenPreview(QMainWindow):
             # Hyprland: hyprctl is the sole authority. Calling self.resize()
             # here would race with the batch below and produce visible flashing
             # when the window also has to move.
-            self._hyprctl_resize_and_move(w, h, x, y)
+            self._hyprctl_resize_and_move(w, h, x, y, win=win)
         else:
             # Non-Hyprland fallback: Qt drives geometry directly. Use
             # setGeometry with the computed top-left rather than resize()
@@ -724,12 +740,20 @@ class FullscreenPreview(QMainWindow):
         except FileNotFoundError:
             pass
 
-    def _hyprctl_resize_and_move(self, w: int, h: int, x: int, y: int) -> None:
+    def _hyprctl_resize_and_move(
+        self, w: int, h: int, x: int, y: int, win: dict | None = None
+    ) -> None:
         """Atomically resize and move this window via a single hyprctl batch.
 
         Gated by BOORU_VIEWER_NO_HYPR_RULES (resize/move/no_anim parts) and
         BOORU_VIEWER_NO_POPOUT_ASPECT_LOCK (the keep_aspect_ratio parts) —
         see core/config.py.
+
+        `win` may be passed in by the caller to skip the
+        `_hyprctl_get_window()` subprocess call. The address is the only
+        thing we actually need from it; cutting the per-fit subprocess
+        count from three to one removes ~6ms of GUI-thread blocking
+        every time `_fit_to_content` runs.
         """
         import os, subprocess
         from ..core.config import hypr_rules_enabled, popout_aspect_lock_enabled
@@ -739,7 +763,8 @@ class FullscreenPreview(QMainWindow):
         aspect_on = popout_aspect_lock_enabled()
         if not rules_on and not aspect_on:
             return
-        win = self._hyprctl_get_window()
+        if win is None:
+            win = self._hyprctl_get_window()
         if not win or not win.get("floating"):
             return
         addr = win.get("address")
@@ -1032,10 +1057,32 @@ class _MpvGLWidget(QWidget):
         self._proc_addr_fn = None
         self._frame_ready.connect(self._gl.update)
         # Create mpv eagerly on the main thread.
+        #
+        # `ao=pulse` is critical for Linux Discord screen-share audio
+        # capture. Discord on Linux only enumerates audio clients via
+        # the libpulse API; it does not see clients that talk to
+        # PipeWire natively (which is mpv's default `ao=pipewire`).
+        # Forcing the pulseaudio output here makes mpv go through
+        # PipeWire's pulseaudio compatibility layer, which Discord
+        # picks up the same way it picks up Firefox. Without this,
+        # videos play locally but the audio is silently dropped from
+        # any Discord screen share. See:
+        #   https://github.com/mpv-player/mpv/issues/11100
+        #   https://github.com/edisionnano/Screenshare-with-audio-on-Discord-with-Linux
+        # On Windows mpv ignores `ao=pulse` and falls through to the
+        # next entry, so listing `wasapi` second keeps Windows playback
+        # working without a platform branch here.
+        #
+        # `audio_client_name` is the name mpv registers with the audio
+        # backend. Sets `application.name` and friends so capture tools
+        # group mpv's audio under the booru-viewer app identity instead
+        # of the default "mpv Media Player".
         self._mpv = mpvlib.MPV(
             vo="libmpv",
             hwdec="auto",
             keep_open="yes",
+            ao="pulse,wasapi,",
+            audio_client_name="booru-viewer",
             input_default_bindings=False,
             input_vo_keyboard=False,
             osc=False,

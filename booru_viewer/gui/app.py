@@ -1275,8 +1275,16 @@ class BooruApp(QMainWindow):
             )
             self._preview.update_save_state(self._is_post_saved(post.id))
             self._status.showMessage(f"Loading #{post.id}...")
-            self._dl_progress.show()
-            self._dl_progress.setRange(0, 0)
+            # Skip the dl_progress widget when the popout is open. The user
+            # is looking at the popout, not the embedded preview area, and
+            # the right splitter is set to [0, 0, 1000] so the show/hide
+            # pulse on the dl_progress section forces a layout pass that
+            # briefly compresses the main grid (visible flash on every
+            # click, even on the same post since download_image still runs
+            # against the cache and the show/hide cycle still fires).
+            if not (self._fullscreen_window and self._fullscreen_window.isVisible()):
+                self._dl_progress.show()
+                self._dl_progress.setRange(0, 0)
 
             def _progress(downloaded, total):
                 self._signals.download_progress.emit(downloaded, total)
@@ -1356,14 +1364,19 @@ class BooruApp(QMainWindow):
         self._run_async(_prefetch_spiral)
 
     def _on_download_progress(self, downloaded: int, total: int) -> None:
+        # Same suppression as _on_post_activated: when the popout is open,
+        # don't manipulate the dl_progress widget at all. Status bar still
+        # gets the byte counts so the user has feedback in the main window.
+        popout_open = bool(self._fullscreen_window and self._fullscreen_window.isVisible())
         if total > 0:
-            self._dl_progress.setRange(0, total)
-            self._dl_progress.setValue(downloaded)
-            self._dl_progress.show()
+            if not popout_open:
+                self._dl_progress.setRange(0, total)
+                self._dl_progress.setValue(downloaded)
+                self._dl_progress.show()
             mb = downloaded / (1024 * 1024)
             total_mb = total / (1024 * 1024)
             self._status.showMessage(f"Downloading... {mb:.1f}/{total_mb:.1f} MB")
-        else:
+        elif not popout_open:
             self._dl_progress.setRange(0, 0)  # indeterminate
             self._dl_progress.show()
 
