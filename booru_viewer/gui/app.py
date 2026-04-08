@@ -423,7 +423,7 @@ class BooruApp(QMainWindow):
         self._score_spin = QSpinBox()
         self._score_spin.setRange(0, 99999)
         self._score_spin.setValue(0)
-        self._score_spin.setFixedWidth(50)
+        self._score_spin.setFixedWidth(40)
         self._score_spin.setFixedHeight(23)
         self._score_spin.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
         top.addWidget(self._score_spin)
@@ -439,7 +439,7 @@ class BooruApp(QMainWindow):
         self._page_spin = QSpinBox()
         self._page_spin.setRange(1, 99999)
         self._page_spin.setValue(1)
-        self._page_spin.setFixedWidth(50)
+        self._page_spin.setFixedWidth(40)
         self._page_spin.setFixedHeight(23)  # match the surrounding 23px row
         self._page_spin.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
         top.addWidget(self._page_spin)
