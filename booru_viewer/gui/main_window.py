@@ -465,10 +465,10 @@ class BooruApp(QMainWindow):
 
         file_menu.addSeparator()
 
-        batch_action = QAction("Batch &Download Page...", self)
-        batch_action.setShortcut(QKeySequence("Ctrl+D"))
-        batch_action.triggered.connect(self._batch_download)
-        file_menu.addAction(batch_action)
+        self._batch_action = QAction("Batch &Download Page...", self)
+        self._batch_action.setShortcut(QKeySequence("Ctrl+D"))
+        self._batch_action.triggered.connect(self._batch_download)
+        file_menu.addAction(self._batch_action)
 
         file_menu.addSeparator()
 
@@ -538,6 +538,11 @@ class BooruApp(QMainWindow):
         self._browse_btn.setChecked(index == 0)
         self._bookmark_btn.setChecked(index == 1)
         self._library_btn.setChecked(index == 2)
+        # Batch Download (Ctrl+D / File menu) only makes sense on browse —
+        # bookmarks and library tabs already show local files, downloading
+        # them again is meaningless. Disabling the QAction also disables
+        # its keyboard shortcut.
+        self._batch_action.setEnabled(index == 0)
         # Clear grid selections and current post to prevent cross-tab action conflicts
         # Preview media stays visible but actions are disabled until a new post is selected
         self._grid.clear_selection()
@@ -2622,6 +2627,9 @@ class BooruApp(QMainWindow):
         self._run_async(_fav)
 
     def _batch_download_posts(self, posts: list, dest: str) -> None:
+        # Same _batch_dest stash as _batch_download — _on_batch_progress
+        # incrementally lights saved dots when dest is inside the library.
+        self._batch_dest = Path(dest)
         async def _batch():
             for i, post in enumerate(posts):
                 try:
@@ -2631,7 +2639,7 @@ class BooruApp(QMainWindow):
                     if not target.exists():
                         import shutil
                         shutil.copy2(path, target)
-                    self._signals.batch_progress.emit(i + 1, len(posts))
+                    self._signals.batch_progress.emit(i + 1, len(posts), post.id)
                 except Exception as e:
                     log.warning(f"Batch #{post.id} failed: {e}")
             self._signals.batch_done.emit(f"Downloaded {len(posts)} images to {dest}")
@@ -2814,6 +2822,9 @@ class BooruApp(QMainWindow):
         if not dest:
             return
 
+        # Stash dest so _on_batch_done can decide whether the destination
+        # is inside the library and the saved-dots need refreshing.
+        self._batch_dest = Path(dest)
         posts = list(self._posts)
         self._status.showMessage(f"Downloading {len(posts)} images...")
 
@@ -2826,15 +2837,29 @@ class BooruApp(QMainWindow):
                     if not target.exists():
                         import shutil
                         shutil.copy2(path, target)
-                    self._signals.batch_progress.emit(i + 1, len(posts))
+                    self._signals.batch_progress.emit(i + 1, len(posts), post.id)
                 except Exception as e:
                     log.warning(f"Batch #{post.id} failed: {e}")
             self._signals.batch_done.emit(f"Downloaded {len(posts)} images to {dest}")
 
         self._run_async(_batch)
 
-    def _on_batch_progress(self, current: int, total: int) -> None:
+    def _on_batch_progress(self, current: int, total: int, post_id: int) -> None:
         self._status.showMessage(f"Downloading {current}/{total}...")
+        # Light the browse saved-dot for the just-finished post if the
+        # batch destination is inside the library. Runs per-post on the
+        # main thread (this is a Qt slot), so the dot appears as the
+        # files land instead of all at once when the batch completes.
+        dest = getattr(self, "_batch_dest", None)
+        if dest is None:
+            return
+        from ..core.config import saved_dir
+        if not dest.is_relative_to(saved_dir()):
+            return
+        for i, p in enumerate(self._posts):
+            if p.id == post_id and i < len(self._grid._thumbs):
+                self._grid._thumbs[i].set_saved_locally(True)
+                break
 
     # -- Toggles --
 
@@ -3101,6 +3126,9 @@ class BooruApp(QMainWindow):
             self._bookmarks_view.refresh()
         if self._stack.currentIndex() == 2:
             self._library_view.refresh()
+        # Saved-dot updates happen incrementally in _on_batch_progress as
+        # each file lands; this slot just clears the destination stash.
+        self._batch_dest = None
 
     def closeEvent(self, event) -> None:
         # Flush any pending splitter / window-state saves (debounce timers

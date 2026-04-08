@@ -23,7 +23,7 @@ class AsyncSignals(QObject):
     bookmark_done = Signal(int, str)
     bookmark_error = Signal(str)
     autocomplete_done = Signal(list)
-    batch_progress = Signal(int, int)      # current, total
+    batch_progress = Signal(int, int, int)  # current, total, post_id (of the just-finished item)
     batch_done = Signal(str)
     download_progress = Signal(int, int)  # bytes_downloaded, total_bytes
     prefetch_progress = Signal(int, float)  # index, progress (0-1 or -1 to hide)
