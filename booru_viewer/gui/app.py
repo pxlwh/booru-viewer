@@ -2015,6 +2015,30 @@ class BooruApp(QMainWindow):
         when running off the edge — used for the video-end "Next" auto-advance
         on tabs that don't have pagination.
         """
+        # Note on the missing explicit activate calls below: every
+        # tab's `grid._select(idx)` already chains through to the
+        # activation handler via the `post_selected` signal, which is
+        # wired (per tab) to a slot that ultimately calls
+        # `_on_post_activated` / `_on_bookmark_activated` /
+        # `_show_library_post`. The previous version of this method
+        # called the activate handler directly *after* `_select`,
+        # which fired the activation TWICE per keyboard navigation.
+        #
+        # The second activation scheduled a second async `_load`,
+        # which fired a second `set_media` → second `_video.stop()` →
+        # second `play_file()` cycle. The two `play_file`'s 250ms
+        # stale-eof ignore windows leave a brief un-armed gap between
+        # them (between the new `_eof_pending = False` reset and the
+        # new `_eof_ignore_until` set). An async `eof-reached=True`
+        # event from one of the stops landing in that gap would stick
+        # `_eof_pending = True`, get picked up by `_poll`'s
+        # `_handle_eof`, fire `play_next` in Loop=Next mode, and
+        # cause `_navigate_preview(1, wrap=True)` to advance ANOTHER
+        # post. End result: pressing Right once sometimes advanced
+        # two posts. Random skip bug, observed on keyboard nav.
+        #
+        # Stop calling the activation handlers directly. Trust the
+        # signal chain.
         if self._stack.currentIndex() == 1:
             # Bookmarks view
             grid = self._bookmarks_view._grid
@@ -2022,11 +2046,9 @@ class BooruApp(QMainWindow):
             idx = grid.selected_index + direction
             if 0 <= idx < len(favs):
                 grid._select(idx)
-                self._on_bookmark_activated(favs[idx])
             elif wrap and favs:
                 idx = 0 if direction > 0 else len(favs) - 1
                 grid._select(idx)
-                self._on_bookmark_activated(favs[idx])
         elif self._stack.currentIndex() == 2:
             # Library view
             grid = self._library_view._grid
@@ -2034,17 +2056,14 @@ class BooruApp(QMainWindow):
             idx = grid.selected_index + direction
             if 0 <= idx < len(files):
                 grid._select(idx)
-                self._library_view.file_activated.emit(str(files[idx]))
             elif wrap and files:
                 idx = 0 if direction > 0 else len(files) - 1
                 grid._select(idx)
-                self._library_view.file_activated.emit(str(files[idx]))
         else:
             idx = self._grid.selected_index + direction
             log.info(f"Navigate: direction={direction} current={self._grid.selected_index} next={idx} total={len(self._posts)}")
             if 0 <= idx < len(self._posts):
                 self._grid._select(idx)
-                self._on_post_activated(idx)
             elif idx >= len(self._posts) and direction > 0 and len(self._posts) > 0 and not self._infinite_scroll:
                 self._search.nav_page_turn = "first"
                 self._next_page()
