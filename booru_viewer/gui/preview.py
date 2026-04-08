@@ -17,8 +17,6 @@ import mpv as mpvlib
 
 _log = logging.getLogger("booru")
 
-VIDEO_EXTENSIONS = (".mp4", ".webm", ".mkv", ".avi", ".mov")
-
 
 class Viewport(NamedTuple):
     """Where and how large the user wants popout content to appear.
@@ -49,10 +47,6 @@ class Viewport(NamedTuple):
 # are always tens of pixels minimum) and large enough to absorb the
 # 1-2px per-nav drift that compounds across many navigations.
 _DRIFT_TOLERANCE = 2
-
-
-def _is_video(path: str) -> bool:
-    return Path(path).suffix.lower() in VIDEO_EXTENSIONS
 
 
 ## Overlay styling for the popout's translucent toolbar / controls bar
@@ -2271,3 +2265,7 @@ class ImagePreview(QWidget):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
+
+
+# -- Refactor compatibility shims (deleted in commit 14) --
+from .media.constants import VIDEO_EXTENSIONS, _is_video  # re-export for refactor compat
