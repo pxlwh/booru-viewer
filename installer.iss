@@ -2,7 +2,7 @@
 
 [Setup]
 AppName=booru-viewer
-AppVersion=0.2.1
+AppVersion=0.2.2
 AppPublisher=pax
 AppPublisherURL=https://git.pax.moe/pax/booru-viewer
 DefaultDirName={localappdata}\booru-viewer
