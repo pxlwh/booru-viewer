@@ -76,8 +76,10 @@ class LibraryView(QWidget):
         top.addWidget(self._folder_combo)
 
         self._sort_combo = QComboBox()
-        self._sort_combo.addItems(["Date", "Name", "Size"])
-        self._sort_combo.setFixedWidth(80)
+        self._sort_combo.addItems(["Date", "Post ID", "Size"])
+        # 75 is the tight floor: 68 clipped the trailing D under the
+        # bundled themes (font metrics ate more than the math suggested).
+        self._sort_combo.setFixedWidth(75)
         self._sort_combo.currentTextChanged.connect(lambda _: self.refresh())
         top.addWidget(self._sort_combo)
 
@@ -252,8 +254,16 @@ class LibraryView(QWidget):
 
     def _sort_files(self) -> None:
         mode = self._sort_combo.currentText()
-        if mode == "Name":
-            self._files.sort(key=lambda p: p.name.lower())
+        if mode == "Post ID":
+            # Numeric sort by post id (filename stem). Library files are
+            # named {post_id}.{ext} in normal usage; anything with a
+            # non-digit stem (someone manually dropped a file in) sorts
+            # to the end alphabetically so the numeric ordering of real
+            # posts isn't disrupted by stray names.
+            def _key(p: Path) -> tuple:
+                stem = p.stem
+                return (0, int(stem)) if stem.isdigit() else (1, stem.lower())
+            self._files.sort(key=_key)
         elif mode == "Size":
             self._files.sort(key=lambda p: p.stat().st_size, reverse=True)
         else:

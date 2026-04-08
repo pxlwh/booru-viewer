@@ -59,7 +59,7 @@ QPushButton {
     background-color: ${bg_subtle};
     color: ${text};
     border: 1px solid ${border_strong};
-    padding: 2px 8px;
+    padding: 2px 6px;
     min-height: 17px;
 }
 QPushButton:hover {
@@ -141,7 +141,7 @@ QComboBox {
     background-color: ${bg_subtle};
     color: ${text};
     border: 1px solid ${border_strong};
-    padding: 2px 6px;
+    padding: 2px 4px;
     min-height: 16px;
 }
 QComboBox:hover {
@@ -152,7 +152,7 @@ QComboBox:focus {
 }
 QComboBox::drop-down {
     border: none;
-    width: 18px;
+    width: 14px;
 }
 QComboBox QAbstractItemView {
     background-color: ${bg_subtle};

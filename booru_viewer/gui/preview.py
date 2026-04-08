@@ -380,11 +380,37 @@ class FullscreenPreview(QMainWindow):
             return None  # not Hyprland
         return bool(win.get("floating"))
 
-    def _fit_to_content(self, content_w: int, content_h: int) -> None:
-        """Size window to fit content. Width preserved, height from aspect ratio, clamped to screen."""
+    def _fit_to_content(self, content_w: int, content_h: int, _retry: int = 0) -> None:
+        """Size window to fit content. Width preserved, height from aspect ratio, clamped to screen.
+
+        Distinguishes "not on Hyprland" (Qt drives geometry, no aspect
+        lock available) from "on Hyprland but the window isn't visible
+        to hyprctl yet" (the very first call after a popout open races
+        the wm:openWindow event — `hyprctl clients -j` returns no entry
+        for our title for ~tens of ms). The latter case used to fall
+        through to a plain Qt resize and skip the keep_aspect_ratio
+        setprop entirely, so the *first* image popout always opened
+        without aspect locking and only subsequent navigations got the
+        right shape. Now we retry with a short backoff when on Hyprland
+        and the window isn't found, capped so a real "not Hyprland"
+        signal can't loop.
+        """
         if self.isFullScreen() or content_w <= 0 or content_h <= 0:
             return
-        floating = self._is_hypr_floating()
+        import os
+        on_hypr = bool(os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"))
+        if on_hypr:
+            win = self._hyprctl_get_window()
+            if win is None:
+                if _retry < 5:
+                    QTimer.singleShot(
+                        40,
+                        lambda: self._fit_to_content(content_w, content_h, _retry + 1),
+                    )
+                return
+            floating = bool(win.get("floating"))
+        else:
+            floating = None
         if floating is False:
             self._hyprctl_resize(0, 0)  # tiled: just set keep_aspect_ratio
             return
@@ -789,7 +815,14 @@ class ImageViewer(QWidget):
             return
         scale_w = vw / pw
         scale_h = vh / ph
-        self._zoom = min(scale_w, scale_h, 1.0)
+        # No 1.0 cap — scale up to fill the available view, matching how
+        # the video player fills its widget. In the popout the window is
+        # already aspect-locked to the image's aspect, so scaling up
+        # produces a clean fill with no letterbox. In the embedded
+        # preview the user can drag the splitter past the image's native
+        # size; letting it scale up there fills the pane the same way
+        # the popout does.
+        self._zoom = min(scale_w, scale_h)
         self._offset = QPointF(
             (vw - pw * self._zoom) / 2,
             (vh - ph * self._zoom) / 2,
