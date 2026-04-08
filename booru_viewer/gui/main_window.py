@@ -2929,6 +2929,11 @@ class BooruApp(QMainWindow):
             self._privacy_overlay = QWidget(self)
             self._privacy_overlay.setStyleSheet("background: black;")
             self._privacy_overlay.hide()
+            # Tracks whether the popout was visible at privacy-on time
+            # so privacy-off only restores it if it was actually up
+            # before. Without the gate, privacy-off would re-show a
+            # popout that the user closed before triggering privacy.
+            self._popout_was_visible = False
 
         self._privacy_on = not self._privacy_on
         if self._privacy_on:
@@ -2939,15 +2944,26 @@ class BooruApp(QMainWindow):
             # Pause preview video
             if self._preview._stack.currentIndex() == 1:
                 self._preview._video_player.pause()
-            # Hide and pause popout
-            if self._fullscreen_window and self._fullscreen_window.isVisible():
-                if self._fullscreen_window._stack.currentIndex() == 1:
-                    self._fullscreen_window._video.pause()
-                self._fullscreen_window.hide()
+            # Delegate popout hide-and-pause to FullscreenPreview so it
+            # can capture its own geometry for restore.
+            self._popout_was_visible = bool(
+                self._fullscreen_window and self._fullscreen_window.isVisible()
+            )
+            if self._popout_was_visible:
+                self._fullscreen_window.privacy_hide()
         else:
             self._privacy_overlay.hide()
-            if self._fullscreen_window:
-                self._fullscreen_window.show()
+            # Resume embedded preview video — unconditional resume, the
+            # common case (privacy hides → user comes back → video should
+            # be playing again) wins over the manually-paused edge case.
+            if self._preview._stack.currentIndex() == 1:
+                self._preview._video_player.resume()
+            # Restore the popout via its own privacy_show method, which
+            # also re-dispatches the captured geometry to Hyprland (Qt
+            # show() alone doesn't preserve position on Wayland) and
+            # resumes its video.
+            if self._popout_was_visible and self._fullscreen_window:
+                self._fullscreen_window.privacy_show()
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)

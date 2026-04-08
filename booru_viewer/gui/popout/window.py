@@ -172,6 +172,17 @@ class FullscreenPreview(QMainWindow):
         self._video._controls_bar.raise_()
         self._toolbar.raise_()
 
+        # Privacy overlay — black QWidget child of central, raised over
+        # the media stack on privacy_hide. Lives inside the popout
+        # itself instead of forcing main_window to hide() the popout
+        # window — Wayland's hide→show round-trip drops position because
+        # the compositor unmaps and remaps, and Hyprland may re-tile the
+        # remap depending on window rules. Keeping the popout mapped
+        # with an in-place overlay sidesteps both issues.
+        self._privacy_overlay = QWidget(central)
+        self._privacy_overlay.setStyleSheet("background: black;")
+        self._privacy_overlay.hide()
+
         # Auto-hide timer for overlay UI
         self._ui_visible = True
         self._hide_timer = QTimer(self)
@@ -904,6 +915,30 @@ class FullscreenPreview(QMainWindow):
         except FileNotFoundError:
             pass
 
+    def privacy_hide(self) -> None:
+        """Cover the popout's content with a black overlay for privacy.
+
+        The popout window itself is NOT hidden — Wayland's hide→show
+        round-trip drops position because the compositor unmaps and
+        remaps the window, and Hyprland may re-tile the remapped window
+        depending on its rules. Instead we raise an in-place black
+        QWidget overlay over the central widget. The window stays
+        mapped, position is preserved automatically, video is paused.
+        """
+        if self._stack.currentIndex() == 1:
+            self._video.pause()
+        central = self.centralWidget()
+        if central is not None:
+            self._privacy_overlay.setGeometry(0, 0, central.width(), central.height())
+        self._privacy_overlay.raise_()
+        self._privacy_overlay.show()
+
+    def privacy_show(self) -> None:
+        """Lift the black overlay and resume video. Counterpart to privacy_hide."""
+        self._privacy_overlay.hide()
+        if self._stack.currentIndex() == 1:
+            self._video.resume()
+
     def _enter_fullscreen(self) -> None:
         """Enter fullscreen — capture windowed geometry first so F11 back can restore it.
 
@@ -996,6 +1031,9 @@ class FullscreenPreview(QMainWindow):
         self._toolbar.setGeometry(0, 0, w, tb_h)
         ctrl_h = self._video._controls_bar.sizeHint().height()
         self._video._controls_bar.setGeometry(0, h - ctrl_h, w, ctrl_h)
+        # Privacy overlay covers the entire central widget when active.
+        if self._privacy_overlay.isVisible():
+            self._privacy_overlay.setGeometry(0, 0, w, h)
         # Capture corner-resize into the persistent viewport so the
         # long_side the user chose survives subsequent navigations.
         #
