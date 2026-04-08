@@ -35,7 +35,7 @@ def main() -> None:
                 file=sys.stderr,
             )
 
-    from booru_viewer.gui.app import run
+    from booru_viewer.gui.app_runtime import run
     run()
 
 

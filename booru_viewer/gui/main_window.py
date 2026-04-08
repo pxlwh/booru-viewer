@@ -41,7 +41,7 @@ from ..core.cache import download_image, download_thumbnail, cache_size_bytes, e
 from ..core.config import MEDIA_EXTENSIONS
 
 from .grid import ThumbnailGrid
-from .preview import ImagePreview
+from .preview_pane import ImagePreview
 from .search import SearchBar
 from .sites import SiteManagerDialog
 from .bookmarks import BookmarksView
@@ -1130,7 +1130,7 @@ class BooruApp(QMainWindow):
             # the entire multi-MB file to land. Cached videos go through
             # the normal flow because the local path is already there.
             from ..core.cache import is_cached
-            from .preview import VIDEO_EXTENSIONS
+            from .media.constants import VIDEO_EXTENSIONS
             is_video = bool(
                 post.file_url
                 and Path(post.file_url.split('?')[0]).suffix.lower() in VIDEO_EXTENSIONS
@@ -2058,7 +2058,7 @@ class BooruApp(QMainWindow):
         idx = self._grid.selected_index
         if 0 <= idx < len(self._posts):
             self._info_panel.set_post(self._posts[idx])
-        from .preview import FullscreenPreview
+        from .popout.window import FullscreenPreview
         # Restore persisted window state
         saved_geo = self._db.get_setting("slideshow_geometry")
         saved_fs = self._db.get_setting_bool("slideshow_fullscreen")
@@ -2132,7 +2132,7 @@ class BooruApp(QMainWindow):
     def _on_fullscreen_closed(self) -> None:
         # Persist popout window state to DB
         if self._fullscreen_window:
-            from .preview import FullscreenPreview
+            from .popout.window import FullscreenPreview
             fs = FullscreenPreview._saved_fullscreen
             geo = FullscreenPreview._saved_geometry
             self._db.set_setting("slideshow_fullscreen", "1" if fs else "0")
