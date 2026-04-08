@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import NamedTuple
 
-from PySide6.QtCore import Qt, QPointF, Signal, QTimer, Property
+from PySide6.QtCore import Qt, QPointF, QRect, Signal, QTimer, Property
 from PySide6.QtGui import QPixmap, QPainter, QWheelEvent, QMouseEvent, QKeyEvent, QMovie, QColor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QMainWindow,
@@ -17,6 +18,24 @@ import mpv as mpvlib
 _log = logging.getLogger("booru")
 
 VIDEO_EXTENSIONS = (".mp4", ".webm", ".mkv", ".avi", ".mov")
+
+
+class Viewport(NamedTuple):
+    """Where and how large the user wants popout content to appear.
+
+    Three numbers, no aspect. Aspect is a property of the currently-
+    displayed post and is recomputed from actual content on every
+    navigation. The viewport stays put across navigations; the window
+    rect is a derived projection (Viewport, content_aspect) → (x,y,w,h).
+
+    `long_side` is the binding edge length: for landscape it becomes
+    width, for portrait it becomes height. Symmetric across the two
+    orientations, which is the property that breaks the
+    width-anchor ratchet that the previous `_fit_to_content` had.
+    """
+    center_x: float
+    center_y: float
+    long_side: float
 
 
 def _is_video(path: str) -> bool:
@@ -380,8 +399,93 @@ class FullscreenPreview(QMainWindow):
             return None  # not Hyprland
         return bool(win.get("floating"))
 
+    @staticmethod
+    def _compute_window_rect(
+        viewport: Viewport, content_aspect: float, screen
+    ) -> tuple[int, int, int, int]:
+        """Project a viewport onto a window rect for the given content aspect.
+
+        Symmetric across portrait/landscape: a 9:16 portrait and a 16:9
+        landscape with the same `long_side` have the same maximum edge
+        length. Proportional clamp shrinks both edges by the same factor
+        if either would exceed its 0.90-of-screen ceiling, preserving
+        aspect exactly. Pure function — no side effects, no widget
+        access, all inputs explicit so it's trivial to reason about.
+        """
+        if content_aspect >= 1.0:               # landscape or square
+            w = viewport.long_side
+            h = viewport.long_side / content_aspect
+        else:                                   # portrait
+            h = viewport.long_side
+            w = viewport.long_side * content_aspect
+
+        avail = screen.availableGeometry()
+        cap_w = avail.width() * 0.90
+        cap_h = avail.height() * 0.90
+        scale = min(1.0, cap_w / w, cap_h / h)
+        w *= scale
+        h *= scale
+
+        x = viewport.center_x - w / 2
+        y = viewport.center_y - h / 2
+
+        # Nudge onto screen if the projected rect would land off-edge.
+        x = max(avail.x(), min(x, avail.right() - w))
+        y = max(avail.y(), min(y, avail.bottom() - h))
+
+        return (round(x), round(y), round(w), round(h))
+
+    def _derive_viewport_for_fit(self, floating: bool | None) -> Viewport | None:
+        """Build a viewport from existing state at the start of a fit call.
+
+        This is the scoped (recompute-from-current-state) approach. The
+        viewport isn't a persistent field on the popout — it's recomputed
+        per call from one of three sources, in priority order:
+
+          1. First fit after open or F11 exit: derive from the existing
+             `_pending_size` + `_pending_position_restore` one-shots.
+             These are seeded in `__init__` from the saved DB geometry
+             and re-armed in `_exit_fullscreen`.
+          2. Navigation fit on Hyprland: derive from current
+             hyprctl-reported window position+size, so the viewport
+             always reflects whatever the user has dragged the popout to.
+          3. Navigation fit on non-Hyprland: derive from `self.geometry()`
+             for the same reason.
+
+        Returns None only if every source fails (Hyprland reports no
+        window AND non-Hyprland geometry is invalid), in which case the
+        caller should fall back to the existing pixel-space code path.
+        """
+        if self._first_fit_pending and self._pending_size and self._pending_position_restore:
+            pw, ph = self._pending_size
+            px, py = self._pending_position_restore
+            return Viewport(
+                center_x=px + pw / 2,
+                center_y=py + ph / 2,
+                long_side=float(max(pw, ph)),
+            )
+        if floating is True:
+            win = self._hyprctl_get_window()
+            if win and win.get("at") and win.get("size"):
+                wx, wy = win["at"]
+                ww, wh = win["size"]
+                return Viewport(
+                    center_x=wx + ww / 2,
+                    center_y=wy + wh / 2,
+                    long_side=float(max(ww, wh)),
+                )
+        if floating is None:
+            rect = self.geometry()
+            if rect.width() > 0 and rect.height() > 0:
+                return Viewport(
+                    center_x=rect.x() + rect.width() / 2,
+                    center_y=rect.y() + rect.height() / 2,
+                    long_side=float(max(rect.width(), rect.height())),
+                )
+        return None
+
     def _fit_to_content(self, content_w: int, content_h: int, _retry: int = 0) -> None:
-        """Size window to fit content. Width preserved, height from aspect ratio, clamped to screen.
+        """Size window to fit content. Viewport-based: long_side preserved across navs.
 
         Distinguishes "not on Hyprland" (Qt drives geometry, no aspect
         lock available) from "on Hyprland but the window isn't visible
@@ -394,6 +498,15 @@ class FullscreenPreview(QMainWindow):
         right shape. Now we retry with a short backoff when on Hyprland
         and the window isn't found, capped so a real "not Hyprland"
         signal can't loop.
+
+        Math is now viewport-based: a Viewport (center + long_side) is
+        derived from current state, then projected onto a rect for the
+        new content aspect via `_compute_window_rect`. This breaks the
+        width-anchor ratchet that the previous version had — long_side
+        is symmetric across portrait and landscape, so navigating
+        P→L→P→L doesn't permanently shrink the landscape width.
+        See the plan at ~/.claude/plans/ancient-growing-lantern.md
+        for the full derivation.
         """
         if self.isFullScreen() or content_w <= 0 or content_h <= 0:
             return
@@ -416,44 +529,29 @@ class FullscreenPreview(QMainWindow):
             return
         aspect = content_w / content_h
         screen = self.screen()
-        max_h = int(screen.availableGeometry().height() * 0.90) if screen else 9999
-        max_w = screen.availableGeometry().width() if screen else 9999
-        # Starting width: prefer the pending one-shot size when set (saves us
-        # from depending on self.width() during transitional Qt states like
-        # right after showNormal(), where Qt may briefly report fullscreen
-        # dimensions before Hyprland confirms the windowed geometry).
-        if self._first_fit_pending and self._pending_size:
-            start_w = self._pending_size[0]
-        else:
-            start_w = self.width()
-        w = min(start_w, max_w)
-        h = int(w / aspect)
-        if h > max_h:
-            h = max_h
-            w = int(h * aspect)
-        # Decide target top-left:
-        #   first fit after open with a saved position → restore it (one-shot)
-        #   any subsequent fit → center-pin from current Hyprland position
-        target: tuple[int, int] | None = None
-        if self._first_fit_pending and self._pending_position_restore:
-            target = self._pending_position_restore
-        elif floating is True:
-            win = self._hyprctl_get_window()
-            if win and win.get("at") and win.get("size"):
-                cx = win["at"][0] + win["size"][0] // 2
-                cy = win["at"][1] + win["size"][1] // 2
-                target = (cx - w // 2, cy - h // 2)
+        if screen is None:
+            return
+        viewport = self._derive_viewport_for_fit(floating)
+        if viewport is None:
+            # No source for a viewport (Hyprland reported no window AND
+            # Qt geometry is invalid). Bail without dispatching — clearing
+            # the one-shots would lose the saved position; leaving them
+            # set lets a subsequent fit retry.
+            return
+        x, y, w, h = self._compute_window_rect(viewport, aspect, screen)
         if floating is True:
             # Hyprland: hyprctl is the sole authority. Calling self.resize()
             # here would race with the batch below and produce visible flashing
             # when the window also has to move.
-            if target is not None:
-                self._hyprctl_resize_and_move(w, h, target[0], target[1])
-            else:
-                self._hyprctl_resize(w, h)
+            self._hyprctl_resize_and_move(w, h, x, y)
         else:
-            # Non-Hyprland fallback: Qt drives geometry directly.
-            self.resize(w, h)
+            # Non-Hyprland fallback: Qt drives geometry directly. Use
+            # setGeometry with the computed top-left rather than resize()
+            # so the window center stays put — Qt's resize() anchors
+            # top-left and lets the bottom-right move, which causes the
+            # popout center to drift toward the upper-left of the screen
+            # over repeated navigations.
+            self.setGeometry(QRect(x, y, w, h))
         self._first_fit_pending = False
         self._pending_position_restore = None
         self._pending_size = None
