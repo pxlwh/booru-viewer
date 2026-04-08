@@ -51,18 +51,6 @@ from .settings import SettingsDialog
 log = logging.getLogger("booru")
 
 
-@dataclass
-class SearchState:
-    """Mutable state that resets on every new search."""
-    shown_post_ids: set[int] = field(default_factory=set)
-    page_cache: dict[int, list] = field(default_factory=dict)
-    infinite_exhausted: bool = False
-    infinite_last_page: int = 0
-    infinite_api_exhausted: bool = False
-    nav_page_turn: str | None = None
-    append_queue: list = field(default_factory=list)
-
-
 class LogHandler(logging.Handler, QObject):
     """Logging handler that emits to a QTextEdit."""
 
@@ -3606,3 +3594,7 @@ def run() -> None:
     window = BooruApp()
     window.show()
     sys.exit(app.exec())
+
+
+# -- Refactor compatibility shims (deleted in commit 14) --
+from .search_state import SearchState  # re-export for refactor compat
