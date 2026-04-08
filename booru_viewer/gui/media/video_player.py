@@ -226,6 +226,14 @@ class VideoPlayer(QWidget):
         # observer firings so widget-driven re-emissions don't trigger
         # repeated _fit_to_content calls (which would loop forever).
         self._last_video_size: tuple[int, int] | None = None
+        # Pending mute state — survives the lazy mpv creation. The popout's
+        # video player is constructed with no mpv attached (mpv is wired
+        # in _ensure_mpv on first set_media), and main_window's open-popout
+        # state sync writes is_muted before mpv exists. Without a Python-
+        # side fallback the value would be lost — the setter would update
+        # button text but the actual mpv instance (created later) would
+        # spawn unmuted by default. _ensure_mpv replays this on creation.
+        self._pending_mute: bool = False
 
     def _ensure_mpv(self) -> mpvlib.MPV:
         """Set up mpv callbacks on first use. MPV instance is pre-created."""
@@ -234,6 +242,7 @@ class VideoPlayer(QWidget):
         self._mpv = self._gl_widget._mpv
         self._mpv['loop-file'] = 'inf'  # default to loop mode
         self._mpv.volume = self._vol_slider.value()
+        self._mpv.mute = self._pending_mute
         self._mpv.observe_property('duration', self._on_duration_change)
         self._mpv.observe_property('eof-reached', self._on_eof_reached)
         self._mpv.observe_property('video-params', self._on_video_params)
@@ -258,10 +267,11 @@ class VideoPlayer(QWidget):
     def is_muted(self) -> bool:
         if self._mpv:
             return bool(self._mpv.mute)
-        return False
+        return self._pending_mute
 
     @is_muted.setter
     def is_muted(self, val: bool) -> None:
+        self._pending_mute = val
         if self._mpv:
             self._mpv.mute = val
         self._mute_btn.setText("Unmute" if val else "Mute")
@@ -405,6 +415,7 @@ class VideoPlayer(QWidget):
     def _toggle_mute(self) -> None:
         if self._mpv:
             self._mpv.mute = not self._mpv.mute
+            self._pending_mute = bool(self._mpv.mute)
             self._mute_btn.setText("Unmute" if self._mpv.mute else "Mute")
 
     # -- mpv callbacks (called from mpv thread) --
