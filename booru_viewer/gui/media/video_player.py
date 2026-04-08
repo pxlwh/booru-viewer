@@ -190,6 +190,29 @@ class VideoPlayer(QWidget):
         self._eof_ignore_until: float = 0.0
         self._eof_ignore_window_secs: float = 0.25
 
+        # Seek-pending pin window — covers the user-clicked-the-seek-slider
+        # race. The flow: user clicks slider → _ClickSeekSlider.setValue
+        # (visual jumps to click position) → clicked_position emits →
+        # _seek dispatches mpv.seek (async on mpv's thread). Meanwhile
+        # the 100ms _poll tick reads mpv.time_pos (still the OLD
+        # position) and writes it back to the slider via setValue,
+        # snapping the slider visually backward until mpv catches up.
+        # The isSliderDown guard at line ~425 only suppresses the
+        # writeback during a drag — fast clicks don't trigger
+        # isSliderDown. Defence: instead of just *suppressing* the
+        # writeback during the window, we *pin* the slider to the user's
+        # target position on every poll tick that lands inside the
+        # window. That way mpv's lag — however long it is up to the
+        # window length — is invisible. After the window expires,
+        # normal mpv-driven slider updates resume.
+        #
+        # Window is wider than the eof one (500ms vs 250ms) because
+        # network/streaming seeks can take longer than the local-cache
+        # seeks the eof window was sized for.
+        self._seek_pending_until: float = 0.0
+        self._seek_target_ms: int = 0
+        self._seek_pin_window_secs: float = 0.5
+
         # Polling timer for position/duration/pause/eof state
         self._poll_timer = QTimer(self)
         self._poll_timer.setInterval(100)
@@ -366,6 +389,9 @@ class VideoPlayer(QWidget):
     def _seek(self, pos: int) -> None:
         """Seek to position in milliseconds (from slider)."""
         if self._mpv:
+            import time as _time
+            self._seek_target_ms = pos
+            self._seek_pending_until = _time.monotonic() + self._seek_pin_window_secs
             self._mpv.seek(pos / 1000.0, 'absolute')
 
     def _seek_relative(self, ms: int) -> None:
@@ -423,7 +449,19 @@ class VideoPlayer(QWidget):
         if pos is not None:
             pos_ms = int(pos * 1000)
             if not self._seek_slider.isSliderDown():
-                self._seek_slider.setValue(pos_ms)
+                # Pin the slider to the user's target while a seek is in
+                # flight — mpv processes seek async, and any poll tick
+                # that fires before mpv reports the new position would
+                # otherwise snap the slider backward. Force the value to
+                # the target every tick inside the pin window; after the
+                # window expires, mpv has caught up and normal writes
+                # resume. See __init__'s `_seek_pin_window_secs` block
+                # for the race trace.
+                import time as _time
+                if _time.monotonic() < self._seek_pending_until:
+                    self._seek_slider.setValue(self._seek_target_ms)
+                else:
+                    self._seek_slider.setValue(pos_ms)
             self._time_label.setText(self._fmt(pos_ms))
 
         # Duration (from observer)
