@@ -109,6 +109,46 @@ def db_path() -> Path:
     return data_dir() / "booru.db"
 
 
+def library_folders() -> list[str]:
+    """List library folder names — direct subdirectories of saved_dir().
+
+    The library is filesystem-truth: a folder exists iff there is a real
+    directory on disk. There is no separate DB list of folder names. This
+    is the source the "Save to Library → folder" menus everywhere should
+    read from. Bookmark folders (DB-backed) are a different concept.
+    """
+    root = saved_dir()
+    if not root.is_dir():
+        return []
+    return sorted(d.name for d in root.iterdir() if d.is_dir())
+
+
+def find_library_files(post_id: int) -> list[Path]:
+    """Return all library files matching `post_id` across every folder.
+
+    The library has a flat shape: root + one level of subdirectories.
+    We walk it shallowly (one iterdir of root + one iterdir per subdir)
+    looking for any media file whose stem equals str(post_id). Used by:
+    - "is this post saved?" badges (any match → yes)
+    - delete_from_library (delete every match — handles duplicates left
+      by the old save-to-folder copy bug in a single click)
+    - the move-aware _save_to_library / library "Move to Folder" actions
+    """
+    matches: list[Path] = []
+    root = saved_dir()
+    if not root.is_dir():
+        return matches
+    stem = str(post_id)
+    for entry in root.iterdir():
+        if entry.is_file() and entry.stem == stem and entry.suffix.lower() in MEDIA_EXTENSIONS:
+            matches.append(entry)
+        elif entry.is_dir():
+            for sub in entry.iterdir():
+                if sub.is_file() and sub.stem == stem and sub.suffix.lower() in MEDIA_EXTENSIONS:
+                    matches.append(sub)
+    return matches
+
+
 # Defaults
 DEFAULT_THUMBNAIL_SIZE = (200, 200)
 DEFAULT_PAGE_SIZE = 40

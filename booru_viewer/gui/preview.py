@@ -38,7 +38,15 @@ class FullscreenPreview(QMainWindow):
     navigate = Signal(int)  # direction: -1/+1 for left/right, -cols/+cols for up/down
     play_next_requested = Signal()  # video ended in "Next" mode (wrap-aware)
     bookmark_requested = Signal()
-    save_toggle_requested = Signal()  # save or unsave depending on state
+    # Bookmark-as: emitted when the popout's Bookmark button submenu picks
+    # a bookmark folder. Empty string = Unfiled. Mirrors ImagePreview's
+    # signal so app.py routes both through _bookmark_to_folder_from_preview.
+    bookmark_to_folder = Signal(str)
+    # Save-to-library: same signal pair as ImagePreview so app.py reuses
+    # _save_from_preview / _unsave_from_preview for both. Empty string =
+    # Unfiled (root of saved_dir).
+    save_to_folder = Signal(str)
+    unsave_requested = Signal()
     blacklist_tag_requested = Signal(str)  # tag name
     blacklist_post_requested = Signal()
     privacy_requested = Signal()
@@ -89,16 +97,26 @@ class FullscreenPreview(QMainWindow):
         # short labels in narrow fixed slots.
         _tb_btn_style = "padding: 2px 6px;"
 
+        # Bookmark folders for the popout's Bookmark-as submenu — wired
+        # by app.py via set_bookmark_folders_callback after construction.
+        self._bookmark_folders_callback = None
+        self._is_bookmarked = False
+        # Library folders for the popout's Save-to-Library submenu —
+        # wired by app.py via set_folders_callback. Same shape as the
+        # bookmark folders callback above; library and bookmark folders
+        # are independent name spaces and need separate callbacks.
+        self._folders_callback = None
+
         self._bookmark_btn = QPushButton("Bookmark")
         self._bookmark_btn.setMaximumWidth(90)
         self._bookmark_btn.setStyleSheet(_tb_btn_style)
-        self._bookmark_btn.clicked.connect(self.bookmark_requested)
+        self._bookmark_btn.clicked.connect(self._on_bookmark_clicked)
         toolbar.addWidget(self._bookmark_btn)
 
         self._save_btn = QPushButton("Save")
         self._save_btn.setMaximumWidth(70)
         self._save_btn.setStyleSheet(_tb_btn_style)
-        self._save_btn.clicked.connect(self.save_toggle_requested)
+        self._save_btn.clicked.connect(self._on_save_clicked)
         toolbar.addWidget(self._save_btn)
         self._is_saved = False
 
@@ -117,8 +135,11 @@ class FullscreenPreview(QMainWindow):
         toolbar.addWidget(self._bl_post_btn)
 
         if not show_actions:
+            # Library mode: only the Save button stays — it acts as
+            # Unsave for the file currently being viewed. Bookmark and
+            # blacklist actions are meaningless on already-saved local
+            # files (no site/post id to bookmark, no search to filter).
             self._bookmark_btn.hide()
-            self._save_btn.hide()
             self._bl_tag_btn.hide()
             self._bl_post_btn.hide()
 
@@ -238,10 +259,90 @@ class FullscreenPreview(QMainWindow):
             self.blacklist_tag_requested.emit(action.text())
 
     def update_state(self, bookmarked: bool, saved: bool) -> None:
+        self._is_bookmarked = bookmarked
         self._bookmark_btn.setText("Unbookmark" if bookmarked else "Bookmark")
         self._bookmark_btn.setMaximumWidth(90 if bookmarked else 80)
         self._is_saved = saved
         self._save_btn.setText("Unsave" if saved else "Save")
+
+    def set_bookmark_folders_callback(self, callback) -> None:
+        """Wire the bookmark folder list source. Called once from app.py
+        right after the popout is constructed; matches the embedded
+        ImagePreview's set_bookmark_folders_callback shape.
+        """
+        self._bookmark_folders_callback = callback
+
+    def set_folders_callback(self, callback) -> None:
+        """Wire the library folder list source. Called once from app.py
+        right after the popout is constructed; matches the embedded
+        ImagePreview's set_folders_callback shape.
+        """
+        self._folders_callback = callback
+
+    def _on_save_clicked(self) -> None:
+        """Popout Save button — same shape as the embedded preview's
+        version. When already saved, emit unsave_requested for the existing
+        unsave path. When not saved, pop a menu under the button with
+        Unfiled / library folders / + New Folder, then emit the chosen
+        name through save_to_folder. app.py reuses _save_from_preview /
+        _unsave_from_preview to handle both signals.
+        """
+        if self._is_saved:
+            self.unsave_requested.emit()
+            return
+        menu = QMenu(self)
+        unfiled = menu.addAction("Unfiled")
+        menu.addSeparator()
+        folder_actions: dict[int, str] = {}
+        if self._folders_callback:
+            for folder in self._folders_callback():
+                a = menu.addAction(folder)
+                folder_actions[id(a)] = folder
+        menu.addSeparator()
+        new_action = menu.addAction("+ New Folder...")
+        action = menu.exec(self._save_btn.mapToGlobal(self._save_btn.rect().bottomLeft()))
+        if not action:
+            return
+        if action == unfiled:
+            self.save_to_folder.emit("")
+        elif action == new_action:
+            name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
+            if ok and name.strip():
+                self.save_to_folder.emit(name.strip())
+        elif id(action) in folder_actions:
+            self.save_to_folder.emit(folder_actions[id(action)])
+
+    def _on_bookmark_clicked(self) -> None:
+        """Popout Bookmark button — same shape as the embedded preview's
+        version. When already bookmarked, emits bookmark_requested for the
+        existing toggle/remove path. When not bookmarked, pops a menu under
+        the button with Unfiled / bookmark folders / + New Folder, then
+        emits the chosen name through bookmark_to_folder.
+        """
+        if self._is_bookmarked:
+            self.bookmark_requested.emit()
+            return
+        menu = QMenu(self)
+        unfiled = menu.addAction("Unfiled")
+        menu.addSeparator()
+        folder_actions: dict[int, str] = {}
+        if self._bookmark_folders_callback:
+            for folder in self._bookmark_folders_callback():
+                a = menu.addAction(folder)
+                folder_actions[id(a)] = folder
+        menu.addSeparator()
+        new_action = menu.addAction("+ New Folder...")
+        action = menu.exec(self._bookmark_btn.mapToGlobal(self._bookmark_btn.rect().bottomLeft()))
+        if not action:
+            return
+        if action == unfiled:
+            self.bookmark_to_folder.emit("")
+        elif action == new_action:
+            name, ok = QInputDialog.getText(self, "New Bookmark Folder", "Folder name:")
+            if ok and name.strip():
+                self.bookmark_to_folder.emit(name.strip())
+        elif id(action) in folder_actions:
+            self.bookmark_to_folder.emit(folder_actions[id(action)])
 
     def set_media(self, path: str, info: str = "") -> None:
         self._info_label.setText(info)
@@ -1293,6 +1394,10 @@ class ImagePreview(QWidget):
     save_to_folder = Signal(str)
     unsave_requested = Signal()
     bookmark_requested = Signal()
+    # Bookmark-as: emitted when the user picks a bookmark folder from
+    # the toolbar's Bookmark button submenu. Empty string = Unfiled.
+    # Mirrors save_to_folder's shape so app.py can route it the same way.
+    bookmark_to_folder = Signal(str)
     blacklist_tag_requested = Signal(str)
     blacklist_post_requested = Signal()
     navigate = Signal(int)  # -1 = prev, +1 = next
@@ -1302,10 +1407,15 @@ class ImagePreview(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._folders_callback = None
+        # Bookmark folders live in a separate name space (DB-backed); the
+        # toolbar Bookmark-as submenu reads them via this callback so the
+        # preview widget stays decoupled from the Database object.
+        self._bookmark_folders_callback = None
         self._current_path: str | None = None
         self._current_post = None  # Post object, set by app.py
         self._current_site_id = None  # site_id for the current post
         self._is_saved = False  # tracks library save state for context menu
+        self._is_bookmarked = False  # tracks bookmark state for the button submenu
         self._current_tags: dict[str, list[str]] = {}
         self._current_tag_list: list[str] = []
 
@@ -1333,11 +1443,14 @@ class ImagePreview(QWidget):
         self._bookmark_btn = QPushButton("Bookmark")
         self._bookmark_btn.setFixedWidth(100)
         self._bookmark_btn.setStyleSheet(_tb_btn_style)
-        self._bookmark_btn.clicked.connect(self.bookmark_requested)
+        self._bookmark_btn.clicked.connect(self._on_bookmark_clicked)
         tb.addWidget(self._bookmark_btn)
 
         self._save_btn = QPushButton("Save")
-        self._save_btn.setFixedWidth(60)
+        # 75 fits "Unsave" (6 chars) cleanly across every bundled theme.
+        # The previous 60 was tight enough that some themes clipped the
+        # last character on library files where the label flips to Unsave.
+        self._save_btn.setFixedWidth(75)
         self._save_btn.setStyleSheet(_tb_btn_style)
         self._save_btn.clicked.connect(self._on_save_clicked)
         tb.addWidget(self._save_btn)
@@ -1429,12 +1542,48 @@ class ImagePreview(QWidget):
         if action:
             self.blacklist_tag_requested.emit(action.text())
 
+    def _on_bookmark_clicked(self) -> None:
+        """Toolbar Bookmark button — mirrors the browse-tab Bookmark-as
+        submenu so the preview pane has the same one-click filing flow.
+
+        When the post is already bookmarked, the button collapses to a
+        flat unbookmark action (emits the same signal as before, the
+        existing toggle in app.py handles the removal). When not yet
+        bookmarked, a popup menu lets the user pick the destination
+        bookmark folder — the chosen name is sent through bookmark_to_folder
+        and app.py adds the folder + creates the bookmark.
+        """
+        if self._is_bookmarked:
+            self.bookmark_requested.emit()
+            return
+        menu = QMenu(self)
+        unfiled = menu.addAction("Unfiled")
+        menu.addSeparator()
+        folder_actions: dict[int, str] = {}
+        if self._bookmark_folders_callback:
+            for folder in self._bookmark_folders_callback():
+                a = menu.addAction(folder)
+                folder_actions[id(a)] = folder
+        menu.addSeparator()
+        new_action = menu.addAction("+ New Folder...")
+        action = menu.exec(self._bookmark_btn.mapToGlobal(self._bookmark_btn.rect().bottomLeft()))
+        if not action:
+            return
+        if action == unfiled:
+            self.bookmark_to_folder.emit("")
+        elif action == new_action:
+            name, ok = QInputDialog.getText(self, "New Bookmark Folder", "Folder name:")
+            if ok and name.strip():
+                self.bookmark_to_folder.emit(name.strip())
+        elif id(action) in folder_actions:
+            self.bookmark_to_folder.emit(folder_actions[id(action)])
+
     def _on_save_clicked(self) -> None:
         if self._save_btn.text() == "Unsave":
             self.unsave_requested.emit()
             return
         menu = QMenu(self)
-        unsorted = menu.addAction("Unsorted")
+        unsorted = menu.addAction("Unfiled")
         menu.addSeparator()
         folder_actions = {}
         if self._folders_callback:
@@ -1456,6 +1605,7 @@ class ImagePreview(QWidget):
             self.save_to_folder.emit(folder_actions[id(action)])
 
     def update_bookmark_state(self, bookmarked: bool) -> None:
+        self._is_bookmarked = bookmarked
         self._bookmark_btn.setText("Unbookmark" if bookmarked else "Bookmark")
         self._bookmark_btn.setFixedWidth(90 if bookmarked else 80)
 
@@ -1476,6 +1626,13 @@ class ImagePreview(QWidget):
 
     def set_folders_callback(self, callback) -> None:
         self._folders_callback = callback
+
+    def set_bookmark_folders_callback(self, callback) -> None:
+        """Wire the bookmark folder list source. Called once from app.py
+        with self._db.get_folders. Kept separate from set_folders_callback
+        because library and bookmark folders are independent name spaces.
+        """
+        self._bookmark_folders_callback = callback
 
     def set_image(self, pixmap: QPixmap, info: str = "") -> None:
         self._video_player.stop()
@@ -1523,7 +1680,7 @@ class ImagePreview(QWidget):
         fav_action = menu.addAction("Bookmark")
 
         save_menu = menu.addMenu("Save to Library")
-        save_unsorted = save_menu.addAction("Unsorted")
+        save_unsorted = save_menu.addAction("Unfiled")
         save_menu.addSeparator()
         save_folder_actions = {}
         if self._folders_callback:

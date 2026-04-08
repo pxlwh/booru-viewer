@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QMenu,
     QMessageBox,
+    QInputDialog,
     QApplication,
 )
 
@@ -194,7 +195,7 @@ class LibraryView(QWidget):
         self._folder_combo.blockSignals(True)
         self._folder_combo.clear()
         self._folder_combo.addItem("All Files")
-        self._folder_combo.addItem("Unsorted")
+        self._folder_combo.addItem("Unfiled")
 
         root = saved_dir()
         if root.is_dir():
@@ -217,7 +218,7 @@ class LibraryView(QWidget):
 
         if folder_text == "All Files":
             return self._collect_recursive(root)
-        elif folder_text == "Unsorted":
+        elif folder_text == "Unfiled":
             return self._collect_top_level(root)
         else:
             sub = root / folder_text
@@ -347,6 +348,76 @@ class LibraryView(QWidget):
         if 0 <= index < len(self._files):
             self.file_activated.emit(str(self._files[index]))
 
+    def _move_files_to_folder(
+        self, files: list[Path], target_folder: str | None
+    ) -> None:
+        """Move library files into target_folder (None = Unfiled root).
+
+        Uses Path.rename for an atomic same-filesystem move. That matters
+        here because the bug we're fixing is "move produces a duplicate" —
+        a copy-then-delete sequence can leave both files behind if the
+        delete fails or the process is killed mid-step. rename() is one
+        syscall and either fully succeeds or doesn't happen at all. If
+        the rename crosses filesystems (rare — only if the user pointed
+        the library at a different mount than its parent), Python raises
+        OSError(EXDEV) and we fall back to shutil.move which copies-then-
+        unlinks; in that path the unlink failure is the only window for
+        a duplicate, and it's logged.
+        """
+        import shutil
+
+        try:
+            if target_folder:
+                dest_dir = saved_folder_dir(target_folder)
+            else:
+                dest_dir = saved_dir()
+        except ValueError as e:
+            QMessageBox.warning(self, "Invalid Folder Name", str(e))
+            return
+
+        dest_resolved = dest_dir.resolve()
+        moved = 0
+        skipped_same = 0
+        collisions: list[str] = []
+        errors: list[str] = []
+
+        for src in files:
+            if not src.exists():
+                continue
+            if src.parent.resolve() == dest_resolved:
+                skipped_same += 1
+                continue
+            target = dest_dir / src.name
+            if target.exists():
+                collisions.append(src.name)
+                continue
+            try:
+                src.rename(target)
+                moved += 1
+            except OSError:
+                # Cross-device move — fall back to copy + delete.
+                try:
+                    shutil.move(str(src), str(target))
+                    moved += 1
+                except Exception as e:
+                    log.warning("Failed to move %s → %s: %s", src, target, e)
+                    errors.append(f"{src.name}: {e}")
+
+        self.refresh()
+
+        if collisions:
+            sample = "\n".join(collisions[:10])
+            more = f"\n... and {len(collisions) - 10} more" if len(collisions) > 10 else ""
+            QMessageBox.warning(
+                self,
+                "Move Conflicts",
+                f"Skipped {len(collisions)} file(s) — destination already "
+                f"contains a file with the same name:\n\n{sample}{more}",
+            )
+        if errors:
+            sample = "\n".join(errors[:10])
+            QMessageBox.warning(self, "Move Errors", sample)
+
     def _on_context_menu(self, index: int, pos) -> None:
         if index < 0 or index >= len(self._files):
             return
@@ -362,6 +433,25 @@ class LibraryView(QWidget):
         copy_file = menu.addAction("Copy File to Clipboard")
         copy_path = menu.addAction("Copy File Path")
         menu.addSeparator()
+
+        # Move to Folder submenu — atomic rename, no copy step, so a
+        # crash mid-move can never leave a duplicate behind. The current
+        # location is included in the list (no-op'd in the move helper)
+        # so the menu shape stays predictable for the user.
+        move_menu = menu.addMenu("Move to Folder")
+        move_unsorted = move_menu.addAction("Unfiled")
+        move_menu.addSeparator()
+        move_folder_actions: dict[int, str] = {}
+        root = saved_dir()
+        if root.is_dir():
+            for entry in sorted(root.iterdir()):
+                if entry.is_dir():
+                    a = move_menu.addAction(entry.name)
+                    move_folder_actions[id(a)] = entry.name
+        move_menu.addSeparator()
+        move_new = move_menu.addAction("+ New Folder...")
+
+        menu.addSeparator()
         delete_action = menu.addAction("Delete from Library")
 
         action = menu.exec(pos)
@@ -372,6 +462,14 @@ class LibraryView(QWidget):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(filepath)))
         elif action == open_folder:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(filepath.parent)))
+        elif action == move_unsorted:
+            self._move_files_to_folder([filepath], None)
+        elif action == move_new:
+            name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
+            if ok and name.strip():
+                self._move_files_to_folder([filepath], name.strip())
+        elif id(action) in move_folder_actions:
+            self._move_files_to_folder([filepath], move_folder_actions[id(action)])
         elif action == copy_file:
             from PySide6.QtCore import QMimeData
             from PySide6.QtGui import QPixmap as _QP
@@ -403,13 +501,36 @@ class LibraryView(QWidget):
             return
 
         menu = QMenu(self)
+
+        move_menu = menu.addMenu(f"Move {len(files)} files to Folder")
+        move_unsorted = move_menu.addAction("Unfiled")
+        move_menu.addSeparator()
+        move_folder_actions: dict[int, str] = {}
+        root = saved_dir()
+        if root.is_dir():
+            for entry in sorted(root.iterdir()):
+                if entry.is_dir():
+                    a = move_menu.addAction(entry.name)
+                    move_folder_actions[id(a)] = entry.name
+        move_menu.addSeparator()
+        move_new = move_menu.addAction("+ New Folder...")
+
+        menu.addSeparator()
         delete_all = menu.addAction(f"Delete {len(files)} files from Library")
 
         action = menu.exec(pos)
         if not action:
             return
 
-        if action == delete_all:
+        if action == move_unsorted:
+            self._move_files_to_folder(files, None)
+        elif action == move_new:
+            name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
+            if ok and name.strip():
+                self._move_files_to_folder(files, name.strip())
+        elif id(action) in move_folder_actions:
+            self._move_files_to_folder(files, move_folder_actions[id(action)])
+        elif action == delete_all:
             reply = QMessageBox.question(
                 self, "Confirm", f"Delete {len(files)} files from library?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,

@@ -71,11 +71,27 @@ class BookmarksView(QWidget):
         top.addWidget(self._folder_combo)
 
         manage_btn = QPushButton("+ Folder")
-        manage_btn.setToolTip("New folder")
+        manage_btn.setToolTip("New bookmark folder")
         manage_btn.setFixedWidth(75)
         manage_btn.setStyleSheet(_btn_style)
         manage_btn.clicked.connect(self._new_folder)
         top.addWidget(manage_btn)
+
+        # Delete the currently-selected bookmark folder. Disabled when
+        # the combo is on a virtual entry (All Bookmarks / Unfiled).
+        # This only removes the DB row — bookmarks in that folder become
+        # Unfiled (per remove_folder's UPDATE … SET folder = NULL). The
+        # library filesystem is untouched: bookmark folders and library
+        # folders are independent name spaces.
+        self._delete_folder_btn = QPushButton("− Folder")
+        self._delete_folder_btn.setToolTip("Delete the selected bookmark folder")
+        self._delete_folder_btn.setFixedWidth(75)
+        self._delete_folder_btn.setStyleSheet(_btn_style)
+        self._delete_folder_btn.clicked.connect(self._delete_folder)
+        top.addWidget(self._delete_folder_btn)
+        self._folder_combo.currentTextChanged.connect(
+            self._update_delete_folder_enabled
+        )
 
         self._search_input = QLineEdit()
         self._search_input.setPlaceholderText("Search bookmarks by tag")
@@ -120,6 +136,39 @@ class BookmarksView(QWidget):
         if idx >= 0:
             self._folder_combo.setCurrentIndex(idx)
         self._folder_combo.blockSignals(False)
+        self._update_delete_folder_enabled()
+
+    def _update_delete_folder_enabled(self, *_args) -> None:
+        """Enable the delete-folder button only on real folder rows."""
+        text = self._folder_combo.currentText()
+        self._delete_folder_btn.setEnabled(text not in ("", "All Bookmarks", "Unfiled"))
+
+    def _delete_folder(self) -> None:
+        """Delete the currently-selected bookmark folder.
+
+        Bookmarks filed under it become Unfiled (remove_folder UPDATEs
+        favorites.folder = NULL before DELETE FROM favorite_folders).
+        Library files on disk are unaffected — bookmark folders and
+        library folders are separate concepts after the decoupling.
+        """
+        name = self._folder_combo.currentText()
+        if name in ("", "All Bookmarks", "Unfiled"):
+            return
+        reply = QMessageBox.question(
+            self,
+            "Delete Bookmark Folder",
+            f"Delete bookmark folder '{name}'?\n\n"
+            f"Bookmarks in this folder will become Unfiled. "
+            f"Library files on disk are not affected.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self._db.remove_folder(name)
+        # Drop back to All Bookmarks so the now-orphan filter doesn't
+        # leave the combo on a missing row.
+        self._folder_combo.setCurrentText("All Bookmarks")
+        self.refresh()
 
     def refresh(self, search: str | None = None) -> None:
         self._refresh_folders()
@@ -145,22 +194,12 @@ class BookmarksView(QWidget):
         self._count_label.setText(f"{len(self._bookmarks)} bookmarks")
         thumbs = self._grid.set_posts(len(self._bookmarks))
 
-        from ..core.config import saved_dir, saved_folder_dir, MEDIA_EXTENSIONS
+        from ..core.config import find_library_files
         for i, (fav, thumb) in enumerate(zip(self._bookmarks, thumbs)):
             thumb.set_bookmarked(True)
-            # Check if saved to library
-            saved = False
-            if fav.folder:
-                saved = any(
-                    (saved_folder_dir(fav.folder) / f"{fav.post_id}{ext}").exists()
-                    for ext in MEDIA_EXTENSIONS
-                )
-            else:
-                saved = any(
-                    (saved_dir() / f"{fav.post_id}{ext}").exists()
-                    for ext in MEDIA_EXTENSIONS
-                )
-            thumb.set_saved_locally(saved)
+            # Library state is filesystem-truth and folder-agnostic now —
+            # walk the library by post id, ignore the bookmark's folder.
+            thumb.set_saved_locally(bool(find_library_files(fav.post_id)))
             # Set cached path for drag-and-drop and copy
             if fav.cached_path and Path(fav.cached_path).exists():
                 thumb._cached_path = fav.cached_path
@@ -250,31 +289,22 @@ class BookmarksView(QWidget):
         menu.addSeparator()
         save_as = menu.addAction("Save As...")
 
-        # Save to Library submenu
+        # Save to Library submenu — folders come from the library
+        # filesystem, not the bookmark folder DB.
+        from ..core.config import library_folders, find_library_files
         save_lib_menu = menu.addMenu("Save to Library")
-        save_lib_unsorted = save_lib_menu.addAction("Unsorted")
+        save_lib_unsorted = save_lib_menu.addAction("Unfiled")
         save_lib_menu.addSeparator()
         save_lib_folders = {}
-        for folder in self._db.get_folders():
+        for folder in library_folders():
             a = save_lib_menu.addAction(folder)
             save_lib_folders[id(a)] = folder
         save_lib_menu.addSeparator()
         save_lib_new = save_lib_menu.addAction("+ New Folder...")
 
         unsave_lib = None
-        # Only show unsave if the post is saved locally
-        from ..core.config import saved_dir, saved_folder_dir, MEDIA_EXTENSIONS
-        _saved = False
-        _sd = saved_dir()
-        if _sd.exists():
-            _saved = any((_sd / f"{fav.post_id}{ext}").exists() for ext in MEDIA_EXTENSIONS)
-        if not _saved:
-            for folder in self._db.get_folders():
-                d = saved_folder_dir(folder)
-                if d.exists() and any((d / f"{fav.post_id}{ext}").exists() for ext in MEDIA_EXTENSIONS):
-                    _saved = True
-                    break
-        if _saved:
+        # Only show unsave if the post is actually on disk somewhere.
+        if find_library_files(fav.post_id):
             unsave_lib = menu.addAction("Unsave from Library")
         copy_file = menu.addAction("Copy File to Clipboard")
         copy_url = menu.addAction("Copy Image URL")
@@ -305,13 +335,16 @@ class BookmarksView(QWidget):
         elif action == save_lib_new:
             name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
             if ok and name.strip():
+                # Validate the name via saved_folder_dir() which mkdir's
+                # the library subdir and runs the path-traversal check.
+                # No DB folder write — bookmark folders are independent.
                 try:
-                    self._db.add_folder(name.strip())
+                    from ..core.config import saved_folder_dir
+                    saved_folder_dir(name.strip())
                 except ValueError as e:
                     QMessageBox.warning(self, "Invalid Folder Name", str(e))
                     return
                 self._copy_to_library(fav, name.strip())
-                self._db.move_bookmark_to_folder(fav.id, name.strip())
                 self.refresh()
         elif id(action) in save_lib_folders:
             folder_name = save_lib_folders[id(action)]
@@ -331,7 +364,10 @@ class BookmarksView(QWidget):
                     shutil.copy2(src, dest)
         elif action == unsave_lib:
             from ..core.cache import delete_from_library
-            if delete_from_library(fav.post_id, fav.folder):
+            # delete_from_library walks every library folder by post id
+            # now — no folder hint needed (and fav.folder wouldn't be
+            # accurate anyway after the bookmark/library separation).
+            if delete_from_library(fav.post_id):
                 self.refresh()
                 self.bookmarks_changed.emit()
         elif action == copy_file:
@@ -360,13 +396,14 @@ class BookmarksView(QWidget):
                 except ValueError as e:
                     QMessageBox.warning(self, "Invalid Folder Name", str(e))
                     return
+                # Pure bookmark organization: file the bookmark, don't
+                # touch the library filesystem. Save to Library is now a
+                # separate, explicit action.
                 self._db.move_bookmark_to_folder(fav.id, name.strip())
-                self._copy_to_library(fav, name.strip())
                 self.refresh()
         elif id(action) in folder_actions:
             folder_name = folder_actions[id(action)]
             self._db.move_bookmark_to_folder(fav.id, folder_name)
-            self._copy_to_library(fav, folder_name)
             self.refresh()
         elif action == remove_bookmark:
             self._db.remove_bookmark(fav.site_id, fav.post_id)
@@ -378,11 +415,28 @@ class BookmarksView(QWidget):
         if not favs:
             return
 
+        from ..core.config import library_folders
+
         menu = QMenu(self)
-        save_all = menu.addAction(f"Save All ({len(favs)}) to Library")
+
+        # Save All to Library submenu — folders are filesystem-truth.
+        # Conversion from a flat action to a submenu so the user can
+        # pick a destination instead of having "save all" silently use
+        # each bookmark's fav.folder (which was the cross-bleed bug).
+        save_lib_menu = menu.addMenu(f"Save All ({len(favs)}) to Library")
+        save_lib_unsorted = save_lib_menu.addAction("Unfiled")
+        save_lib_menu.addSeparator()
+        save_lib_folder_actions: dict[int, str] = {}
+        for folder in library_folders():
+            a = save_lib_menu.addAction(folder)
+            save_lib_folder_actions[id(a)] = folder
+        save_lib_menu.addSeparator()
+        save_lib_new = save_lib_menu.addAction("+ New Folder...")
+
         unsave_all = menu.addAction(f"Unsave All ({len(favs)}) from Library")
         menu.addSeparator()
 
+        # Move to Folder is bookmark organization — reads from the DB.
         move_menu = menu.addMenu(f"Move All ({len(favs)}) to Folder")
         move_none = move_menu.addAction("Unfiled")
         move_menu.addSeparator()
@@ -398,17 +452,32 @@ class BookmarksView(QWidget):
         if not action:
             return
 
-        if action == save_all:
+        def _save_all_into(folder_name: str | None) -> None:
             for fav in favs:
-                if fav.folder:
-                    self._copy_to_library(fav, fav.folder)
+                if folder_name:
+                    self._copy_to_library(fav, folder_name)
                 else:
                     self._copy_to_library_unsorted(fav)
             self.refresh()
+
+        if action == save_lib_unsorted:
+            _save_all_into(None)
+        elif action == save_lib_new:
+            name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
+            if ok and name.strip():
+                try:
+                    from ..core.config import saved_folder_dir
+                    saved_folder_dir(name.strip())
+                except ValueError as e:
+                    QMessageBox.warning(self, "Invalid Folder Name", str(e))
+                    return
+                _save_all_into(name.strip())
+        elif id(action) in save_lib_folder_actions:
+            _save_all_into(save_lib_folder_actions[id(action)])
         elif action == unsave_all:
             from ..core.cache import delete_from_library
             for fav in favs:
-                delete_from_library(fav.post_id, fav.folder)
+                delete_from_library(fav.post_id)
             self.refresh()
             self.bookmarks_changed.emit()
         elif action == move_none:
@@ -417,9 +486,9 @@ class BookmarksView(QWidget):
             self.refresh()
         elif id(action) in folder_actions:
             folder_name = folder_actions[id(action)]
+            # Bookmark organization only — Save to Library is separate.
             for fav in favs:
                 self._db.move_bookmark_to_folder(fav.id, folder_name)
-                self._copy_to_library(fav, folder_name)
             self.refresh()
         elif action == remove_all:
             for fav in favs:

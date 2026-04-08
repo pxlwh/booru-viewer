@@ -435,16 +435,27 @@ def is_cached(url: str, dest_dir: Path | None = None) -> bool:
 
 
 def delete_from_library(post_id: int, folder: str | None = None) -> bool:
-    """Delete a saved image from the library. Returns True if a file was deleted."""
-    from .config import saved_dir, saved_folder_dir
-    search_dir = saved_folder_dir(folder) if folder else saved_dir()
-    from .config import MEDIA_EXTENSIONS
-    for ext in MEDIA_EXTENSIONS:
-        path = search_dir / f"{post_id}{ext}"
-        if path.exists():
+    """Delete every saved copy of `post_id` from the library.
+
+    Returns True if at least one file was deleted.
+
+    The `folder` argument is kept for back-compat with existing call sites
+    but is now ignored — we walk every library folder by post id and delete
+    all matches. This is what makes the "bookmark folder ≠ library folder"
+    separation work: a bookmark no longer needs to know which folder its
+    library file lives in. It also cleans up duplicates left by the old
+    pre-fix "save to folder = copy" bug in a single Unsave action.
+    """
+    from .config import find_library_files
+    matches = find_library_files(post_id)
+    deleted = False
+    for path in matches:
+        try:
             path.unlink()
-            return True
-    return False
+            deleted = True
+        except OSError:
+            pass
+    return deleted
 
 
 def cache_size_bytes(include_thumbnails: bool = True) -> int:

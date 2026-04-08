@@ -512,6 +512,7 @@ class BooruApp(QMainWindow):
         self._preview.open_in_default.connect(self._open_preview_in_default)
         self._preview.open_in_browser.connect(self._open_preview_in_browser)
         self._preview.bookmark_requested.connect(self._bookmark_from_preview)
+        self._preview.bookmark_to_folder.connect(self._bookmark_to_folder_from_preview)
         self._preview.save_to_folder.connect(self._save_from_preview)
         self._preview.unsave_requested.connect(self._unsave_from_preview)
         self._preview.blacklist_tag_requested.connect(self._blacklist_tag_from_popout)
@@ -519,7 +520,13 @@ class BooruApp(QMainWindow):
         self._preview.navigate.connect(self._navigate_preview)
         self._preview.play_next_requested.connect(self._on_video_end_next)
         self._preview.fullscreen_requested.connect(self._open_fullscreen_preview)
-        self._preview.set_folders_callback(self._db.get_folders)
+        # Library folders come from the filesystem (subdirs of saved_dir),
+        # not the bookmark folders DB table — those are separate concepts.
+        from ..core.config import library_folders
+        self._preview.set_folders_callback(library_folders)
+        # Bookmark folders feed the toolbar Bookmark-as submenu, sourced
+        # from the DB so it stays in sync with the bookmarks tab combo.
+        self._preview.set_bookmark_folders_callback(self._db.get_folders)
         self._fullscreen_window = None
         # Wide enough that the preview toolbar (Bookmark, Save, BL Tag,
         # BL Post, [stretch], Popout) has room to lay out all five buttons
@@ -748,10 +755,18 @@ class BooruApp(QMainWindow):
         self._library_view._grid.clear_selection()
         self._preview._current_post = None
         self._preview._current_site_id = None
-        self._preview.update_bookmark_state(False)
-        self._preview.update_save_state(False)
-        # Show/hide preview toolbar buttons per tab
         is_library = index == 2
+        self._preview.update_bookmark_state(False)
+        # On the library tab the Save button is the only toolbar action
+        # left visible (Bookmark / BL Tag / BL Post are hidden a few lines
+        # down). Library files are saved by definition, so the button
+        # should read "Unsave" the entire time the user is in that tab —
+        # forcing the state to True here makes that true even before the
+        # user clicks anything (the toolbar might already be showing old
+        # media from the previous tab; this is fine because the same media
+        # is also in the library if it was just saved).
+        self._preview.update_save_state(is_library)
+        # Show/hide preview toolbar buttons per tab
         self._preview._bookmark_btn.setVisible(not is_library)
         self._preview._bl_tag_btn.setVisible(not is_library)
         self._preview._bl_post_btn.setVisible(not is_library)
@@ -1030,20 +1045,24 @@ class BooruApp(QMainWindow):
         # Clear loading after a brief delay so scroll signals don't re-trigger
         QTimer.singleShot(100, self._clear_loading)
 
-        from ..core.config import saved_dir, saved_folder_dir
+        from ..core.config import saved_dir
         from ..core.cache import cached_path_for, cache_dir
         site_id = self._site_combo.currentData()
 
-        # Pre-scan saved directories once instead of per-post exists() calls
+        # Pre-scan the library once into a flat post-id set so the per-post
+        # check below is O(1). Folders are filesystem-truth — walk every
+        # subdir of saved_dir() rather than consulting the bookmark folder
+        # list (which used to leak DB state into library detection).
         _sd = saved_dir()
         _saved_ids: set[int] = set()
-        if _sd.exists():
-            _saved_ids = {int(f.stem) for f in _sd.iterdir() if f.is_file() and f.stem.isdigit()}
-        _folder_saved: dict[str, set[int]] = {}
-        for folder in self._db.get_folders():
-            d = saved_folder_dir(folder)
-            if d.exists():
-                _folder_saved[folder] = {int(f.stem) for f in d.iterdir() if f.is_file() and f.stem.isdigit()}
+        if _sd.is_dir():
+            for entry in _sd.iterdir():
+                if entry.is_file() and entry.stem.isdigit():
+                    _saved_ids.add(int(entry.stem))
+                elif entry.is_dir():
+                    for sub in entry.iterdir():
+                        if sub.is_file() and sub.stem.isdigit():
+                            _saved_ids.add(int(sub.stem))
 
         # Pre-fetch bookmarks for the site once and project to a post-id set
         # so the per-post check below is an O(1) membership test instead of
@@ -1062,14 +1081,9 @@ class BooruApp(QMainWindow):
             # Bookmark status (DB)
             if post.id in _bookmarked_ids:
                 thumb.set_bookmarked(True)
-            # Saved status (filesystem) — independent of bookmark
-            saved = post.id in _saved_ids
-            if not saved:
-                for folder_name, folder_ids in _folder_saved.items():
-                    if post.id in folder_ids:
-                        saved = True
-                        break
-            thumb.set_saved_locally(saved)
+            # Saved status (filesystem) — _saved_ids already covers both
+            # the unsorted root and every library subdirectory.
+            thumb.set_saved_locally(post.id in _saved_ids)
             # Set drag path from cache
             cached = cached_path_for(post.file_url)
             if cached.name in _cached_names:
@@ -1366,61 +1380,39 @@ class BooruApp(QMainWindow):
         if self._fullscreen_window and self._fullscreen_window.isVisible():
             self._preview._video_player.stop()
             self._fullscreen_window.set_media(path, info)
-            # Show/hide action buttons based on current tab
-            show = self._stack.currentIndex() != 2
-            self._fullscreen_window._bookmark_btn.setVisible(show)
-            self._fullscreen_window._save_btn.setVisible(show)
-            self._fullscreen_window._bl_tag_btn.setVisible(show)
-            self._fullscreen_window._bl_post_btn.setVisible(show)
-            if show:
-                self._update_fullscreen_state()
+            # Bookmark / BL Tag / BL Post hidden on the library tab (no
+            # site/post id to act on for local-only files). Save stays
+            # visible — it acts as Unsave for the library file currently
+            # being viewed, matching the embedded preview's library mode.
+            show_full = self._stack.currentIndex() != 2
+            self._fullscreen_window._bookmark_btn.setVisible(show_full)
+            self._fullscreen_window._save_btn.setVisible(True)
+            self._fullscreen_window._bl_tag_btn.setVisible(show_full)
+            self._fullscreen_window._bl_post_btn.setVisible(show_full)
+            self._update_fullscreen_state()
 
     def _update_fullscreen_state(self) -> None:
-        """Update popout button states for the current post."""
+        """Update popout button states by mirroring the embedded preview.
+
+        The embedded preview is the canonical owner of bookmark/save
+        state — every code path that bookmarks, unsaves, navigates, or
+        loads a post calls update_bookmark_state / update_save_state on
+        it. Re-querying the DB and filesystem here used to drift out of
+        sync with the embedded preview during async bookmark adds and
+        immediately after tab switches; mirroring eliminates the gap and
+        is one source of truth instead of two.
+        """
         if not self._fullscreen_window:
             return
-        from ..core.config import saved_dir, saved_folder_dir, MEDIA_EXTENSIONS
-        site_id = self._site_combo.currentData()
-
-        if self._stack.currentIndex() == 1:
-            # Bookmarks view
-            grid = self._bookmarks_view._grid
-            favs = self._bookmarks_view._bookmarks
-            idx = grid.selected_index
-            if 0 <= idx < len(favs):
-                fav = favs[idx]
-                saved = False
-                if fav.folder:
-                    saved = any(
-                        (saved_folder_dir(fav.folder) / f"{fav.post_id}{ext}").exists()
-                        for ext in MEDIA_EXTENSIONS
-                    )
-                else:
-                    saved = any(
-                        (saved_dir() / f"{fav.post_id}{ext}").exists()
-                        for ext in MEDIA_EXTENSIONS
-                    )
-                self._fullscreen_window.update_state(True, saved)
-                self._fullscreen_window.set_post_tags(
-                    fav.tag_categories or {}, (fav.tags or "").split()
-                )
-            else:
-                self._fullscreen_window.update_state(False, False)
-        else:
-            post = None
-            idx = self._grid.selected_index
-            if 0 <= idx < len(self._posts):
-                post = self._posts[idx]
-            elif self._preview._current_post:
-                post = self._preview._current_post
-            if post:
-                s_id = self._preview._current_site_id or site_id
-                bookmarked = bool(s_id and self._db.is_bookmarked(s_id, post.id))
-                saved = self._is_post_saved(post.id)
-                self._fullscreen_window.update_state(bookmarked, saved)
-                self._fullscreen_window.set_post_tags(post.tag_categories, post.tag_list)
-            else:
-                self._fullscreen_window.update_state(False, False)
+        self._fullscreen_window.update_state(
+            self._preview._is_bookmarked,
+            self._preview._is_saved,
+        )
+        post = self._preview._current_post
+        if post is not None:
+            self._fullscreen_window.set_post_tags(
+                post.tag_categories or {}, post.tag_list
+            )
 
     def _on_image_done(self, path: str, info: str) -> None:
         self._dl_progress.hide()
@@ -1552,18 +1544,13 @@ class BooruApp(QMainWindow):
             self._update_fullscreen(fav.cached_path, info)
             return
 
-        # Try saved library
-        from ..core.config import saved_dir, saved_folder_dir
-        search_dirs = [saved_dir()]
-        if fav.folder:
-            search_dirs.insert(0, saved_folder_dir(fav.folder))
-        for d in search_dirs:
-            for ext in MEDIA_EXTENSIONS:
-                path = d / f"{fav.post_id}{ext}"
-                if path.exists():
-                    self._set_preview_media(str(path), info)
-                    self._update_fullscreen(str(path), info)
-                    return
+        # Try saved library — walk by post id; the file may live in any
+        # library folder regardless of which bookmark folder fav is in.
+        from ..core.config import find_library_files
+        for path in find_library_files(fav.post_id):
+            self._set_preview_media(str(path), info)
+            self._update_fullscreen(str(path), info)
+            return
 
         # Download it
         self._status.showMessage(f"Downloading #{fav.post_id}...")
@@ -1917,20 +1904,14 @@ class BooruApp(QMainWindow):
             )
 
     def _is_post_saved(self, post_id: int) -> bool:
-        """Check if a post is saved in the library (any folder)."""
-        from ..core.config import saved_dir, saved_folder_dir, MEDIA_EXTENSIONS
-        _sd = saved_dir()
-        if _sd.exists():
-            for ext in MEDIA_EXTENSIONS:
-                if (_sd / f"{post_id}{ext}").exists():
-                    return True
-        for folder in self._db.get_folders():
-            d = saved_folder_dir(folder)
-            if d.exists():
-                for ext in MEDIA_EXTENSIONS:
-                    if (d / f"{post_id}{ext}").exists():
-                        return True
-        return False
+        """Check if a post is saved in the library (any folder).
+
+        Walks the library by post id rather than consulting the bookmark
+        folder list — library folders are filesystem-truth now, and a
+        post can be in any folder regardless of bookmark state.
+        """
+        from ..core.config import find_library_files
+        return bool(find_library_files(post_id))
 
     def _get_preview_post(self):
         """Get the post currently shown in the preview, from grid or stored ref."""
@@ -1970,12 +1951,61 @@ class BooruApp(QMainWindow):
         if self._stack.currentIndex() == 1:
             self._bookmarks_view.refresh()
 
+    def _bookmark_to_folder_from_preview(self, folder: str) -> None:
+        """Bookmark the current preview post into a specific bookmark folder.
+
+        Triggered by the toolbar Bookmark-as submenu, which only shows
+        when the post is not yet bookmarked — so this method only handles
+        the create path, never the move/remove paths. Empty string means
+        Unfiled. Brand-new folder names get added to the DB folder list
+        first so the bookmarks tab combo immediately shows them.
+        """
+        post, idx = self._get_preview_post()
+        if not post:
+            return
+        site_id = self._preview._current_site_id or self._site_combo.currentData()
+        if not site_id:
+            return
+        target = folder if folder else None
+        if target and target not in self._db.get_folders():
+            try:
+                self._db.add_folder(target)
+            except ValueError as e:
+                self._status.showMessage(f"Invalid folder name: {e}")
+                return
+        if idx >= 0:
+            # In the grid — go through _toggle_bookmark so the grid
+            # thumbnail's bookmark badge updates via _on_bookmark_done.
+            self._toggle_bookmark(idx, target)
+        else:
+            # Preview-only post (e.g. opened from the bookmarks tab while
+            # browse is empty). Inline the add — no grid index to update.
+            from ..core.cache import cached_path_for
+            cached = cached_path_for(post.file_url)
+            self._db.add_bookmark(
+                site_id=site_id, post_id=post.id,
+                file_url=post.file_url, preview_url=post.preview_url or "",
+                tags=post.tags, rating=post.rating, score=post.score,
+                source=post.source,
+                cached_path=str(cached) if cached.exists() else None,
+                folder=target,
+                tag_categories=post.tag_categories,
+            )
+            where = target or "Unfiled"
+            self._status.showMessage(f"Bookmarked #{post.id} to {where}")
+        self._preview.update_bookmark_state(True)
+        self._update_fullscreen_state()
+        # Refresh bookmarks tab if visible so the new entry appears.
+        if self._stack.currentIndex() == 1:
+            self._bookmarks_view.refresh()
+
     def _save_from_preview(self, folder: str) -> None:
         post, idx = self._get_preview_post()
         if post:
             target = folder if folder else None
-            if folder and folder not in self._db.get_folders():
-                self._db.add_folder(folder)
+            # _save_to_library calls saved_folder_dir() which mkdir's the
+            # target directory itself — no need to register it in the
+            # bookmark folders DB table (those are unrelated now).
             self._save_to_library(post, target)
             # State updates happen in _on_bookmark_done after async save completes
 
@@ -1983,25 +2013,10 @@ class BooruApp(QMainWindow):
         post, idx = self._get_preview_post()
         if not post:
             return
+        # delete_from_library now walks every library folder by post id
+        # and deletes every match in one call — no folder hint needed.
         from ..core.cache import delete_from_library
-        # Check all folders for saved files
-        from ..core.config import saved_dir, saved_folder_dir, MEDIA_EXTENSIONS
-        deleted = False
-        # Try unsorted
-        _sd = saved_dir()
-        for ext in MEDIA_EXTENSIONS:
-            p = _sd / f"{post.id}{ext}"
-            if p.exists():
-                p.unlink()
-                deleted = True
-        # Try all folders
-        for folder in self._db.get_folders():
-            d = saved_folder_dir(folder)
-            for ext in MEDIA_EXTENSIONS:
-                p = d / f"{post.id}{ext}"
-                if p.exists():
-                    p.unlink()
-                    deleted = True
+        deleted = delete_from_library(post.id)
         if deleted:
             self._status.showMessage(f"Removed #{post.id} from library")
             self._preview.update_save_state(False)
@@ -2022,12 +2037,6 @@ class BooruApp(QMainWindow):
         else:
             self._status.showMessage(f"#{post.id} not in library")
         self._update_fullscreen_state()
-
-    def _save_toggle_from_popout(self) -> None:
-        if self._fullscreen_window and self._fullscreen_window._is_saved:
-            self._unsave_from_preview()
-        else:
-            self._save_from_preview("")
 
     def _blacklist_tag_from_popout(self, tag: str) -> None:
         reply = QMessageBox.question(
@@ -2103,9 +2112,21 @@ class BooruApp(QMainWindow):
         self._fullscreen_window = FullscreenPreview(grid_cols=cols, show_actions=show_actions, monitor=monitor, parent=self)
         self._fullscreen_window.navigate.connect(self._navigate_fullscreen)
         self._fullscreen_window.play_next_requested.connect(self._on_video_end_next)
+        # Save signals are always wired — even in library mode, the
+        # popout's Save button is the only toolbar action visible (acting
+        # as Unsave for the file being viewed), and it has its own
+        # Save-to-Library submenu shape that matches the embedded preview.
+        from ..core.config import library_folders
+        self._fullscreen_window.set_folders_callback(library_folders)
+        self._fullscreen_window.save_to_folder.connect(self._save_from_preview)
+        self._fullscreen_window.unsave_requested.connect(self._unsave_from_preview)
         if show_actions:
             self._fullscreen_window.bookmark_requested.connect(self._bookmark_from_preview)
-            self._fullscreen_window.save_toggle_requested.connect(self._save_toggle_from_popout)
+            # Same Bookmark-as flow as the embedded preview — popout reuses
+            # the existing handler since both signals carry just a folder
+            # name and read the post from self._preview._current_post.
+            self._fullscreen_window.set_bookmark_folders_callback(self._db.get_folders)
+            self._fullscreen_window.bookmark_to_folder.connect(self._bookmark_to_folder_from_preview)
             self._fullscreen_window.blacklist_tag_requested.connect(self._blacklist_tag_from_popout)
             self._fullscreen_window.blacklist_post_requested.connect(self._blacklist_post_from_popout)
         self._fullscreen_window.closed.connect(self._on_fullscreen_closed)
@@ -2131,8 +2152,10 @@ class BooruApp(QMainWindow):
                     pass
             sv.media_ready.connect(_seek_when_ready)
         self._fullscreen_window.set_media(path, info)
-        if show_actions:
-            self._update_fullscreen_state()
+        # Always sync state — the save button is visible in both modes
+        # (library mode = only Save shown, browse/bookmarks = full toolbar)
+        # so its Unsave label needs to land before the user sees it.
+        self._update_fullscreen_state()
 
     def _on_fullscreen_closed(self) -> None:
         # Persist popout window state to DB
@@ -2205,12 +2228,14 @@ class BooruApp(QMainWindow):
         menu.addSeparator()
         save_as = menu.addAction("Save As...")
 
-        # Save to Library submenu
+        # Save to Library submenu — folders come from the library
+        # filesystem, not the bookmark folder DB.
+        from ..core.config import library_folders
         save_lib_menu = menu.addMenu("Save to Library")
-        save_lib_unsorted = save_lib_menu.addAction("Unsorted")
+        save_lib_unsorted = save_lib_menu.addAction("Unfiled")
         save_lib_menu.addSeparator()
         save_lib_folders = {}
-        for folder in self._db.get_folders():
+        for folder in library_folders():
             a = save_lib_menu.addAction(folder)
             save_lib_folders[id(a)] = folder
         save_lib_menu.addSeparator()
@@ -2223,7 +2248,29 @@ class BooruApp(QMainWindow):
         copy_url = menu.addAction("Copy Image URL")
         copy_tags = menu.addAction("Copy Tags")
         menu.addSeparator()
-        fav_action = menu.addAction("Remove Bookmark" if self._is_current_bookmarked(index) else "Bookmark")
+
+        # Bookmark action: when not yet bookmarked, offer "Bookmark as"
+        # with a submenu of bookmark folders so the user can file the
+        # new bookmark in one click. Bookmark folders come from the DB
+        # (separate name space from library folders). When already
+        # bookmarked, the action collapses to a flat "Remove Bookmark"
+        # — re-filing an existing bookmark belongs in the bookmarks tab
+        # right-click menu's "Move to Folder" submenu.
+        fav_action = None
+        bm_folder_actions: dict[int, str] = {}
+        bm_unfiled = None
+        bm_new = None
+        if self._is_current_bookmarked(index):
+            fav_action = menu.addAction("Remove Bookmark")
+        else:
+            fav_menu = menu.addMenu("Bookmark as")
+            bm_unfiled = fav_menu.addAction("Unfiled")
+            fav_menu.addSeparator()
+            for folder in self._db.get_folders():
+                a = fav_menu.addAction(folder)
+                bm_folder_actions[id(a)] = folder
+            fav_menu.addSeparator()
+            bm_new = fav_menu.addAction("+ New Folder...")
         menu.addSeparator()
         bl_menu = menu.addMenu("Blacklist Tag")
         if post.tag_categories:
@@ -2252,8 +2299,12 @@ class BooruApp(QMainWindow):
             from PySide6.QtWidgets import QInputDialog, QMessageBox
             name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
             if ok and name.strip():
+                # _save_to_library → saved_folder_dir() does the mkdir
+                # and the path-traversal check; we surface the same error
+                # message it would emit so a bad name is reported clearly.
                 try:
-                    self._db.add_folder(name.strip())
+                    from ..core.config import saved_folder_dir
+                    saved_folder_dir(name.strip())
                 except ValueError as e:
                     QMessageBox.warning(self, "Invalid Folder Name", str(e))
                     return
@@ -2271,8 +2322,25 @@ class BooruApp(QMainWindow):
         elif action == copy_tags:
             QApplication.clipboard().setText(post.tags)
             self._status.showMessage("Tags copied")
-        elif action == fav_action:
+        elif fav_action is not None and action == fav_action:
+            # Currently bookmarked → flat "Remove Bookmark" path.
             self._toggle_bookmark(index)
+        elif bm_unfiled is not None and action == bm_unfiled:
+            self._toggle_bookmark(index, None)
+        elif bm_new is not None and action == bm_new:
+            from PySide6.QtWidgets import QInputDialog, QMessageBox
+            name, ok = QInputDialog.getText(self, "New Bookmark Folder", "Folder name:")
+            if ok and name.strip():
+                # Bookmark folders are DB-managed; add_folder validates
+                # the name and is the same call the bookmarks tab uses.
+                try:
+                    self._db.add_folder(name.strip())
+                except ValueError as e:
+                    QMessageBox.warning(self, "Invalid Folder Name", str(e))
+                    return
+                self._toggle_bookmark(index, name.strip())
+        elif id(action) in bm_folder_actions:
+            self._toggle_bookmark(index, bm_folder_actions[id(action)])
         elif self._is_child_of_menu(action, bl_menu):
             tag = action.text()
             self._db.add_blacklisted_tag(tag)
@@ -2361,9 +2429,10 @@ class BooruApp(QMainWindow):
         fav_all = menu.addAction(f"Bookmark All ({count})")
 
         save_menu = menu.addMenu(f"Save All to Library ({count})")
-        save_unsorted = save_menu.addAction("Unsorted")
+        save_unsorted = save_menu.addAction("Unfiled")
         save_folder_actions = {}
-        for folder in self._db.get_folders():
+        from ..core.config import library_folders
+        for folder in library_folders():
             a = save_menu.addAction(folder)
             save_folder_actions[id(a)] = folder
         save_menu.addSeparator()
@@ -2388,7 +2457,8 @@ class BooruApp(QMainWindow):
             name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
             if ok and name.strip():
                 try:
-                    self._db.add_folder(name.strip())
+                    from ..core.config import saved_folder_dir
+                    saved_folder_dir(name.strip())
                 except ValueError as e:
                     QMessageBox.warning(self, "Invalid Folder Name", str(e))
                     return
@@ -2404,13 +2474,9 @@ class BooruApp(QMainWindow):
             site_id = self._site_combo.currentData()
             if site_id:
                 from ..core.cache import delete_from_library
-                from ..core.config import saved_dir, saved_folder_dir
                 for post in posts:
-                    # Delete from unsorted library
-                    delete_from_library(post.id, None)
-                    # Delete from all folders
-                    for folder in self._db.get_folders():
-                        delete_from_library(post.id, folder)
+                    # Single call now walks every library folder by post id.
+                    delete_from_library(post.id)
                     self._db.remove_bookmark(site_id, post.id)
                 for idx in indices:
                     if 0 <= idx < len(self._grid._thumbs):
@@ -2451,7 +2517,7 @@ class BooruApp(QMainWindow):
 
     def _bulk_save(self, indices: list[int], posts: list[Post], folder: str | None) -> None:
         site_id = self._site_combo.currentData()
-        where = folder or "Unsorted"
+        where = folder or "Unfiled"
         self._status.showMessage(f"Saving {len(posts)} to {where}...")
 
         async def _do():
@@ -2568,23 +2634,78 @@ class BooruApp(QMainWindow):
             self._status.showMessage("Image not cached yet — double-click to download first")
 
     def _save_to_library(self, post: Post, folder: str | None) -> None:
-        """Download and save image to the library folder structure."""
-        from ..core.config import saved_dir, saved_folder_dir
+        """Save (or relocate) an image in the library folder structure.
+
+        If the post is already saved somewhere in the library, the existing
+        file is renamed into the target folder rather than re-downloading.
+        This is what makes "Save to Library → SomeFolder" act like a move
+        when the post is already in Unfiled (or another folder), instead
+        of producing a duplicate. rename() is atomic on the same filesystem
+        so a crash mid-move can never leave both copies behind.
+        """
+        from ..core.config import saved_dir, saved_folder_dir, MEDIA_EXTENSIONS
 
         self._status.showMessage(f"Saving #{post.id} to library...")
 
+        # Resolve destination synchronously — saved_folder_dir() does
+        # the path-traversal check and may raise ValueError. Surface
+        # that error here rather than from inside the async closure.
+        try:
+            if folder:
+                dest_dir = saved_folder_dir(folder)
+            else:
+                dest_dir = saved_dir()
+        except ValueError as e:
+            self._status.showMessage(f"Invalid folder name: {e}")
+            return
+        dest_resolved = dest_dir.resolve()
+
+        # Look for an existing copy of this post anywhere in the library.
+        # The library is shallow (root + one level of subdirectories) so
+        # this is cheap — at most one iterdir per top-level entry.
+        existing: Path | None = None
+        root = saved_dir()
+        if root.is_dir():
+            stem = str(post.id)
+            for entry in root.iterdir():
+                if entry.is_file() and entry.stem == stem and entry.suffix.lower() in MEDIA_EXTENSIONS:
+                    existing = entry
+                    break
+                if entry.is_dir():
+                    for sub in entry.iterdir():
+                        if sub.is_file() and sub.stem == stem and sub.suffix.lower() in MEDIA_EXTENSIONS:
+                            existing = sub
+                            break
+                    if existing is not None:
+                        break
+
         async def _save():
             try:
-                path = await download_image(post.file_url)
-                ext = Path(path).suffix
-                if folder:
-                    dest_dir = saved_folder_dir(folder)
+                if existing is not None:
+                    # Already in the library — relocate instead of re-saving.
+                    if existing.parent.resolve() != dest_resolved:
+                        target = dest_dir / existing.name
+                        if target.exists():
+                            # Destination already has a file with the same
+                            # name (matched by post id, so it's the same
+                            # post). Drop the source to collapse the
+                            # duplicate rather than leaving both behind.
+                            existing.unlink()
+                        else:
+                            try:
+                                existing.rename(target)
+                            except OSError:
+                                # Cross-device rename — fall back to copy+unlink.
+                                import shutil as _sh
+                                _sh.move(str(existing), str(target))
                 else:
-                    dest_dir = saved_dir()
-                dest = dest_dir / f"{post.id}{ext}"
-                if not dest.exists():
-                    import shutil
-                    shutil.copy2(path, dest)
+                    # Not in the library yet — pull from cache and copy in.
+                    path = await download_image(post.file_url)
+                    ext = Path(path).suffix
+                    dest = dest_dir / f"{post.id}{ext}"
+                    if not dest.exists():
+                        import shutil
+                        shutil.copy2(path, dest)
 
                 # Copy browse thumbnail to library thumbnail cache
                 if post.preview_url:
@@ -2607,7 +2728,7 @@ class BooruApp(QMainWindow):
                     source=post.source, file_url=post.file_url,
                 )
 
-                where = folder or "Unsorted"
+                where = folder or "Unfiled"
                 self._signals.bookmark_done.emit(
                     self._grid.selected_index,
                     f"Saved #{post.id} to {where}"
@@ -2837,7 +2958,14 @@ class BooruApp(QMainWindow):
 
     # -- Bookmarks --
 
-    def _toggle_bookmark(self, index: int) -> None:
+    def _toggle_bookmark(self, index: int, folder: str | None = None) -> None:
+        """Toggle the bookmark state of post at `index`.
+
+        When `folder` is given and the post is not yet bookmarked, the
+        new bookmark is filed under that bookmark folder. The folder
+        arg is ignored when removing — bookmark folder membership is
+        moot if the bookmark itself is going away.
+        """
         post = self._posts[index]
         site_id = self._site_combo.currentData()
         if not site_id:
@@ -2865,9 +2993,11 @@ class BooruApp(QMainWindow):
                         score=post.score,
                         source=post.source,
                         cached_path=str(path),
+                        folder=folder,
                         tag_categories=post.tag_categories,
                     )
-                    self._signals.bookmark_done.emit(index, f"Bookmarked #{post.id}")
+                    where = folder or "Unfiled"
+                    self._signals.bookmark_done.emit(index, f"Bookmarked #{post.id} to {where}")
                 except Exception as e:
                     self._signals.bookmark_error.emit(str(e))
 
@@ -2875,7 +3005,7 @@ class BooruApp(QMainWindow):
 
     def _on_bookmark_done(self, index: int, msg: str) -> None:
         self._status.showMessage(f"{len(self._posts)} results — {msg}")
-        # Detect batch operations (e.g. "Saved 3/10 to Unsorted") — skip heavy updates
+        # Detect batch operations (e.g. "Saved 3/10 to Unfiled") — skip heavy updates
         is_batch = "/" in msg and any(c.isdigit() for c in msg.split("/")[0][-2:])
         thumbs = self._grid._thumbs
         if 0 <= index < len(thumbs):
