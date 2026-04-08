@@ -38,6 +38,19 @@ class Viewport(NamedTuple):
     long_side: float
 
 
+# Maximum drift between our last-dispatched window rect and the current
+# Hyprland-reported rect that we still treat as "no user action happened."
+# Anything within this tolerance is absorbed (Hyprland gap rounding,
+# subpixel accumulation, decoration accounting). Anything beyond it is
+# treated as "the user dragged or resized the window externally" and the
+# persistent viewport gets updated from current state.
+#
+# 2px is small enough not to false-positive on real user drags (which
+# are always tens of pixels minimum) and large enough to absorb the
+# 1-2px per-nav drift that compounds across many navigations.
+_DRIFT_TOLERANCE = 2
+
+
 def _is_video(path: str) -> bool:
     return Path(path).suffix.lower() in VIDEO_EXTENSIONS
 
@@ -233,6 +246,28 @@ class FullscreenPreview(QMainWindow):
         self._first_fit_pending = True
         self._pending_position_restore: tuple[int, int] | None = None
         self._pending_size: tuple[int, int] | None = None
+        # Persistent viewport — the user's intent for popout center + size.
+        # Seeded from `_pending_size` + `_pending_position_restore` on the
+        # first fit after open or F11 exit. Updated only by user action
+        # (external drag/resize detected via cur-vs-last-dispatched
+        # comparison on Hyprland, or via moveEvent/resizeEvent on
+        # non-Hyprland). Navigation between posts NEVER writes to it —
+        # `_derive_viewport_for_fit` returns it unchanged unless drift
+        # has exceeded `_DRIFT_TOLERANCE`. This is what stops the
+        # sub-pixel accumulation that the recompute-from-current-state
+        # shortcut couldn't avoid.
+        self._viewport: Viewport | None = None
+        # Last (x, y, w, h) we dispatched to Hyprland (or to setGeometry
+        # on non-Hyprland). Used to detect external moves: if the next
+        # nav reads a current rect that differs by more than
+        # _DRIFT_TOLERANCE, the user moved or resized the window
+        # externally and we adopt the new state as the viewport's intent.
+        self._last_dispatched_rect: tuple[int, int, int, int] | None = None
+        # Reentrancy guard — set to True around every dispatch so the
+        # moveEvent/resizeEvent handlers (which fire on the non-Hyprland
+        # Qt fallback path) skip viewport updates triggered by our own
+        # programmatic geometry changes.
+        self._applying_dispatch: bool = False
         # Last known windowed geometry — captured on entering fullscreen so
         # F11 → windowed can land back on the same spot. Seeded from saved
         # geometry when the popout opens windowed, so even an immediate
@@ -441,44 +476,22 @@ class FullscreenPreview(QMainWindow):
 
         return (round(x), round(y), round(w), round(h))
 
-    def _derive_viewport_for_fit(
+    def _build_viewport_from_current(
         self, floating: bool | None, win: dict | None = None
     ) -> Viewport | None:
-        """Build a viewport from existing state at the start of a fit call.
+        """Build a viewport from the current window state, no caching.
 
-        This is the scoped (recompute-from-current-state) approach. The
-        viewport isn't a persistent field on the popout — it's recomputed
-        per call from one of three sources, in priority order:
+        Used in two cases:
+          1. First fit after open / F11 exit, when the persistent
+             `_viewport` is None and we need a starting value (the
+             `_pending_*` one-shots feed this path).
+          2. The "user moved the window externally" detection branch
+             in `_derive_viewport_for_fit`, when the cur-vs-last-dispatched
+             comparison shows drift > _DRIFT_TOLERANCE.
 
-          1. First fit after open or F11 exit: derive from the existing
-             `_pending_size` + `_pending_position_restore` one-shots.
-             These are seeded in `__init__` from the saved DB geometry
-             and re-armed in `_exit_fullscreen`.
-          2. Navigation fit on Hyprland: derive from current
-             hyprctl-reported window position+size, so the viewport
-             always reflects whatever the user has dragged the popout to.
-          3. Navigation fit on non-Hyprland: derive from `self.geometry()`
-             for the same reason.
-
-        `win` may be passed in by the caller (typically `_fit_to_content`,
-        which already fetched it for the floating check) to skip the
-        otherwise-redundant `_hyprctl_get_window()` subprocess call.
-        Each `hyprctl clients -j` is ~3ms of subprocess.run on the GUI
-        thread, and reusing the cached dict cuts the per-fit count from
-        three calls to one.
-
-        Returns None only if every source fails (Hyprland reports no
-        window AND non-Hyprland geometry is invalid), in which case the
-        caller should fall back to the existing pixel-space code path.
+        Returns None only if every source fails — Hyprland reports no
+        window AND non-Hyprland Qt geometry is also invalid.
         """
-        if self._first_fit_pending and self._pending_size and self._pending_position_restore:
-            pw, ph = self._pending_size
-            px, py = self._pending_position_restore
-            return Viewport(
-                center_x=px + pw / 2,
-                center_y=py + ph / 2,
-                long_side=float(max(pw, ph)),
-            )
         if floating is True:
             if win is None:
                 win = self._hyprctl_get_window()
@@ -499,6 +512,81 @@ class FullscreenPreview(QMainWindow):
                     long_side=float(max(rect.width(), rect.height())),
                 )
         return None
+
+    def _derive_viewport_for_fit(
+        self, floating: bool | None, win: dict | None = None
+    ) -> Viewport | None:
+        """Return the persistent viewport, updating it only on user action.
+
+        Three branches in priority order:
+
+          1. **First fit after open or F11 exit**: the `_pending_*`
+             one-shots are set. Seed `_viewport` from them and return.
+             This is the only path that overwrites the persistent
+             viewport unconditionally.
+
+          2. **Persistent viewport exists and is in agreement with
+             current window state**: return it unchanged. The compute
+             never reads its own output as input — sub-pixel drift
+             cannot accumulate here because we don't observe it.
+
+          3. **Persistent viewport exists but current state differs by
+             more than `_DRIFT_TOLERANCE`**: the user moved or resized
+             the window externally (Super+drag in Hyprland, corner-resize,
+             window manager intervention). Update the viewport from
+             current state — the user's new physical position IS the
+             new intent.
+
+        Wayland external moves don't fire Qt's `moveEvent`, so branch 3
+        is the only mechanism that captures Hyprland Super+drag. The
+        `_last_dispatched_rect` cache is what makes branch 2 stable —
+        without it, we'd have to read current state and compare to the
+        viewport's projection (the same code path that drifts).
+
+        `win` may be passed in by the caller to avoid an extra
+        `_hyprctl_get_window()` subprocess call (~3ms saved).
+        """
+        # Branch 1: first fit after open or F11 exit
+        if self._first_fit_pending and self._pending_size and self._pending_position_restore:
+            pw, ph = self._pending_size
+            px, py = self._pending_position_restore
+            self._viewport = Viewport(
+                center_x=px + pw / 2,
+                center_y=py + ph / 2,
+                long_side=float(max(pw, ph)),
+            )
+            return self._viewport
+
+        # No persistent viewport yet AND no first-fit one-shots — defensive
+        # fallback. Build from current state and stash for next call.
+        if self._viewport is None:
+            self._viewport = self._build_viewport_from_current(floating, win)
+            return self._viewport
+
+        # Branch 2/3: persistent viewport exists. Check whether the user
+        # moved or resized the window externally since our last dispatch.
+        if floating is True and self._last_dispatched_rect is not None:
+            if win is None:
+                win = self._hyprctl_get_window()
+            if win and win.get("at") and win.get("size"):
+                cur_x, cur_y = win["at"]
+                cur_w, cur_h = win["size"]
+                last_x, last_y, last_w, last_h = self._last_dispatched_rect
+                drift = max(
+                    abs(cur_x - last_x),
+                    abs(cur_y - last_y),
+                    abs(cur_w - last_w),
+                    abs(cur_h - last_h),
+                )
+                if drift > _DRIFT_TOLERANCE:
+                    # External move/resize detected. Adopt current as intent.
+                    self._viewport = Viewport(
+                        center_x=cur_x + cur_w / 2,
+                        center_y=cur_y + cur_h / 2,
+                        long_side=float(max(cur_w, cur_h)),
+                    )
+
+        return self._viewport
 
     def _fit_to_content(self, content_w: int, content_h: int, _retry: int = 0) -> None:
         """Size window to fit content. Viewport-based: long_side preserved across navs.
@@ -561,19 +649,32 @@ class FullscreenPreview(QMainWindow):
             # set lets a subsequent fit retry.
             return
         x, y, w, h = self._compute_window_rect(viewport, aspect, screen)
-        if floating is True:
-            # Hyprland: hyprctl is the sole authority. Calling self.resize()
-            # here would race with the batch below and produce visible flashing
-            # when the window also has to move.
-            self._hyprctl_resize_and_move(w, h, x, y, win=win)
-        else:
-            # Non-Hyprland fallback: Qt drives geometry directly. Use
-            # setGeometry with the computed top-left rather than resize()
-            # so the window center stays put — Qt's resize() anchors
-            # top-left and lets the bottom-right move, which causes the
-            # popout center to drift toward the upper-left of the screen
-            # over repeated navigations.
-            self.setGeometry(QRect(x, y, w, h))
+        # Reentrancy guard: set before any dispatch so the
+        # moveEvent/resizeEvent handlers (which fire on the non-Hyprland
+        # Qt fallback path) don't update the persistent viewport from
+        # our own programmatic geometry change.
+        self._applying_dispatch = True
+        try:
+            if floating is True:
+                # Hyprland: hyprctl is the sole authority. Calling self.resize()
+                # here would race with the batch below and produce visible flashing
+                # when the window also has to move.
+                self._hyprctl_resize_and_move(w, h, x, y, win=win)
+            else:
+                # Non-Hyprland fallback: Qt drives geometry directly. Use
+                # setGeometry with the computed top-left rather than resize()
+                # so the window center stays put — Qt's resize() anchors
+                # top-left and lets the bottom-right move, which causes the
+                # popout center to drift toward the upper-left of the screen
+                # over repeated navigations.
+                self.setGeometry(QRect(x, y, w, h))
+        finally:
+            self._applying_dispatch = False
+        # Cache the dispatched rect so the next nav can compare current
+        # Hyprland state against it and detect external moves/resizes.
+        # This is the persistent-viewport's link back to reality without
+        # reading our own output every nav.
+        self._last_dispatched_rect = (x, y, w, h)
         self._first_fit_pending = False
         self._pending_position_restore = None
         self._pending_size = None
@@ -809,7 +910,26 @@ class FullscreenPreview(QMainWindow):
         self.showFullScreen()
 
     def _exit_fullscreen(self) -> None:
-        """Leave fullscreen — restore the pre-fullscreen position via the same handshake as open."""
+        """Leave fullscreen — let the persistent viewport drive the restore.
+
+        With the Group B persistent viewport in place, F11 exit no longer
+        needs to re-arm the `_first_fit_pending` one-shots. The viewport
+        already holds the pre-fullscreen center + long_side from before
+        the user pressed F11 — fullscreen entry doesn't write to it,
+        and nothing during fullscreen does either (no `_fit_to_content`
+        runs while `isFullScreen()` is True). So the next deferred fit
+        after `showNormal()` reads the persistent viewport, computes the
+        new windowed rect for the current content's aspect, and dispatches
+        — landing at the pre-fullscreen CENTER with the new shape, which
+        also fixes the legacy F11-walks-toward-saved-top-left bug 1f as a
+        side effect of the Group B refactor.
+
+        We still need to invalidate `_last_dispatched_rect` because the
+        cached value is from the pre-fullscreen window, and after F11
+        Hyprland may report a different position before the deferred fit
+        catches up — we don't want the drift detector to think the user
+        moved the window externally during fullscreen.
+        """
         content_w, content_h = 0, 0
         if self._stack.currentIndex() == 1:
             mpv = self._video._mpv
@@ -825,22 +945,10 @@ class FullscreenPreview(QMainWindow):
             if pix and not pix.isNull():
                 content_w, content_h = pix.width(), pix.height()
         FullscreenPreview._saved_fullscreen = False
-        # Re-arm the one-shot handshake. Note: no setGeometry here — Qt's
-        # setGeometry on a fullscreen window races with showNormal() and the
-        # subsequent hyprctl batch, leaving the window stuck at the
-        # default child-window placement (top-left). Instead, _pending_size
-        # seeds the fit math directly and the deferred fit below dispatches
-        # the resize+move via hyprctl after Qt's state transition has settled.
-        if self._windowed_geometry is not None:
-            self._first_fit_pending = True
-            self._pending_position_restore = (
-                self._windowed_geometry.x(),
-                self._windowed_geometry.y(),
-            )
-            self._pending_size = (
-                self._windowed_geometry.width(),
-                self._windowed_geometry.height(),
-            )
+        # Invalidate the cache so the next fit doesn't false-positive on
+        # "user moved the window during fullscreen". The persistent
+        # viewport stays as-is and will drive the restore.
+        self._last_dispatched_rect = None
         self.showNormal()
         if content_w > 0 and content_h > 0:
             # Defer to next event-loop tick so Qt's showNormal() is processed
@@ -857,6 +965,72 @@ class FullscreenPreview(QMainWindow):
         self._toolbar.setGeometry(0, 0, w, tb_h)
         ctrl_h = self._video._controls_bar.sizeHint().height()
         self._video._controls_bar.setGeometry(0, h - ctrl_h, w, ctrl_h)
+        # Capture corner-resize into the persistent viewport so the
+        # long_side the user chose survives subsequent navigations.
+        #
+        # GATED TO NON-HYPRLAND. On Wayland (Hyprland included), Qt
+        # cannot know the window's absolute screen position — xdg-toplevel
+        # doesn't expose it to clients — so `self.geometry()` returns
+        # `QRect(0, 0, w, h)` regardless of where the compositor actually
+        # placed the window. If we let this branch run on Hyprland, every
+        # configure event from a hyprctl dispatch (or from the user's
+        # Super+drag, or from `showNormal()` exiting fullscreen) would
+        # corrupt the viewport center to ~(w/2, h/2) — a small positive
+        # number far from the screen center — and the next dispatch
+        # would project that bogus center, edge-nudge it, and land at
+        # the top-left. Bug observed during the Group B viewport rollout.
+        #
+        # The `_applying_dispatch` guard catches the synchronous
+        # non-Hyprland setGeometry path (where moveEvent fires inside
+        # the try/finally block). It does NOT catch the async Hyprland
+        # path because Popen returns instantly and the configure-event
+        # → moveEvent round-trip happens later. The Hyprland gate
+        # below is the actual fix; the `_applying_dispatch` guard
+        # remains for the non-Hyprland path.
+        #
+        # On Hyprland, external drags/resizes are picked up by the
+        # cur-vs-last-dispatched comparison in `_derive_viewport_for_fit`,
+        # which reads `hyprctl clients -j` (the only reliable absolute
+        # position source on Wayland).
+        import os
+        if os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+            return
+        if self._applying_dispatch or self.isFullScreen():
+            return
+        rect = self.geometry()
+        if rect.width() > 0 and rect.height() > 0:
+            self._viewport = Viewport(
+                center_x=rect.x() + rect.width() / 2,
+                center_y=rect.y() + rect.height() / 2,
+                long_side=float(max(rect.width(), rect.height())),
+            )
+
+    def moveEvent(self, event) -> None:
+        super().moveEvent(event)
+        # Capture user drags into the persistent viewport on the
+        # non-Hyprland Qt path.
+        #
+        # GATED TO NON-HYPRLAND for the same reason as resizeEvent —
+        # `self.geometry()` is unreliable on Wayland. See the long
+        # comment in resizeEvent above for the full diagnosis. On
+        # Hyprland, drag detection happens via the cur-vs-last-dispatched
+        # comparison in `_derive_viewport_for_fit` instead.
+        import os
+        if os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+            return
+        if self._applying_dispatch or self.isFullScreen():
+            return
+        if self._viewport is None:
+            return
+        rect = self.geometry()
+        if rect.width() > 0 and rect.height() > 0:
+            # Move-only update: keep the existing long_side, just
+            # update the center to where the window now sits.
+            self._viewport = Viewport(
+                center_x=rect.x() + rect.width() / 2,
+                center_y=rect.y() + rect.height() / 2,
+                long_side=self._viewport.long_side,
+            )
 
     def closeEvent(self, event) -> None:
         from PySide6.QtWidgets import QApplication
