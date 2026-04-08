@@ -673,7 +673,7 @@ class BooruApp(QMainWindow):
             finally:
                 self._search.infinite_last_page = last_page
                 self._search.infinite_api_exhausted = api_exhausted
-                self._signals.search_append.emit(collected)
+                self._signals.search_append.emit(collected[:limit])
                 await client.close()
 
         self._run_async(_search)
