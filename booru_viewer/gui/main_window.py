@@ -638,23 +638,36 @@ class BooruApp(QMainWindow):
         shown_ids = self._search.shown_post_ids.copy()
         seen = shown_ids.copy()  # local dedup for this backfill round
 
+        # Per-pass drop counters — same shape as _do_search's instrumentation
+        # so the two code paths produce comparable log lines.
+        drops = {"bl_tags": 0, "bl_posts": 0, "dedup": 0}
+
         def _filter(posts):
+            n0 = len(posts)
             if bl_tags:
                 posts = [p for p in posts if not bl_tags.intersection(p.tag_list)]
+            n1 = len(posts)
+            drops["bl_tags"] += n0 - n1
             if bl_posts:
                 posts = [p for p in posts if p.file_url not in bl_posts]
+            n2 = len(posts)
+            drops["bl_posts"] += n1 - n2
             posts = [p for p in posts if p.id not in seen]
+            n3 = len(posts)
+            drops["dedup"] += n2 - n3
             seen.update(p.id for p in posts)
             return posts
 
         async def _search():
             client = self._make_client()
             collected = []
+            raw_total = 0
             last_page = page
             api_exhausted = False
             try:
                 current_page = page
                 batch = await client.search(tags=search_tags, page=current_page, limit=limit)
+                raw_total += len(batch)
                 last_page = current_page
                 filtered = _filter(batch)
                 collected.extend(filtered)
@@ -665,6 +678,7 @@ class BooruApp(QMainWindow):
                         await asyncio.sleep(0.3)
                         current_page += 1
                         batch = await client.search(tags=search_tags, page=current_page, limit=limit)
+                        raw_total += len(batch)
                         last_page = current_page
                         filtered = _filter(batch)
                         collected.extend(filtered)
@@ -678,6 +692,11 @@ class BooruApp(QMainWindow):
             finally:
                 self._search.infinite_last_page = last_page
                 self._search.infinite_api_exhausted = api_exhausted
+                log.debug(
+                    f"on_reached_bottom: limit={limit} api_returned_total={raw_total} kept={len(collected[:limit])} "
+                    f"drops_bl_tags={drops['bl_tags']} drops_bl_posts={drops['bl_posts']} drops_dedup={drops['dedup']} "
+                    f"api_exhausted={api_exhausted} last_page={last_page}"
+                )
                 self._signals.search_append.emit(collected[:limit])
                 await client.close()
 
@@ -779,12 +798,25 @@ class BooruApp(QMainWindow):
         shown_ids = self._search.shown_post_ids.copy()
         seen = shown_ids.copy()
 
+        # Per-pass drop counters for the at-end-flag instrumentation. The
+        # filter mutates this dict via closure capture so the outer scope
+        # can read the totals after the loop. Lets us distinguish "API
+        # ran out" from "client-side filter trimmed the page".
+        drops = {"bl_tags": 0, "bl_posts": 0, "dedup": 0}
+
         def _filter(posts):
+            n0 = len(posts)
             if bl_tags:
                 posts = [p for p in posts if not bl_tags.intersection(p.tag_list)]
+            n1 = len(posts)
+            drops["bl_tags"] += n0 - n1
             if bl_posts:
                 posts = [p for p in posts if p.file_url not in bl_posts]
+            n2 = len(posts)
+            drops["bl_posts"] += n1 - n2
             posts = [p for p in posts if p.id not in seen]
+            n3 = len(posts)
+            drops["dedup"] += n2 - n3
             seen.update(p.id for p in posts)
             return posts
 
@@ -792,8 +824,10 @@ class BooruApp(QMainWindow):
             client = self._make_client()
             try:
                 collected = []
+                raw_total = 0
                 current_page = page
                 batch = await client.search(tags=search_tags, page=current_page, limit=limit)
+                raw_total += len(batch)
                 filtered = _filter(batch)
                 collected.extend(filtered)
                 # Backfill only if first page didn't return enough after filtering
@@ -802,11 +836,17 @@ class BooruApp(QMainWindow):
                         await asyncio.sleep(0.3)
                         current_page += 1
                         batch = await client.search(tags=search_tags, page=current_page, limit=limit)
+                        raw_total += len(batch)
                         filtered = _filter(batch)
                         collected.extend(filtered)
                         log.debug(f"Backfill: page={current_page} batch={len(batch)} filtered={len(filtered)} total={len(collected)}/{limit}")
                         if len(collected) >= limit or len(batch) < limit:
                             break
+                log.debug(
+                    f"do_search: limit={limit} api_returned_total={raw_total} kept={len(collected[:limit])} "
+                    f"drops_bl_tags={drops['bl_tags']} drops_bl_posts={drops['bl_posts']} drops_dedup={drops['dedup']} "
+                    f"last_batch_size={len(batch)} api_short_signal={len(batch) < limit}"
+                )
                 self._signals.search_done.emit(collected[:limit])
             except Exception as e:
                 self._signals.search_error.emit(str(e))
@@ -828,6 +868,7 @@ class BooruApp(QMainWindow):
             del ss.page_cache[oldest]
         limit = self._db.get_setting_int("page_size") or 40
         at_end = len(posts) < limit
+        log.debug(f"on_search_done: displayed_count={len(posts)} limit={limit} at_end={at_end}")
         if at_end:
             self._status.showMessage(f"{len(posts)} results (end)")
         else:
