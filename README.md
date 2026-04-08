@@ -147,6 +147,11 @@ booru-viewer
 
 Or without installing: `python3 -m booru_viewer.main_gui`
 
+**Run tests:**
+```sh
+pip install -e ".[test]"
+pytest tests/
+```
 
 **Desktop entry:** To add booru-viewer to your app launcher, create `~/.local/share/applications/booru-viewer.desktop`:
 ```ini
