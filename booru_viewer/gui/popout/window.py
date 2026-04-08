@@ -905,15 +905,39 @@ class FullscreenPreview(QMainWindow):
             pass
 
     def _enter_fullscreen(self) -> None:
-        """Enter fullscreen — capture windowed geometry first so F11 back can restore it."""
+        """Enter fullscreen — capture windowed geometry first so F11 back can restore it.
+
+        Also capture the current windowed state into the persistent
+        `_viewport` so the F11-exit restore lands at the user's actual
+        pre-F11 position, not at a stale viewport from before they last
+        dragged the window. The drift detection in `_derive_viewport_for_fit`
+        only fires when `_last_dispatched_rect` is set AND a fit is being
+        computed — neither path catches the "user dragged the popout
+        with Super+drag and then immediately pressed F11" sequence,
+        because Hyprland Super+drag doesn't fire Qt's moveEvent and no
+        nav has happened to trigger a fit. Capturing fresh into
+        `_viewport` here makes the restore correct regardless.
+        """
         from PySide6.QtCore import QRect
         win = self._hyprctl_get_window()
         if win and win.get("at") and win.get("size"):
             x, y = win["at"]
             w, h = win["size"]
             self._windowed_geometry = QRect(x, y, w, h)
+            self._viewport = Viewport(
+                center_x=x + w / 2,
+                center_y=y + h / 2,
+                long_side=float(max(w, h)),
+            )
         else:
             self._windowed_geometry = self.frameGeometry()
+            rect = self._windowed_geometry
+            if rect.width() > 0 and rect.height() > 0:
+                self._viewport = Viewport(
+                    center_x=rect.x() + rect.width() / 2,
+                    center_y=rect.y() + rect.height() / 2,
+                    long_side=float(max(rect.width(), rect.height())),
+                )
         self.showFullScreen()
 
     def _exit_fullscreen(self) -> None:

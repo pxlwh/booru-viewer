@@ -149,6 +149,24 @@ class ImageViewer(QWidget):
             event.ignore()
 
     def resizeEvent(self, event) -> None:
-        if self._pixmap:
+        if not self._pixmap:
+            return
+        pw, ph = self._pixmap.width(), self._pixmap.height()
+        if pw == 0 or ph == 0:
+            return
+        # Only re-fit if the user was at fit-to-view at the *previous*
+        # size. If they had explicitly zoomed/panned, leave _zoom and
+        # _offset alone — clobbering them on every resize (F11 toggle,
+        # manual window drag, splitter move) loses their state. Use
+        # event.oldSize() to compute the prior fit-to-view zoom and
+        # compare to current _zoom; the 0.001 epsilon absorbs float
+        # drift but is tighter than any wheel/key zoom step (±20%).
+        old = event.oldSize()
+        if old.isValid() and old.width() > 0 and old.height() > 0:
+            old_fit = min(old.width() / pw, old.height() / ph)
+            if abs(self._zoom - old_fit) < 0.001:
+                self._fit_to_view()
+        else:
+            # First resize (no valid old size) — default to fit.
             self._fit_to_view()
-            self.update()
+        self.update()
