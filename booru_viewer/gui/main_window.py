@@ -2411,28 +2411,65 @@ class BooruApp(QMainWindow):
         return False
 
     def _on_multi_context_menu(self, indices: list, pos) -> None:
-        """Context menu for multi-selected posts."""
+        """Context menu for multi-selected posts.
+
+        Library and bookmark actions are split into independent
+        save/unsave and bookmark/remove-bookmark pairs (mirroring the
+        single-post menu's separation), with symmetric conditional
+        visibility: each action only appears when the selection actually
+        contains posts the action would affect. Save All to Library
+        appears only when at least one post is unsaved; Unsave All from
+        Library only when at least one is saved; Bookmark All only when
+        at least one is unbookmarked; Remove All Bookmarks only when at
+        least one is bookmarked.
+        """
         posts = [self._posts[i] for i in indices if 0 <= i < len(self._posts)]
         if not posts:
             return
         count = len(posts)
 
+        site_id = self._site_combo.currentData()
+        any_bookmarked = bool(site_id) and any(self._db.is_bookmarked(site_id, p.id) for p in posts)
+        any_unbookmarked = bool(site_id) and any(not self._db.is_bookmarked(site_id, p.id) for p in posts)
+        any_saved = any(self._is_post_saved(p.id) for p in posts)
+        any_unsaved = any(not self._is_post_saved(p.id) for p in posts)
+
         menu = QMenu(self)
-        fav_all = menu.addAction(f"Bookmark All ({count})")
 
-        save_menu = menu.addMenu(f"Save All to Library ({count})")
-        save_unsorted = save_menu.addAction("Unfiled")
-        save_folder_actions = {}
-        from ..core.config import library_folders
-        for folder in library_folders():
-            a = save_menu.addAction(folder)
-            save_folder_actions[id(a)] = folder
-        save_menu.addSeparator()
-        save_new = save_menu.addAction("+ New Folder...")
+        # Library section
+        save_menu = None
+        save_unsorted = None
+        save_new = None
+        save_folder_actions: dict[int, str] = {}
+        if any_unsaved:
+            from ..core.config import library_folders
+            save_menu = menu.addMenu(f"Save All to Library ({count})")
+            save_unsorted = save_menu.addAction("Unfiled")
+            for folder in library_folders():
+                a = save_menu.addAction(folder)
+                save_folder_actions[id(a)] = folder
+            save_menu.addSeparator()
+            save_new = save_menu.addAction("+ New Folder...")
 
-        menu.addSeparator()
-        unfav_all = menu.addAction(f"Remove All Bookmarks ({count})")
-        menu.addSeparator()
+        unsave_lib_all = None
+        if any_saved:
+            unsave_lib_all = menu.addAction(f"Unsave All from Library ({count})")
+
+        # Bookmark section
+        if (any_unsaved or any_saved) and (any_unbookmarked or any_bookmarked):
+            menu.addSeparator()
+
+        fav_all = None
+        if any_unbookmarked:
+            fav_all = menu.addAction(f"Bookmark All ({count})")
+
+        unfav_all = None
+        if any_bookmarked:
+            unfav_all = menu.addAction(f"Remove All Bookmarks ({count})")
+
+        # Always-shown actions
+        if any_unsaved or any_saved or any_unbookmarked or any_bookmarked:
+            menu.addSeparator()
         batch_dl = menu.addAction(f"Download All ({count})...")
         copy_urls = menu.addAction("Copy All URLs")
 
@@ -2440,11 +2477,11 @@ class BooruApp(QMainWindow):
         if not action:
             return
 
-        if action == fav_all:
+        if fav_all is not None and action == fav_all:
             self._bulk_bookmark(indices, posts)
-        elif action == save_unsorted:
+        elif save_unsorted is not None and action == save_unsorted:
             self._bulk_save(indices, posts, None)
-        elif action == save_new:
+        elif save_new is not None and action == save_new:
             from PySide6.QtWidgets import QInputDialog, QMessageBox
             name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
             if ok and name.strip():
@@ -2457,25 +2494,24 @@ class BooruApp(QMainWindow):
                 self._bulk_save(indices, posts, name.strip())
         elif id(action) in save_folder_actions:
             self._bulk_save(indices, posts, save_folder_actions[id(action)])
+        elif unsave_lib_all is not None and action == unsave_lib_all:
+            self._bulk_unsave(indices, posts)
         elif action == batch_dl:
             from .dialogs import select_directory
             dest = select_directory(self, "Download to folder")
             if dest:
                 self._batch_download_posts(posts, dest)
-        elif action == unfav_all:
-            site_id = self._site_combo.currentData()
+        elif unfav_all is not None and action == unfav_all:
             if site_id:
-                from ..core.cache import delete_from_library
                 for post in posts:
-                    # Single call now walks every library folder by post id.
-                    delete_from_library(post.id)
                     self._db.remove_bookmark(site_id, post.id)
                 for idx in indices:
                     if 0 <= idx < len(self._grid._thumbs):
                         self._grid._thumbs[idx].set_bookmarked(False)
-                        self._grid._thumbs[idx].set_saved_locally(False)
                 self._grid._clear_multi()
                 self._status.showMessage(f"Removed {count} bookmarks")
+                if self._stack.currentIndex() == 1:
+                    self._bookmarks_view.refresh()
         elif action == copy_urls:
             urls = "\n".join(p.file_url for p in posts)
             QApplication.clipboard().setText(urls)
@@ -2536,6 +2572,29 @@ class BooruApp(QMainWindow):
             self._signals.batch_done.emit(f"Saved {len(posts)} to {where}")
 
         self._run_async(_do)
+
+    def _bulk_unsave(self, indices: list[int], posts: list[Post]) -> None:
+        """Bulk-remove selected posts from the library.
+
+        Mirrors `_bulk_save` shape but synchronously — `delete_from_library`
+        is a filesystem op, no httpx round-trip needed. Touches only the
+        library (filesystem); bookmarks are a separate DB-backed concept
+        and stay untouched. The grid's saved-locally dot clears for every
+        selection slot regardless of whether the file was actually present
+        — the user's intent is "make these not-saved", and a missing file
+        is already not-saved.
+        """
+        from ..core.cache import delete_from_library
+        for post in posts:
+            delete_from_library(post.id)
+        for idx in indices:
+            if 0 <= idx < len(self._grid._thumbs):
+                self._grid._thumbs[idx].set_saved_locally(False)
+        self._grid._clear_multi()
+        self._status.showMessage(f"Removed {len(posts)} from library")
+        if self._stack.currentIndex() == 2:
+            self._library_view.refresh()
+        self._update_fullscreen_state()
 
     def _ensure_bookmarked(self, post: Post) -> None:
         """Bookmark a post if not already bookmarked."""
