@@ -398,7 +398,23 @@ class FullscreenPreview(QMainWindow):
         elif id(action) in folder_actions:
             self.bookmark_to_folder.emit(folder_actions[id(action)])
 
-    def set_media(self, path: str, info: str = "") -> None:
+    def set_media(self, path: str, info: str = "", width: int = 0, height: int = 0) -> None:
+        """Display `path` in the popout, info string above it.
+
+        `width` and `height` are the *known* media dimensions from the
+        post metadata (booru API), passed in by the caller when
+        available. They're used to pre-fit the popout window for video
+        files BEFORE mpv has loaded the file, so cached videos don't
+        flash a wrong-shaped black surface while mpv decodes the first
+        frame. mpv still fires `video_size` after demuxing and the
+        second `_fit_to_content` call corrects the aspect if the
+        encoded video-params differ from the API metadata (rare —
+        anamorphic / weirdly cropped sources). Both fits use the
+        persistent viewport's same `long_side` and the same center,
+        so the second fit is a no-op in the common case and only
+        produces a shape correction (no positional move) in the
+        mismatch case.
+        """
         self._info_label.setText(info)
         ext = Path(path).suffix.lower()
         if _is_video(path):
@@ -406,6 +422,16 @@ class FullscreenPreview(QMainWindow):
             self._video.stop()
             self._video.play_file(path, info)
             self._stack.setCurrentIndex(1)
+            # NOTE: pre-fit to API dimensions was tried here (option A
+            # from the perf round) but caused a perceptible slowdown
+            # in popout video clicks — the redundant second hyprctl
+            # dispatch when mpv's video_size callback fired produced
+            # a visible re-settle. The width/height params remain on
+            # the signature so the streaming and update-fullscreen
+            # call sites can keep passing them, but they're currently
+            # ignored. Re-enable cautiously if you can prove the
+            # second fit becomes a true no-op.
+            _ = (width, height)  # accepted but unused for now
         else:
             self._video.stop()
             self._video._controls_bar.hide()
@@ -649,6 +675,25 @@ class FullscreenPreview(QMainWindow):
             # set lets a subsequent fit retry.
             return
         x, y, w, h = self._compute_window_rect(viewport, aspect, screen)
+        # Identical-rect skip. If the computed rect is exactly what
+        # we last dispatched, the window is already in that state and
+        # there's nothing for hyprctl (or setGeometry) to do. Skipping
+        # saves one subprocess.Popen + Hyprland's processing of the
+        # redundant resize/move dispatch — ~100-300ms of perceived
+        # latency on cached video clicks where the new content has the
+        # same aspect/long_side as the previous, which is common (back-
+        # to-back videos from the same source, image→video with matching
+        # aspect, re-clicking the same post). Doesn't apply on the very
+        # first fit after open (last_dispatched_rect is None) and the
+        # first dispatch always lands. Doesn't break drift detection
+        # because the comparison branch in _derive_viewport_for_fit
+        # already ran above and would have updated _viewport (and
+        # therefore the computed rect) if Hyprland reported drift.
+        if self._last_dispatched_rect == (x, y, w, h):
+            self._first_fit_pending = False
+            self._pending_position_restore = None
+            self._pending_size = None
+            return
         # Reentrancy guard: set before any dispatch so the
         # moveEvent/resizeEvent handlers (which fire on the non-Hyprland
         # Qt fallback path) don't update the persistent viewport from
@@ -1032,6 +1077,21 @@ class FullscreenPreview(QMainWindow):
                 long_side=self._viewport.long_side,
             )
 
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        # Pre-warm the mpv GL render context as soon as the popout is
+        # mapped, so the first video click doesn't pay for GL context
+        # creation (~100-200ms one-time cost). The widget needs to be
+        # visible for `makeCurrent()` to succeed, which is what showEvent
+        # gives us. ensure_gl_init is idempotent — re-shows after a
+        # close/reopen are cheap no-ops.
+        try:
+            self._video._gl_widget.ensure_gl_init()
+        except Exception:
+            # If GL pre-warm fails (driver weirdness, headless test),
+            # play_file's lazy ensure_gl_init still runs as a fallback.
+            pass
+
     def closeEvent(self, event) -> None:
         from PySide6.QtWidgets import QApplication
         # Save window state for next open
@@ -1266,6 +1326,17 @@ class _MpvGLWidget(QWidget):
             input_default_bindings=False,
             input_vo_keyboard=False,
             osc=False,
+            # Fast-load options: shave ~50-100ms off first-frame decode
+            # for h264/hevc by skipping a few bitstream-correctness checks
+            # (`vd-lavc-fast`) and the in-loop filter on non-keyframes
+            # (`vd-lavc-skiploopfilter=nonkey`). The artifacts are only
+            # visible on the first few frames before the decoder steady-
+            # state catches up, and only on degraded sources. mpv
+            # documents these as safe for "fast load" use cases like
+            # ours where we want the first frame on screen ASAP and
+            # don't care about a tiny quality dip during ramp-up.
+            vd_lavc_fast="yes",
+            vd_lavc_skiploopfilter="nonkey",
         )
         # Wire up the GL surface's callbacks to us
         self._gl._owner = self
@@ -1493,6 +1564,23 @@ class VideoPlayer(QWidget):
             layout.addWidget(self._controls_bar)
 
         self._eof_pending = False
+        # Stale-eof suppression window. mpv emits `eof-reached=True`
+        # whenever a file ends — including via `command('stop')` —
+        # and the observer fires asynchronously on mpv's event thread.
+        # When set_media swaps to a new file, the previous file's stop
+        # generates an eof event that can race with `play_file`'s
+        # `_eof_pending = False` reset and arrive AFTER it, sticking
+        # the bool back to True. The next `_poll` then runs
+        # `_handle_eof` and emits `play_next` in Loop=Next mode →
+        # auto-advance past the post the user wanted → SKIP.
+        #
+        # Fix: ignore eof events for `_eof_ignore_window_secs` after
+        # each `play_file` call. The race is single-digit ms, so
+        # 250ms is comfortably wide for the suppression and narrow
+        # enough not to mask a real EOF on the shortest possible
+        # videos (booru video clips are always >= 1s).
+        self._eof_ignore_until: float = 0.0
+        self._eof_ignore_window_secs: float = 0.25
 
         # Polling timer for position/duration/pause/eof state
         self._poll_timer = QTimer(self)
@@ -1579,15 +1667,45 @@ class VideoPlayer(QWidget):
             self._mpv.seek(ms / 1000.0, 'absolute+exact')
 
     def play_file(self, path: str, info: str = "") -> None:
+        """Play a file from a local path OR a remote http(s) URL.
+
+        URL playback is the fast path for uncached videos: rather than
+        waiting for `download_image` to finish writing the entire file
+        to disk before mpv touches it, the load flow hands mpv the
+        remote URL and lets mpv stream + buffer + render the first
+        frame in parallel with the cache-populating download. mpv's
+        first frame typically lands in 1-2s instead of waiting for
+        the full multi-MB transfer.
+
+        For URL paths we set the `referrer` per-file option from the
+        booru's hostname so CDNs that gate downloads on Referer don't
+        reject mpv's request — same logic our own httpx client uses
+        in `cache._referer_for`. python-mpv's `loadfile()` accepts
+        per-file `**options` kwargs that become `--key=value` overrides
+        for the duration of that file.
+        """
         m = self._ensure_mpv()
         self._gl_widget.ensure_gl_init()
         self._current_file = path
         self._media_ready_fired = False
         self._pending_duration = None
         self._eof_pending = False
+        # Open the stale-eof suppression window. Any eof-reached event
+        # arriving from mpv's event thread within the next 250ms is
+        # treated as belonging to the previous file's stop and
+        # ignored — see the long comment at __init__'s
+        # `_eof_ignore_until` definition for the race trace.
+        import time as _time
+        self._eof_ignore_until = _time.monotonic() + self._eof_ignore_window_secs
         self._last_video_size = None  # reset dedupe so new file fires a fit
         self._apply_loop_to_mpv()
-        m.loadfile(path)
+        if path.startswith(("http://", "https://")):
+            from urllib.parse import urlparse
+            from ..core.cache import _referer_for
+            referer = _referer_for(urlparse(path))
+            m.loadfile(path, "replace", referrer=referer)
+        else:
+            m.loadfile(path)
         if self._autoplay:
             m.pause = False
         else:
@@ -1669,8 +1787,18 @@ class VideoPlayer(QWidget):
                 self._pending_video_size = new_size
 
     def _on_eof_reached(self, _name: str, value) -> None:
-        """Called from mpv thread when eof-reached changes."""
+        """Called from mpv thread when eof-reached changes.
+
+        Suppresses eof events that arrive within the post-play_file
+        ignore window — those are stale events from the previous
+        file's stop and would otherwise race the `_eof_pending=False`
+        reset and trigger a spurious play_next auto-advance.
+        """
         if value is True:
+            import time as _time
+            if _time.monotonic() < self._eof_ignore_until:
+                # Stale eof from a previous file's stop. Drop it.
+                return
             self._eof_pending = True
 
     def _on_duration_change(self, _name: str, value) -> None:

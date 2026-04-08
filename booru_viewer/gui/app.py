@@ -93,6 +93,13 @@ class AsyncSignals(QObject):
     thumb_done = Signal(int, str)
     image_done = Signal(str, str)
     image_error = Signal(str)
+    # Fast-path for uncached video posts: emit the remote URL directly
+    # so mpv can start streaming + decoding immediately instead of
+    # waiting for download_image to write the whole file to disk first.
+    # download_image still runs in parallel to populate the cache for
+    # next time. Args: (url, info, width, height) — width/height come
+    # from post.width/post.height for the popout pre-fit optimization.
+    video_stream = Signal(str, str, int, int)
     bookmark_done = Signal(int, str)
     bookmark_error = Signal(str)
     autocomplete_done = Signal(list)
@@ -352,6 +359,7 @@ class BooruApp(QMainWindow):
         s.thumb_done.connect(self._on_thumb_done, Q)
         s.image_done.connect(self._on_image_done, Q)
         s.image_error.connect(self._on_image_error, Q)
+        s.video_stream.connect(self._on_video_stream, Q)
         s.bookmark_done.connect(self._on_bookmark_done, Q)
         s.bookmark_error.connect(self._on_bookmark_error, Q)
         s.autocomplete_done.connect(self._on_autocomplete_done, Q)
@@ -1266,6 +1274,32 @@ class BooruApp(QMainWindow):
         if 0 <= index < len(self._posts):
             post = self._posts[index]
             log.info(f"Preview: #{post.id} -> {post.file_url}")
+            # Pause whichever video player is currently active before
+            # we kick off the new post's load. The async download can
+            # take seconds (uncached) or minutes (slow CDN, multi-MB
+            # webm). If we leave the previous video playing during
+            # that wait, it can reach EOF naturally, which fires
+            # Loop=Next mode and auto-advances PAST the post the
+            # user actually wanted — they see "I clicked next, it
+            # skipped the next video and went to the one after."
+            #
+            # `pause = True` is a mpv property change (no eof-reached
+            # side effect, unlike `command('stop')`), so we don't
+            # re-trigger the navigation race the previous fix closed.
+            # When `play_file` eventually runs for the new post it
+            # will unpause based on `_autoplay`. Pausing both players
+            # is safe because the inactive one's mpv is either None
+            # or already stopped — pause is a no-op there.
+            try:
+                if self._fullscreen_window:
+                    fmpv = self._fullscreen_window._video._mpv
+                    if fmpv is not None:
+                        fmpv.pause = True
+                pmpv = self._preview._video_player._mpv
+                if pmpv is not None:
+                    pmpv.pause = True
+            except Exception:
+                pass
             self._preview._current_post = post
             self._preview._current_site_id = self._site_combo.currentData()
             self._preview.set_post_tags(post.tag_categories, post.tag_list)
@@ -1301,16 +1335,53 @@ class BooruApp(QMainWindow):
                         index, downloaded / total
                     )
 
+            # Pre-build the info string so the streaming fast-path can
+            # use it before download_image even starts (it's all post
+            # metadata, no need to wait for the file to land on disk).
+            info = (f"#{post.id}  {post.width}x{post.height}  score:{post.score}  [{post.rating}]  {Path(post.file_url.split('?')[0]).suffix.lstrip('.').upper() if post.file_url else ''}"
+                    + (f"  {post.created_at}" if post.created_at else ""))
+
+            # Detect video posts that AREN'T cached yet and route them
+            # through the mpv streaming fast-path. mpv plays the URL
+            # directly while download_image populates the cache below
+            # in parallel — first frame in 1-2s instead of waiting for
+            # the entire multi-MB file to land. Cached videos go through
+            # the normal flow because the local path is already there.
+            from ..core.cache import is_cached
+            from .preview import VIDEO_EXTENSIONS
+            is_video = bool(
+                post.file_url
+                and Path(post.file_url.split('?')[0]).suffix.lower() in VIDEO_EXTENSIONS
+            )
+            streaming = is_video and post.file_url and not is_cached(post.file_url)
+            if streaming:
+                # Fire mpv at the URL immediately. The download_image
+                # below will populate the cache in parallel for next time.
+                self._signals.video_stream.emit(
+                    post.file_url, info, post.width, post.height
+                )
+
             async def _load():
                 self._prefetch_pause.clear()  # pause prefetch
                 try:
                     path = await download_image(post.file_url, progress_callback=_progress)
-                    info = (f"#{post.id}  {post.width}x{post.height}  score:{post.score}  [{post.rating}]  {Path(post.file_url.split('?')[0]).suffix.lstrip('.').upper() if post.file_url else ''}"
-                            + (f"  {post.created_at}" if post.created_at else ""))
-                    self._signals.image_done.emit(str(path), info)
+                    if not streaming:
+                        # Normal path: download finished, hand the local
+                        # file to the preview/popout. For streaming, mpv
+                        # is already playing the URL — calling set_media
+                        # again with the local path would interrupt
+                        # playback and reset position to 0, so we
+                        # suppress image_done in that case and just let
+                        # the cache write complete silently.
+                        self._signals.image_done.emit(str(path), info)
                 except Exception as e:
                     log.error(f"Image download failed: {e}")
-                    self._signals.image_error.emit(str(e))
+                    if not streaming:
+                        # If we're streaming, mpv has the URL — don't
+                        # surface a "download failed" error since the
+                        # user is likely watching the video right now.
+                        # The cache just won't get populated for next time.
+                        self._signals.image_error.emit(str(e))
                 finally:
                     self._prefetch_pause.set()  # resume prefetch
                     if preview_hidden:
@@ -1392,6 +1463,14 @@ class BooruApp(QMainWindow):
             mb = downloaded / (1024 * 1024)
             total_mb = total / (1024 * 1024)
             self._status.showMessage(f"Downloading... {mb:.1f}/{total_mb:.1f} MB")
+            # Auto-hide on completion. The streaming fast path
+            # (`video_stream`) suppresses `image_done`'s hide call, so
+            # without this the bar would stay visible forever after a
+            # streaming video's parallel cache download finished. The
+            # non-streaming path also gets here, where it's harmlessly
+            # redundant with the existing `_on_image_done` hide.
+            if downloaded >= total and not popout_open:
+                self._dl_progress.hide()
         elif not popout_open:
             self._dl_progress.setRange(0, 0)  # indeterminate
             self._dl_progress.show()
@@ -1405,10 +1484,25 @@ class BooruApp(QMainWindow):
             self._preview.set_media(path, info)
 
     def _update_fullscreen(self, path: str, info: str) -> None:
-        """Sync the fullscreen window with the current preview media."""
+        """Sync the fullscreen window with the current preview media.
+
+        Pulls the current post's API-reported dimensions out of
+        `self._preview._current_post` (always set before this is
+        called) and passes them to `set_media` so the popout can
+        pre-fit videos before mpv has loaded the file. Falls back to
+        0/0 (no pre-fit) for library/bookmark paths whose Post
+        objects don't carry dimensions, or if a fast-click race has
+        moved `_current_post` ahead of a still-resolving download —
+        in the race case mpv's `video_size` callback will catch up
+        and fit correctly anyway, so the worst outcome is a brief
+        wrong-aspect frame that self-corrects.
+        """
         if self._fullscreen_window and self._fullscreen_window.isVisible():
             self._preview._video_player.stop()
-            self._fullscreen_window.set_media(path, info)
+            cp = self._preview._current_post
+            w = cp.width if cp else 0
+            h = cp.height if cp else 0
+            self._fullscreen_window.set_media(path, info, width=w, height=h)
             # Bookmark / BL Tag / BL Post hidden on the library tab (no
             # site/post id to act on for local-only files). Save stays
             # visible — it acts as Unsave for the library file currently
@@ -1459,6 +1553,48 @@ class BooruApp(QMainWindow):
         self._update_fullscreen(path, info)
         # Auto-evict if over cache limit
         self._auto_evict_cache()
+
+    def _on_video_stream(self, url: str, info: str, width: int, height: int) -> None:
+        """Fast-path slot for uncached video posts.
+
+        Mirrors `_on_image_done` but hands the *remote URL* to mpv
+        instead of waiting for the local cache file to land. mpv's
+        `play_file` detects the http(s) prefix and routes through the
+        per-file referrer-set loadfile branch (preview.py:play_file),
+        so the request gets the right Referer for booru CDNs that
+        gate hotlinking.
+
+        Width/height come from `post.width / post.height` and feed
+        the popout's pre-fit optimization (set_media's `width`/
+        `height` params) — same trick as the cached path, just
+        applied earlier in the chain.
+
+        download_image continues running in parallel inside the
+        original `_load` task and populates the cache for next time
+        — its `image_done` emit is suppressed by the `streaming`
+        flag in that closure so it doesn't re-call set_media with
+        the local path mid-playback (which would interrupt mpv and
+        reset position to 0).
+        """
+        # Stop any video player currently active in the embedded
+        # preview before swapping it out — mirrors the close-old-mpv
+        # discipline of `_update_fullscreen`.
+        self._preview._video_player.stop()
+        if self._fullscreen_window and self._fullscreen_window.isVisible():
+            # Popout open — only stream there, keep embedded preview clear.
+            self._preview._info_label.setText(info)
+            self._preview._current_path = url
+            self._fullscreen_window.set_media(url, info, width=width, height=height)
+            self._update_fullscreen_state()
+        else:
+            # Embedded preview's set_media doesn't take width/height
+            # (it's in a docked panel and doesn't fit-to-content) so
+            # the pre-fit hint goes nowhere here. Just hand it the URL.
+            self._preview.set_media(url, info)
+        self._status.showMessage(f"Streaming #{Path(url.split('?')[0]).name}...")
+        # Note: no `_update_fullscreen_state()` call when popout is
+        # closed — the embedded preview's button states are already
+        # owned by `_on_post_activated`'s upstream calls.
 
     def _auto_evict_cache(self) -> None:
         if not self._db.get_setting_bool("auto_evict"):
@@ -1923,14 +2059,15 @@ class BooruApp(QMainWindow):
         pagination), so a single video looping with Next mode keeps moving
         through the list indefinitely instead of stopping at the end. Browse
         tab keeps its existing page-turn behaviour.
+
+        Same fix as `_navigate_fullscreen` — don't call
+        `_update_fullscreen` here with the stale `_current_path`. The
+        downstream sync paths inside `_navigate_preview` already
+        handle the popout update with the correct new path. Calling
+        it here would re-trigger the eof-reached race in mpv and
+        cause auto-skip cascades through the playlist.
         """
         self._navigate_preview(1, wrap=True)
-        # Sync popout if it's open
-        if self._fullscreen_window and self._preview._current_path:
-            self._update_fullscreen(
-                self._preview._current_path,
-                self._preview._info_label.text(),
-            )
 
     def _is_post_saved(self, post_id: int) -> bool:
         """Check if a post is saved in the library (any folder).
@@ -2180,7 +2317,12 @@ class BooruApp(QMainWindow):
                 except RuntimeError:
                     pass
             sv.media_ready.connect(_seek_when_ready)
-        self._fullscreen_window.set_media(path, info)
+        # Pre-fit dimensions for the popout video pre-fit optimization
+        # — `post` is the same `self._preview._current_post` referenced
+        # at line 2164 (set above), so reuse it without an extra read.
+        pre_w = post.width if post else 0
+        pre_h = post.height if post else 0
+        self._fullscreen_window.set_media(path, info, width=pre_w, height=pre_h)
         # Always sync state — the save button is visible in both modes
         # (library mode = only Save shown, browse/bookmarks = full toolbar)
         # so its Unsave label needs to land before the user sees it.
@@ -2233,13 +2375,33 @@ class BooruApp(QMainWindow):
             self._preview.set_media(path, info)
 
     def _navigate_fullscreen(self, direction: int) -> None:
+        # Just navigate. Do NOT call _update_fullscreen here with the
+        # current_path even though earlier code did — for browse view,
+        # _current_path still holds the PREVIOUS post's path at this
+        # moment (the new post's path doesn't land until the async
+        # _load completes and _on_image_done fires). Calling
+        # _update_fullscreen with the stale path would re-load the
+        # OLD video in the popout, which then races mpv's eof-reached
+        # observer (mpv emits eof on the redundant `command('stop')`
+        # the reload performs). If the observer fires after play_file's
+        # _eof_pending=False reset, _handle_eof picks it up on the next
+        # poll tick and emits play_next in Loop=Next mode — auto-
+        # advancing past the ACTUAL next post the user wanted. Bug
+        # observed empirically: keyboard nav in popout sometimes
+        # skipped a post.
+        #
+        # The correct sync paths are already in place:
+        #   - Browse: _navigate_preview → _on_post_activated → async
+        #     _load → _on_image_done → _update_fullscreen(NEW_path)
+        #   - Bookmarks: _navigate_preview → _on_bookmark_activated →
+        #     _update_fullscreen(fav.cached_path) (sync, line 1683/1691)
+        #   - Library: _navigate_preview → file_activated →
+        #     _on_library_activated → _show_library_post →
+        #     _update_fullscreen(path) (sync, line 1622)
+        # Each downstream path uses the *correct* new path. The
+        # additional call here was both redundant (bookmark/library)
+        # and racy/buggy (browse).
         self._navigate_preview(direction)
-        # For synchronous loads (cached/bookmarks), update immediately
-        if self._preview._current_path:
-            self._update_fullscreen(
-                self._preview._current_path,
-                self._preview._info_label.text(),
-            )
 
     def _close_preview(self) -> None:
         self._preview.clear()
