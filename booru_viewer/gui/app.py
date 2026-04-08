@@ -1275,19 +1275,31 @@ class BooruApp(QMainWindow):
             )
             self._preview.update_save_state(self._is_post_saved(post.id))
             self._status.showMessage(f"Loading #{post.id}...")
-            # Skip the dl_progress widget when the popout is open. The user
-            # is looking at the popout, not the embedded preview area, and
-            # the right splitter is set to [0, 0, 1000] so the show/hide
-            # pulse on the dl_progress section forces a layout pass that
-            # briefly compresses the main grid (visible flash on every
-            # click, even on the same post since download_image still runs
-            # against the cache and the show/hide cycle still fires).
-            if not (self._fullscreen_window and self._fullscreen_window.isVisible()):
+            # Decide where the user can actually see download progress.
+            # If the embedded preview is visible (normal layout), use the
+            # dl_progress widget at the bottom of the right splitter. If
+            # the preview is hidden — popout open, splitter collapsed,
+            # whatever — fall back to drawing the progress bar directly
+            # on the active thumbnail in the main grid via the existing
+            # prefetch-progress paint path. This avoids the dl_progress
+            # show/hide flash on the right splitter (the previous fix)
+            # and gives the user some visible feedback even when the
+            # preview area can't show the bar.
+            preview_hidden = not (
+                self._preview.isVisible() and self._preview.width() > 0
+            )
+            if preview_hidden:
+                self._signals.prefetch_progress.emit(index, 0.0)
+            else:
                 self._dl_progress.show()
                 self._dl_progress.setRange(0, 0)
 
             def _progress(downloaded, total):
                 self._signals.download_progress.emit(downloaded, total)
+                if preview_hidden and total > 0:
+                    self._signals.prefetch_progress.emit(
+                        index, downloaded / total
+                    )
 
             async def _load():
                 self._prefetch_pause.clear()  # pause prefetch
@@ -1301,6 +1313,10 @@ class BooruApp(QMainWindow):
                     self._signals.image_error.emit(str(e))
                 finally:
                     self._prefetch_pause.set()  # resume prefetch
+                    if preview_hidden:
+                        # Clear the thumbnail progress bar that was
+                        # standing in for the dl_progress widget.
+                        self._signals.prefetch_progress.emit(index, -1)
 
             self._run_async(_load)
 

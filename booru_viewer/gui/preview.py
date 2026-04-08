@@ -386,7 +386,13 @@ class FullscreenPreview(QMainWindow):
                 pix = self._viewer._pixmap
                 if pix and not pix.isNull():
                     self._fit_to_content(pix.width(), pix.height())
-        self._show_overlay()
+        # Note: do NOT auto-show the overlay on every set_media. The
+        # overlay should appear in response to user hover (handled in
+        # eventFilter on mouse-move into the top/bottom edge zones),
+        # not pop back up after every navigation. First popout open
+        # already starts with _ui_visible = True and the auto-hide
+        # timer running, so the user sees the controls for ~2s on
+        # first open and then they stay hidden until hover.
 
     def _on_video_size(self, w: int, h: int) -> None:
         if not self.isFullScreen() and w > 0 and h > 0:
