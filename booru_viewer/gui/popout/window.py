@@ -796,124 +796,29 @@ class FullscreenPreview(QMainWindow):
             self._ui_visible = self._toolbar.isVisible() or self._video._controls_bar.isVisible()
         return super().eventFilter(obj, event)
 
+    # Hyprland helpers — moved to popout/hyprland.py in commit 13. These
+    # methods are now thin shims around the module-level functions so
+    # the existing call sites in this file (`_fit_to_content`,
+    # `_enter_fullscreen`, `closeEvent`) keep working byte-for-byte.
+    # Commit 14's adapter rewrite drops the shims and calls the
+    # hyprland module directly.
+
     def _hyprctl_get_window(self) -> dict | None:
-        """Get the Hyprland window info for the popout window."""
-        import os, subprocess, json
-        if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
-            return None
-        try:
-            result = subprocess.run(
-                ["hyprctl", "clients", "-j"],
-                capture_output=True, text=True, timeout=1,
-            )
-            for c in json.loads(result.stdout):
-                if c.get("title") == self.windowTitle():
-                    return c
-        except Exception:
-            pass
-        return None
+        """Shim → `popout.hyprland.get_window`."""
+        from . import hyprland
+        return hyprland.get_window(self.windowTitle())
 
     def _hyprctl_resize(self, w: int, h: int) -> None:
-        """Ask Hyprland to resize this window and lock aspect ratio. No-op on other WMs or tiled.
-
-        Behavior is gated by two independent env vars (see core/config.py):
-          - BOORU_VIEWER_NO_HYPR_RULES: skip the resize and no_anim parts
-          - BOORU_VIEWER_NO_POPOUT_ASPECT_LOCK: skip the keep_aspect_ratio
-            setprop
-        Either, both, or neither may be set. The aspect-ratio carve-out
-        means a ricer can opt out of in-code window management while
-        still keeping mpv playback at the right shape (or vice versa).
-        """
-        import os, subprocess
-        from ...core.config import hypr_rules_enabled, popout_aspect_lock_enabled
-        if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
-            return
-        rules_on = hypr_rules_enabled()
-        aspect_on = popout_aspect_lock_enabled()
-        if not rules_on and not aspect_on:
-            return  # nothing to dispatch
-        win = self._hyprctl_get_window()
-        if not win:
-            return
-        addr = win.get("address")
-        if not addr:
-            return
-        cmds: list[str] = []
-        if not win.get("floating"):
-            # Tiled — don't resize (fights the layout). Optionally set
-            # aspect lock and no_anim depending on the env vars.
-            if rules_on:
-                cmds.append(f"dispatch setprop address:{addr} no_anim 1")
-            if aspect_on:
-                cmds.append(f"dispatch setprop address:{addr} keep_aspect_ratio 1")
-        else:
-            if rules_on:
-                cmds.append(f"dispatch setprop address:{addr} no_anim 1")
-            if aspect_on:
-                cmds.append(f"dispatch setprop address:{addr} keep_aspect_ratio 0")
-            if rules_on:
-                cmds.append(f"dispatch resizewindowpixel exact {w} {h},address:{addr}")
-            if aspect_on:
-                cmds.append(f"dispatch setprop address:{addr} keep_aspect_ratio 1")
-        if not cmds:
-            return
-        try:
-            subprocess.Popen(
-                ["hyprctl", "--batch", " ; ".join(cmds)],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
-        except FileNotFoundError:
-            pass
+        """Shim → `popout.hyprland.resize`."""
+        from . import hyprland
+        hyprland.resize(self.windowTitle(), w, h)
 
     def _hyprctl_resize_and_move(
         self, w: int, h: int, x: int, y: int, win: dict | None = None
     ) -> None:
-        """Atomically resize and move this window via a single hyprctl batch.
-
-        Gated by BOORU_VIEWER_NO_HYPR_RULES (resize/move/no_anim parts) and
-        BOORU_VIEWER_NO_POPOUT_ASPECT_LOCK (the keep_aspect_ratio parts) —
-        see core/config.py.
-
-        `win` may be passed in by the caller to skip the
-        `_hyprctl_get_window()` subprocess call. The address is the only
-        thing we actually need from it; cutting the per-fit subprocess
-        count from three to one removes ~6ms of GUI-thread blocking
-        every time `_fit_to_content` runs.
-        """
-        import os, subprocess
-        from ...core.config import hypr_rules_enabled, popout_aspect_lock_enabled
-        if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
-            return
-        rules_on = hypr_rules_enabled()
-        aspect_on = popout_aspect_lock_enabled()
-        if not rules_on and not aspect_on:
-            return
-        if win is None:
-            win = self._hyprctl_get_window()
-        if not win or not win.get("floating"):
-            return
-        addr = win.get("address")
-        if not addr:
-            return
-        cmds: list[str] = []
-        if rules_on:
-            cmds.append(f"dispatch setprop address:{addr} no_anim 1")
-        if aspect_on:
-            cmds.append(f"dispatch setprop address:{addr} keep_aspect_ratio 0")
-        if rules_on:
-            cmds.append(f"dispatch resizewindowpixel exact {w} {h},address:{addr}")
-            cmds.append(f"dispatch movewindowpixel exact {x} {y},address:{addr}")
-        if aspect_on:
-            cmds.append(f"dispatch setprop address:{addr} keep_aspect_ratio 1")
-        if not cmds:
-            return
-        try:
-            subprocess.Popen(
-                ["hyprctl", "--batch", " ; ".join(cmds)],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
-        except FileNotFoundError:
-            pass
+        """Shim → `popout.hyprland.resize_and_move`."""
+        from . import hyprland
+        hyprland.resize_and_move(self.windowTitle(), w, h, x, y, win=win)
 
     def privacy_hide(self) -> None:
         """Cover the popout's content with a black overlay for privacy.
