@@ -389,11 +389,22 @@ class BookmarksView(QWidget):
                 QDesktopServices.openUrl(QUrl.fromLocalFile(fav.cached_path))
         elif action == save_as:
             if fav.cached_path and Path(fav.cached_path).exists():
+                from ..core.config import render_filename_template
+                from ..core.library_save import save_post_file
                 src = Path(fav.cached_path)
-                dest = save_file(self, "Save Image", f"post_{fav.post_id}{src.suffix}", f"Images (*{src.suffix})")
+                post = self._bookmark_to_post(fav)
+                template = self._db.get_setting("library_filename_template")
+                default_name = render_filename_template(template, post, src.suffix)
+                dest = save_file(self, "Save Image", default_name, f"Images (*{src.suffix})")
                 if dest:
-                    import shutil
-                    shutil.copy2(src, dest)
+                    dest_path = Path(dest)
+                    try:
+                        save_post_file(
+                            src, post, dest_path.parent, self._db,
+                            explicit_name=dest_path.name,
+                        )
+                    except Exception as e:
+                        log.warning(f"Bookmark Save As #{fav.post_id} failed: {e}")
         elif action == unsave_lib:
             from ..core.cache import delete_from_library
             # delete_from_library walks every library folder by post id
