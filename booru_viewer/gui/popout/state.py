@@ -661,8 +661,21 @@ class StateMachine:
                     content_h=event.height,
                 ),
             ]
-        # Image / GIF lands in commit 10 (DisplayingImage transitions).
-        return []
+        # Image or GIF: transition straight to DisplayingImage and
+        # emit LoadImage. The is_gif flag tells the adapter which
+        # ImageViewer method to call (set_gif vs set_image).
+        self.is_first_content_load = False
+        self.state = State.DISPLAYING_IMAGE
+        return [
+            LoadImage(
+                path=event.path,
+                is_gif=(event.kind == MediaKind.GIF),
+            ),
+            FitWindowToContent(
+                content_w=event.width,
+                content_h=event.height,
+            ),
+        ]
 
     def _on_navigate_requested(self, event: NavigateRequested) -> list[Effect]:
         """**Double-load race fix (replaces 31d02d3c's upstream signal-
@@ -1002,9 +1015,22 @@ class StateMachine:
         return []
 
     def _on_close_requested(self, event: CloseRequested) -> list[Effect]:
-        # Real implementation: transitions to Closing, emits StopMedia
-        # + EmitClosed. Lands in commit 10.
-        return []
+        """Esc / Q / X / closeEvent. Transition to Closing from any
+        non-Closing source state. Closing is terminal — every
+        subsequent event returns [] regardless of type (handled at
+        the dispatch entry).
+
+        Entry effects: StopMedia (clear current surface) + EmitClosed
+        (tell main_window the popout is closing). The adapter is
+        responsible for any cleanup beyond clearing media — closing
+        the Qt window, removing the event filter, persisting
+        geometry to the class-level _saved_geometry — but those are
+        adapter-side concerns, not state machine concerns.
+        """
+        if self.state == State.CLOSING:
+            return []
+        self.state = State.CLOSING
+        return [StopMedia(), EmitClosed()]
 
 
 __all__ = [
