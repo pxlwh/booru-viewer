@@ -15,6 +15,22 @@ from PySide6.QtWidgets import (
 from ..media.constants import _is_video
 from ..media.image_viewer import ImageViewer
 from ..media.video_player import VideoPlayer
+from .effects import (
+    ApplyLoopMode,
+    ApplyMute,
+    ApplyVolume,
+    EmitClosed,
+    EmitNavigate,
+    EmitPlayNextRequested,
+    EnterFullscreen,
+    ExitFullscreen,
+    FitWindowToContent,
+    LoadImage,
+    LoadVideo,
+    SeekVideoTo,
+    StopMedia,
+    TogglePlay,
+)
 from .state import (
     CloseRequested,
     ContentArrived,
@@ -121,7 +137,19 @@ class FullscreenPreview(QMainWindow):
         self._stack.addWidget(self._viewer)
 
         self._video = VideoPlayer()
-        self._video.play_next.connect(self.play_next_requested)
+        # Note: the legacy `self._video.play_next.connect(self.play_next_requested)`
+        # signal-to-signal forwarding was removed in commit 14b. The
+        # state machine dispatch path now handles play_next_requested
+        # via the EmitPlayNextRequested effect:
+        #   1. mpv eof-reached → VideoPlayer.play_next emits
+        #   2. Adapter dispatch lambda (wired in __init__) →
+        #      VideoEofReached event
+        #   3. State machine PlayingVideo + Loop=Next → emits
+        #      EmitPlayNextRequested effect
+        #   4. _apply_effects → self.play_next_requested.emit()
+        # Keeping the legacy forwarding here would double-emit the
+        # signal and cause main_window to navigate twice on every
+        # video EOF in Loop=Next mode.
         self._video.video_size.connect(self._on_video_size)
         self._stack.addWidget(self._video)
 
@@ -420,12 +448,142 @@ class FullscreenPreview(QMainWindow):
         if not hasattr(self, "_state_machine"):
             return
         if self._state_machine.state == State.LOADING_VIDEO:
-            self._fsm_dispatch(VideoStarted())
+            effects = self._fsm_dispatch(VideoStarted())
+            self._apply_effects(effects)
         elif self._state_machine.state == State.SEEKING_VIDEO:
-            self._fsm_dispatch(SeekCompleted())
+            effects = self._fsm_dispatch(SeekCompleted())
+            self._apply_effects(effects)
         # Other states: drop. The state machine's release-mode
         # legality check would also drop it; this saves the dispatch
         # round trip.
+
+    # ------------------------------------------------------------------
+    # Commit 14b — effect application
+    # ------------------------------------------------------------------
+    #
+    # The state machine's dispatch returns a list of Effect descriptors
+    # describing what the adapter should do. `_apply_effects` is the
+    # single dispatch point: every wire-point that calls `_fsm_dispatch`
+    # follows it with `_apply_effects(effects)`. The pattern-match by
+    # type is the architectural choke point — if a new effect type is
+    # added in state.py, the type-check below catches the missing
+    # handler at runtime instead of silently dropping.
+    #
+    # Several apply handlers are deliberate no-ops in commit 14b:
+    #
+    # - ApplyMute / ApplyVolume / ApplyLoopMode: the legacy slot
+    #   connections on the popout's VideoPlayer are still active and
+    #   handle the user-facing toggles directly. The state machine
+    #   tracks these values for the upcoming SyncFromEmbedded path
+    #   (future commit) but doesn't push them to widgets — pushing
+    #   would create a sync hazard with the embedded preview's mute
+    #   state, which main_window pushes via direct attribute writes.
+    #
+    # - SeekVideoTo: the legacy `_ClickSeekSlider.clicked_position →
+    #   VideoPlayer._seek` connection still handles both the mpv.seek
+    #   call and the legacy 500ms `_seek_pending_until` pin window.
+    #   The state machine's SeekingVideo state tracks the seek for
+    #   future authority, but the slider rendering and the seek call
+    #   itself stay legacy. Replacing this requires either modifying
+    #   VideoPlayer's _poll loop (forbidden by the no-touch rule) or
+    #   building a custom poll loop in the adapter.
+    #
+    # The other effect types (LoadImage, LoadVideo, StopMedia,
+    # FitWindowToContent, EnterFullscreen, ExitFullscreen,
+    # EmitNavigate, EmitPlayNextRequested, EmitClosed, TogglePlay)
+    # delegate to existing private helpers in this file. The state
+    # machine becomes the official entry point for these operations;
+    # the helpers stay in place as the implementation.
+
+    def _apply_effects(self, effects: list) -> None:
+        """Apply a list of Effect descriptors returned by dispatch.
+
+        Pattern-matches each effect to its apply handler. Unknown
+        effect types raise TypeError so the next added effect type
+        in state.py is caught at runtime instead of silently dropped.
+        """
+        for e in effects:
+            if isinstance(e, LoadImage):
+                self._apply_load_image(e)
+            elif isinstance(e, LoadVideo):
+                self._apply_load_video(e)
+            elif isinstance(e, StopMedia):
+                self._apply_stop_media()
+            elif isinstance(e, ApplyMute):
+                # No-op in 14b — legacy slot handles widget update.
+                # State machine tracks state.mute for future authority.
+                pass
+            elif isinstance(e, ApplyVolume):
+                pass  # same — no-op in 14b
+            elif isinstance(e, ApplyLoopMode):
+                pass  # same — no-op in 14b
+            elif isinstance(e, SeekVideoTo):
+                # No-op in 14b — legacy `_seek` slot handles both
+                # mpv.seek (now exact) and the pin window. Replacing
+                # this requires touching VideoPlayer._poll which is
+                # out of scope.
+                pass
+            elif isinstance(e, TogglePlay):
+                self._video._toggle_play()
+            elif isinstance(e, FitWindowToContent):
+                self._fit_to_content(e.content_w, e.content_h)
+            elif isinstance(e, EnterFullscreen):
+                self._enter_fullscreen()
+            elif isinstance(e, ExitFullscreen):
+                self._exit_fullscreen()
+            elif isinstance(e, EmitNavigate):
+                self.navigate.emit(e.direction)
+            elif isinstance(e, EmitPlayNextRequested):
+                self.play_next_requested.emit()
+            elif isinstance(e, EmitClosed):
+                self.closed.emit()
+            else:
+                raise TypeError(
+                    f"Unknown effect type: {type(e).__name__}. "
+                    f"Add a handler in _apply_effects."
+                )
+
+    def _apply_load_image(self, e: LoadImage) -> None:
+        """Apply LoadImage effect — display a static image or GIF.
+
+        Mirrors the legacy `set_media` body's image branch. Stops
+        any active video and clears its controls bar before swapping
+        in the image. The fit comes from a separate FitWindowToContent
+        effect that the state machine emits alongside LoadImage.
+        """
+        info = self._state_machine.current_info
+        self._video.stop()
+        self._video._controls_bar.hide()
+        if e.is_gif:
+            self._viewer.set_gif(e.path, info)
+        else:
+            pix = QPixmap(e.path)
+            if not pix.isNull():
+                self._viewer.set_image(pix, info)
+        self._stack.setCurrentIndex(0)
+
+    def _apply_load_video(self, e: LoadVideo) -> None:
+        """Apply LoadVideo effect — hand the path or URL to mpv.
+
+        Mirrors the legacy `set_media` body's video branch. play_file
+        already handles the http(s) → referer detection internally
+        (see media/video_player.py:343-347), so the adapter doesn't
+        need to thread the referer through.
+        """
+        self._viewer.clear()
+        self._video.stop()
+        self._video.play_file(e.path, e.info)
+        self._stack.setCurrentIndex(1)
+
+    def _apply_stop_media(self) -> None:
+        """Apply StopMedia effect — clear both surfaces.
+
+        Idempotent. Called on navigation away from current media,
+        on close, and as part of the StopMedia effect from various
+        transitions.
+        """
+        self._video.stop()
+        self._viewer.clear()
 
     _saved_geometry = None  # remembers window size/position across opens
     _saved_fullscreen = False
@@ -556,17 +714,17 @@ class FullscreenPreview(QMainWindow):
         self._info_label.setText(info)
         ext = Path(path).suffix.lower()
 
-        # State machine dispatch (parallel — legacy code below stays
-        # authoritative through commit 14a).
+        # Detect kind for the state machine.
         if _is_video(path):
             kind = MediaKind.VIDEO
         elif ext == ".gif":
             kind = MediaKind.GIF
         else:
             kind = MediaKind.IMAGE
-        # Detect streaming URL → set referer for the dispatch payload.
-        # This matches the per-file referrer the legacy play_file path
-        # already sets at media/video_player.py:343-347.
+        # Build the per-file referrer for streaming URLs. play_file
+        # also computes this internally during the legacy load path,
+        # but the dispatch path passes it through ContentArrived for
+        # the future when the state machine fully drives the load.
         referer = None
         if path.startswith(("http://", "https://")):
             try:
@@ -575,7 +733,15 @@ class FullscreenPreview(QMainWindow):
                 referer = _referer_for(urlparse(path))
             except Exception:
                 pass
-        self._fsm_dispatch(ContentArrived(
+
+        # Dispatch + apply. The state machine produces:
+        #   - LoadVideo or LoadImage (loads the media)
+        #   - FitWindowToContent (delegates to _fit_to_content)
+        # Both are applied via _apply_effects which delegates to the
+        # private helpers. The state machine becomes the single entry
+        # point for media load; set_media's body shrinks to dispatch
+        # + apply.
+        effects = self._fsm_dispatch(ContentArrived(
             path=path,
             info=info,
             kind=kind,
@@ -583,44 +749,21 @@ class FullscreenPreview(QMainWindow):
             height=height,
             referer=referer,
         ))
-
-        if _is_video(path):
-            self._viewer.clear()
-            self._video.stop()
-            self._video.play_file(path, info)
-            self._stack.setCurrentIndex(1)
-            # NOTE: pre-fit to API dimensions was tried here (option A
-            # from the perf round) but caused a perceptible slowdown
-            # in popout video clicks — the redundant second hyprctl
-            # dispatch when mpv's video_size callback fired produced
-            # a visible re-settle. The width/height params remain on
-            # the signature so the streaming and update-fullscreen
-            # call sites can keep passing them, but they're currently
-            # ignored. Re-enable cautiously if you can prove the
-            # second fit becomes a true no-op.
-            _ = (width, height)  # accepted but unused for now
-        else:
-            self._video.stop()
-            self._video._controls_bar.hide()
-            if ext == ".gif":
-                self._viewer.set_gif(path, info)
-            else:
-                pix = QPixmap(path)
-                if not pix.isNull():
-                    self._viewer.set_image(pix, info)
-            self._stack.setCurrentIndex(0)
-            # Adjust window to content aspect ratio
-            if not self.isFullScreen():
-                pix = self._viewer._pixmap
-                if pix and not pix.isNull():
-                    self._fit_to_content(pix.width(), pix.height())
+        self._apply_effects(effects)
+        # Note: pre-fit to API dimensions was tried (option A from
+        # the perf round) but caused a perceptible slowdown in popout
+        # video clicks — the redundant second hyprctl dispatch when
+        # mpv's video_size callback fired produced a visible
+        # re-settle. The width/height params remain on the signature
+        # so the streaming and update-fullscreen call sites can keep
+        # passing them, but they're currently ignored. Re-enable
+        # cautiously if you can prove the second fit becomes a true
+        # no-op.
+        _ = (width, height)
         # Note: do NOT auto-show the overlay on every set_media. The
         # overlay should appear in response to user hover (handled in
         # eventFilter on mouse-move into the top/bottom edge zones),
-        # not pop back up after every navigation. First popout open
-        # already starts with _ui_visible = True and the auto-hide
-        # timer running, so the user sees the controls for ~2s on
-        # first open and then they stay hidden until hover.
+        # not pop back up after every navigation.
 
     def _on_video_size(self, w: int, h: int) -> None:
         if not self.isFullScreen() and w > 0 and h > 0:
@@ -929,35 +1072,36 @@ class FullscreenPreview(QMainWindow):
                     self._show_overlay()
                 return True
             elif key in (Qt.Key.Key_Escape, Qt.Key.Key_Q):
-                self._fsm_dispatch(CloseRequested())
+                # Don't dispatch CloseRequested here — closeEvent
+                # dispatches it after saving geometry. The state
+                # machine sees the close exactly once and the
+                # geometry persistence (adapter-side concern) runs
+                # before the EmitClosed effect fires.
                 self.close()
                 return True
             elif key in (Qt.Key.Key_Left, Qt.Key.Key_H):
-                self._fsm_dispatch(NavigateRequested(direction=-1))
-                self.navigate.emit(-1)
+                effects = self._fsm_dispatch(NavigateRequested(direction=-1))
+                self._apply_effects(effects)
                 return True
             elif key in (Qt.Key.Key_Right, Qt.Key.Key_L):
-                self._fsm_dispatch(NavigateRequested(direction=1))
-                self.navigate.emit(1)
+                effects = self._fsm_dispatch(NavigateRequested(direction=1))
+                self._apply_effects(effects)
                 return True
             elif key in (Qt.Key.Key_Up, Qt.Key.Key_K):
-                self._fsm_dispatch(NavigateRequested(direction=-self._grid_cols))
-                self.navigate.emit(-self._grid_cols)
+                effects = self._fsm_dispatch(NavigateRequested(direction=-self._grid_cols))
+                self._apply_effects(effects)
                 return True
             elif key in (Qt.Key.Key_Down, Qt.Key.Key_J):
-                self._fsm_dispatch(NavigateRequested(direction=self._grid_cols))
-                self.navigate.emit(self._grid_cols)
+                effects = self._fsm_dispatch(NavigateRequested(direction=self._grid_cols))
+                self._apply_effects(effects)
                 return True
             elif key == Qt.Key.Key_F11:
-                self._fsm_dispatch(FullscreenToggled())
-                if self.isFullScreen():
-                    self._exit_fullscreen()
-                else:
-                    self._enter_fullscreen()
+                effects = self._fsm_dispatch(FullscreenToggled())
+                self._apply_effects(effects)
                 return True
             elif key == Qt.Key.Key_Space and self._stack.currentIndex() == 1:
-                self._fsm_dispatch(TogglePlayRequested())
-                self._video._toggle_play()
+                effects = self._fsm_dispatch(TogglePlayRequested())
+                self._apply_effects(effects)
                 return True
             elif key == Qt.Key.Key_Period and self._stack.currentIndex() == 1:
                 # +/- keys are seek-relative, NOT slider-pin seeks. The
@@ -975,18 +1119,22 @@ class FullscreenPreview(QMainWindow):
             # Horizontal tilt navigates between posts on either stack
             tilt = event.angleDelta().x()
             if tilt > 30:
-                self._fsm_dispatch(NavigateRequested(direction=-1))
-                self.navigate.emit(-1)
+                effects = self._fsm_dispatch(NavigateRequested(direction=-1))
+                self._apply_effects(effects)
                 return True
             if tilt < -30:
-                self._fsm_dispatch(NavigateRequested(direction=1))
-                self.navigate.emit(1)
+                effects = self._fsm_dispatch(NavigateRequested(direction=1))
+                self._apply_effects(effects)
                 return True
             # Vertical wheel adjusts volume on the video stack only
             if self._stack.currentIndex() == 1:
                 delta = event.angleDelta().y()
                 if delta:
                     vol = max(0, min(100, self._video.volume + (5 if delta > 0 else -5)))
+                    # Dispatch VolumeSet so state.volume tracks. The
+                    # actual mpv.volume write still happens via the
+                    # legacy assignment below — ApplyVolume is a no-op
+                    # in 14b (see _apply_effects docstring).
                     self._fsm_dispatch(VolumeSet(value=vol))
                     self._video.volume = vol
                     self._show_overlay()
@@ -1241,10 +1389,15 @@ class FullscreenPreview(QMainWindow):
 
     def closeEvent(self, event) -> None:
         from PySide6.QtWidgets import QApplication
-        # Parallel state machine dispatch — Closing is terminal in
-        # the state machine, every subsequent dispatch will be a no-op.
-        self._fsm_dispatch(CloseRequested())
-        # Save window state for next open
+        # Save window state for next open BEFORE the state machine
+        # dispatch — main_window's _on_fullscreen_closed handler reads
+        # FullscreenPreview._saved_geometry / _saved_fullscreen, and
+        # the EmitClosed effect (applied below) emits self.closed,
+        # which triggers _on_fullscreen_closed. Geometry persistence
+        # has to land first or main_window reads stale values.
+        #
+        # Geometry is adapter-side concern, not state machine concern,
+        # so the state machine doesn't see it.
         FullscreenPreview._saved_fullscreen = self.isFullScreen()
         if not self.isFullScreen():
             # On Hyprland, Qt doesn't know the real position — ask the WM
@@ -1257,6 +1410,10 @@ class FullscreenPreview(QMainWindow):
             else:
                 FullscreenPreview._saved_geometry = self.frameGeometry()
         QApplication.instance().removeEventFilter(self)
-        self.closed.emit()
-        self._video.stop()
+        # NOW dispatch + apply CloseRequested. Effects are
+        # [StopMedia, EmitClosed]. StopMedia clears the media stack;
+        # EmitClosed emits self.closed which triggers main_window's
+        # _on_fullscreen_closed handler.
+        effects = self._fsm_dispatch(CloseRequested())
+        self._apply_effects(effects)
         super().closeEvent(event)
