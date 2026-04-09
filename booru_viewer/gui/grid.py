@@ -313,28 +313,64 @@ class FlowLayout(QWidget):
         self._do_layout()
 
     def _do_layout(self) -> None:
+        """Position children in a deterministic grid.
+
+        Uses the THUMB_SIZE / THUMB_SPACING constants instead of each
+        widget's actual `width()` so the layout is independent of per-
+        widget size variance. This matters because:
+
+        1. ThumbnailWidget calls `setFixedSize(THUMB_SIZE, THUMB_SIZE)`
+           in `__init__`, capturing the constant at construction time.
+           If `THUMB_SIZE` is later mutated (`_apply_settings` writes
+           `grid_mod.THUMB_SIZE = new_size` in main_window.py:2953),
+           existing thumbs keep their old fixed size while new ones
+           (e.g. from infinite-scroll backfill via `append_posts`) get
+           the new one. Mixed widths break a width-summing wrap loop.
+
+        2. The previous wrap loop walked each thumb summing
+           `widget.width() + THUMB_SPACING` and wrapped on
+           `x + item_w > self.width()`. At column boundaries
+           (window width within a few pixels of `N * step + margin`)
+           the boundary depends on every per-widget width, and any
+           sub-pixel or mid-mutation drift could collapse the column
+           count by 1.
+
+        Now: compute the column count once from the container width
+        and the constant step, then position thumbs by `(col, row)`
+        index. The layout is a function of `self.width()` and the
+        constants only — no per-widget reads.
+        """
         if not self._items:
             return
-        x, y = THUMB_SPACING, THUMB_SPACING
-        row_height = 0
         width = self.width() or 800
+        step = THUMB_SIZE + THUMB_SPACING
+        # Account for the leading THUMB_SPACING margin: a row that fits
+        # N thumbs needs `THUMB_SPACING + N * step` pixels minimum, not
+        # `N * step`. The previous formula `w // step` overcounted by 1
+        # at the boundary (e.g. width=1135 returned 6 columns where the
+        # actual fit is 5).
+        cols = max(1, (width - THUMB_SPACING) // step)
 
-        for widget in self._items:
-            item_w = widget.width() + THUMB_SPACING
-            item_h = widget.height() + THUMB_SPACING
-            if x + item_w > width and x > THUMB_SPACING:
-                x = THUMB_SPACING
-                y += row_height
-                row_height = 0
+        for i, widget in enumerate(self._items):
+            col = i % cols
+            row = i // cols
+            x = THUMB_SPACING + col * step
+            y = THUMB_SPACING + row * step
             widget.move(x, y)
             widget.show()
-            x += item_w
-            row_height = max(row_height, item_h)
 
-        self.setMinimumHeight(y + row_height + THUMB_SPACING)
+        rows = (len(self._items) + cols - 1) // cols
+        self.setMinimumHeight(THUMB_SPACING + rows * step)
 
     @property
     def columns(self) -> int:
+        """Same formula as `_do_layout`'s column count.
+
+        Both must agree exactly so callers (e.g. main_window's
+        keyboard Up/Down nav step) get the value the visual layout
+        actually used. The previous version was off-by-one because it
+        omitted the leading THUMB_SPACING from the calculation.
+        """
         if not self._items:
             return 1
         # Use parent viewport width if inside a QScrollArea
@@ -343,7 +379,8 @@ class FlowLayout(QWidget):
             w = parent.viewport().width()
         else:
             w = self.width() or 800
-        return max(1, w // (THUMB_SIZE + THUMB_SPACING))
+        step = THUMB_SIZE + THUMB_SPACING
+        return max(1, (w - THUMB_SPACING) // step)
 
 
 class ThumbnailGrid(QScrollArea):
