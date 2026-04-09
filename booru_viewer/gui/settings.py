@@ -430,6 +430,26 @@ class SettingsDialog(QDialog):
         layout.addWidget(QLabel("Library directory:"))
         layout.addLayout(lib_row)
 
+        # Library filename template (editable). Applies to every save action
+        # — Save to Library, Save As, batch downloads, multi-select bulk
+        # operations, and bookmark→library copies. Empty = post id.
+        layout.addWidget(QLabel("Library filename template:"))
+        self._library_filename_template = QLineEdit(
+            self._db.get_setting("library_filename_template") or ""
+        )
+        self._library_filename_template.setPlaceholderText("e.g. %artist%_%id%   (leave blank for post id)")
+        layout.addWidget(self._library_filename_template)
+        tmpl_help = QLabel(
+            "Tokens: %id% %md5% %ext% %rating% %score% "
+            "%artist% %character% %copyright% %general% %meta% %species%\n"
+            "Applies to every save action: Save to Library, Save As, Batch Download, "
+            "multi-select bulk operations, and bookmark→library copies.\n"
+            "Note: Gelbooru and Moebooru only support %id% / %md5% / %score% / %rating% / %ext%."
+        )
+        tmpl_help.setWordWrap(True)
+        tmpl_help.setStyleSheet("color: palette(mid); font-size: 10pt;")
+        layout.addWidget(tmpl_help)
+
         open_btn = QPushButton("Open Data Folder")
         open_btn.clicked.connect(self._open_data_folder)
         layout.addWidget(open_btn)
@@ -761,6 +781,7 @@ class SettingsDialog(QDialog):
         self._db.set_setting("infinite_scroll", "1" if self._infinite_scroll.isChecked() else "0")
         self._db.set_setting("slideshow_monitor", self._monitor_combo.currentText())
         self._db.set_setting("library_dir", self._library_dir.text().strip())
+        self._db.set_setting("library_filename_template", self._library_filename_template.text().strip())
         self._db.set_setting("max_cache_mb", str(self._max_cache.value()))
         self._db.set_setting("max_thumb_cache_mb", str(self._max_thumb_cache.value()))
         self._db.set_setting("auto_evict", "1" if self._auto_evict.isChecked() else "0")

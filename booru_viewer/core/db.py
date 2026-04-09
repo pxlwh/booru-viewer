@@ -98,8 +98,13 @@ CREATE TABLE IF NOT EXISTS library_meta (
     rating         TEXT,
     source         TEXT,
     file_url       TEXT,
-    saved_at       TEXT
+    saved_at       TEXT,
+    filename       TEXT NOT NULL DEFAULT ''
 );
+-- The idx_library_meta_filename index is created in _migrate(), not here.
+-- _SCHEMA runs before _migrate against legacy databases that don't yet have
+-- the filename column, so creating the index here would fail with "no such
+-- column" before the migration could ALTER the column in.
 
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
@@ -138,6 +143,7 @@ _DEFAULTS = {
     "slideshow_monitor": "",
     "library_dir": "",
     "infinite_scroll": "0",
+    "library_filename_template": "",
 }
 
 
@@ -236,6 +242,13 @@ class Database:
                     meta_cols = {row[1] for row in cur.fetchall()}
                     if "tag_categories" not in meta_cols:
                         self._conn.execute("ALTER TABLE library_meta ADD COLUMN tag_categories TEXT DEFAULT ''")
+                    # Add filename column. Empty-string default acts as the
+                    # "unknown" sentinel for legacy v0.2.3 rows whose on-disk
+                    # filenames are digit stems — library scan code falls
+                    # back to int(stem) when filename is empty.
+                    if "filename" not in meta_cols:
+                        self._conn.execute("ALTER TABLE library_meta ADD COLUMN filename TEXT NOT NULL DEFAULT ''")
+                    self._conn.execute("CREATE INDEX IF NOT EXISTS idx_library_meta_filename ON library_meta(filename)")
                 # Add tag_categories to favorites if missing
                 if "tag_categories" not in cols:
                     self._conn.execute("ALTER TABLE favorites ADD COLUMN tag_categories TEXT DEFAULT ''")
@@ -559,16 +572,37 @@ class Database:
 
     def save_library_meta(self, post_id: int, tags: str = "", tag_categories: dict = None,
                           score: int = 0, rating: str = None, source: str = None,
-                          file_url: str = None) -> None:
+                          file_url: str = None, filename: str = "") -> None:
         cats_json = json.dumps(tag_categories) if tag_categories else ""
         with self._write():
             self.conn.execute(
                 "INSERT OR REPLACE INTO library_meta "
-                "(post_id, tags, tag_categories, score, rating, source, file_url, saved_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "(post_id, tags, tag_categories, score, rating, source, file_url, saved_at, filename) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (post_id, tags, cats_json, score, rating, source, file_url,
-                 datetime.now(timezone.utc).isoformat()),
+                 datetime.now(timezone.utc).isoformat(), filename),
             )
+
+    def get_library_post_id_by_filename(self, filename: str) -> int | None:
+        """Look up which post a saved-library file belongs to, by basename.
+
+        Returns the post_id if a `library_meta` row exists with that
+        filename, or None if no row matches. Used by the unified save
+        flow's same-post-on-disk check to make re-saves idempotent and
+        to apply sequential `_1`, `_2`, ... suffixes only when a name
+        collides with a *different* post.
+
+        Empty-string filenames (the legacy v0.2.3 sentinel) deliberately
+        do not match — callers fall back to the digit-stem heuristic for
+        those rows.
+        """
+        if not filename:
+            return None
+        row = self.conn.execute(
+            "SELECT post_id FROM library_meta WHERE filename = ? LIMIT 1",
+            (filename,),
+        ).fetchone()
+        return row["post_id"] if row else None
 
     def get_library_meta(self, post_id: int) -> dict | None:
         row = self.conn.execute("SELECT * FROM library_meta WHERE post_id = ?", (post_id,)).fetchone()

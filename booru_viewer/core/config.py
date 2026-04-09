@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import os
 import platform
+import re
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .api.base import Post
 
 APPNAME = "booru-viewer"
 IS_WINDOWS = sys.platform == "win32"
@@ -147,6 +152,101 @@ def find_library_files(post_id: int) -> list[Path]:
                 if sub.is_file() and sub.stem == stem and sub.suffix.lower() in MEDIA_EXTENSIONS:
                     matches.append(sub)
     return matches
+
+
+def render_filename_template(template: str, post: "Post", ext: str) -> str:
+    """Render a filename template against a Post into a filesystem-safe basename.
+
+    Tokens supported:
+        %id%        post id
+        %md5%       md5 hash extracted from file_url (empty if URL doesn't carry one)
+        %ext%       extension without the leading dot
+        %rating%    post.rating or empty
+        %score%     post.score
+        %artist%    underscore-joined names from post.tag_categories["artist"]
+        %character% same, character category
+        %copyright% same, copyright category
+        %general%   same, general category
+        %meta%      same, meta category
+        %species%   same, species category
+
+    The returned string is a basename including the extension. If `template`
+    is empty or post-sanitization the rendered stem is empty, falls back to
+    f"{post.id}{ext}" so callers always get a usable name.
+
+    The rendered stem is capped at 200 characters before the extension is
+    appended. This stays under the 255-byte ext4/NTFS filename limit for
+    typical ASCII/Latin-1 templates; users typing emoji-heavy templates may
+    still hit the limit but won't see a hard error from this function.
+
+    Sanitization replaces filesystem-reserved characters (`/\\:*?"<>|`) with
+    underscores, collapses whitespace runs to a single underscore, and strips
+    leading/trailing dots/spaces and `..` prefixes so the rendered name can't
+    escape the destination directory or trip Windows' trailing-dot quirk.
+    """
+    if not template:
+        return f"{post.id}{ext}"
+
+    cats = post.tag_categories or {}
+
+    def _join_cat(name: str) -> str:
+        items = cats.get(name) or []
+        return "_".join(items)
+
+    # %md5% — most boorus name files by md5 in the URL path
+    # (e.g. https://cdn.donmai.us/original/0a/1b/0a1b...md5...{ext}).
+    # Extract the URL stem and accept it only if it's 32 hex chars.
+    md5 = ""
+    try:
+        from urllib.parse import urlparse
+        url_path = urlparse(post.file_url).path
+        url_stem = Path(url_path).stem
+        if len(url_stem) == 32 and all(c in "0123456789abcdef" for c in url_stem.lower()):
+            md5 = url_stem
+    except Exception:
+        pass
+
+    has_ext_token = "%ext%" in template
+    replacements = {
+        "%id%": str(post.id),
+        "%md5%": md5,
+        "%ext%": ext.lstrip("."),
+        "%rating%": post.rating or "",
+        "%score%": str(post.score),
+        "%artist%": _join_cat("artist"),
+        "%character%": _join_cat("character"),
+        "%copyright%": _join_cat("copyright"),
+        "%general%": _join_cat("general"),
+        "%meta%": _join_cat("meta"),
+        "%species%": _join_cat("species"),
+    }
+
+    rendered = template
+    for token, value in replacements.items():
+        rendered = rendered.replace(token, value)
+
+    # Sanitization: filesystem-reserved chars first, then control chars,
+    # then whitespace collapse, then leading-cleanup.
+    for ch in '/\\:*?"<>|':
+        rendered = rendered.replace(ch, "_")
+    rendered = "".join(c if ord(c) >= 32 else "_" for c in rendered)
+    rendered = re.sub(r"\s+", "_", rendered)
+    while rendered.startswith(".."):
+        rendered = rendered[2:]
+    rendered = rendered.lstrip("._")
+    rendered = rendered.rstrip("._ ")
+
+    # Length cap on the stem (before any system-appended extension).
+    if len(rendered) > 200:
+        rendered = rendered[:200].rstrip("._ ")
+
+    if not rendered:
+        return f"{post.id}{ext}"
+
+    if not has_ext_token:
+        rendered = rendered + ext
+
+    return rendered
 
 
 # Defaults
