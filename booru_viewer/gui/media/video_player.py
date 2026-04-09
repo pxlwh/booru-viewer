@@ -418,12 +418,37 @@ class VideoPlayer(QWidget):
             self._mpv['loop-file'] = 'no'
 
     def _seek(self, pos: int) -> None:
-        """Seek to position in milliseconds (from slider)."""
+        """Seek to position in milliseconds (from slider).
+
+        Uses `'absolute+exact'` (frame-accurate seek) to match the
+        existing `seek_to_ms` and `_seek_relative` methods. The
+        previous `'absolute'` (keyframe-only) mode landed mpv on the
+        nearest keyframe at-or-before the click position, which for
+        sparse-keyframe videos (1-5s GOP) was 1-5s behind where the
+        user clicked. The 500ms `_seek_pending_until` pin window
+        below papered over this for half a second, but afterwards
+        the slider visibly dragged back to mpv's actual (rounded)
+        position and crawled forward — observed in both the embedded
+        preview and the popout slider.
+
+        Frame-accurate seek decodes from the previous keyframe up to
+        the exact target position, costing ~30-100ms more per seek
+        depending on GOP density. That's well under the legacy 500ms
+        pin window, and the resulting `time_pos` after the seek
+        equals the click position exactly, so the slider doesn't
+        need any pin window to mask a discrepancy that no longer
+        exists.
+
+        The `_seek_pending_until` pin remains in place as defense in
+        depth — it's now redundant for keyframe rounding but still
+        smooths over any sub-100ms decode latency between the click
+        and the first `_poll` tick that reads the new `time_pos`.
+        """
         if self._mpv:
             import time as _time
             self._seek_target_ms = pos
             self._seek_pending_until = _time.monotonic() + self._seek_pin_window_secs
-            self._mpv.seek(pos / 1000.0, 'absolute')
+            self._mpv.seek(pos / 1000.0, 'absolute+exact')
 
     def _seek_relative(self, ms: int) -> None:
         if self._mpv:
