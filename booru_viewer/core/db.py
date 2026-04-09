@@ -583,6 +583,38 @@ class Database:
                  datetime.now(timezone.utc).isoformat(), filename),
             )
 
+    def is_post_in_library(self, post_id: int) -> bool:
+        """True iff a `library_meta` row exists for `post_id`.
+
+        Cheap, indexed lookup. Use this instead of walking the
+        filesystem when you only need a yes/no for a single post —
+        e.g. the bookmark context-menu's "Unsave from Library"
+        visibility check, or the bookmark→library copy's existence
+        guard. Replaces digit-stem matching, which can't see
+        templated filenames.
+        """
+        row = self.conn.execute(
+            "SELECT 1 FROM library_meta WHERE post_id = ? LIMIT 1",
+            (post_id,),
+        ).fetchone()
+        return row is not None
+
+    def get_saved_post_ids(self) -> set[int]:
+        """Return every post_id that has a library_meta row.
+
+        Used for batch saved-locally dot population on grids — load
+        the set once, do per-thumb membership checks against it.
+        Single SELECT, much cheaper than per-post DB lookups or
+        per-grid filesystem walks. Format-agnostic: handles both
+        templated and digit-stem filenames as long as the file's
+        save flow wrote a meta row (every save site does after the
+        unified save_post_file refactor).
+        """
+        rows = self.conn.execute(
+            "SELECT post_id FROM library_meta"
+        ).fetchall()
+        return {r["post_id"] for r in rows}
+
     def get_library_post_id_by_filename(self, filename: str) -> int | None:
         """Look up which post a saved-library file belongs to, by basename.
 
