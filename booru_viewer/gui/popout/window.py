@@ -371,7 +371,10 @@ class FullscreenPreview(QMainWindow):
         if FullscreenPreview._saved_geometry:
             sg = FullscreenPreview._saved_geometry
             saved_geo_tuple = (sg.x(), sg.y(), sg.width(), sg.height())
-        self._fsm_dispatch(Open(
+        # Open's handler returns [] (just stashes saved_geo on the
+        # state machine) but using _dispatch_and_apply for consistency
+        # — every dispatch site goes through one helper.
+        self._dispatch_and_apply(Open(
             saved_geo=saved_geo_tuple,
             saved_fullscreen=bool(FullscreenPreview._saved_fullscreen),
             monitor=monitor,
@@ -383,36 +386,56 @@ class FullscreenPreview(QMainWindow):
         # the adapter distinguishes by checking the state machine's
         # current state at dispatch time.
         self._video.playback_restart.connect(self._on_video_playback_restart)
-        # Wire video EOF (already connected to play_next_requested
-        # signal above) — additionally dispatch VideoEofReached.
+        # Wire VideoPlayer signals to dispatch+apply via the
+        # _dispatch_and_apply helper. NOTE: every lambda below MUST
+        # call _dispatch_and_apply, not _fsm_dispatch directly. Calling
+        # _fsm_dispatch alone produces effects that never reach
+        # widgets — the bug that landed in commit 14b and broke
+        # video auto-fit (FitWindowToContent never applied) and
+        # Loop=Next play_next (EmitPlayNextRequested never applied)
+        # until the lambdas were fixed in this commit.
         self._video.play_next.connect(
-            lambda: self._fsm_dispatch(VideoEofReached())
+            lambda: self._dispatch_and_apply(VideoEofReached())
         )
-        # Wire video size known.
         self._video.video_size.connect(
-            lambda w, h: self._fsm_dispatch(VideoSizeKnown(width=w, height=h))
+            lambda w, h: self._dispatch_and_apply(VideoSizeKnown(width=w, height=h))
         )
-        # Wire seek slider clicks → SeekRequested.
         self._video._seek_slider.clicked_position.connect(
-            lambda v: self._fsm_dispatch(SeekRequested(target_ms=v))
+            lambda v: self._dispatch_and_apply(SeekRequested(target_ms=v))
         )
-        # Wire mute button → MuteToggleRequested. Dispatch BEFORE the
-        # legacy _toggle_mute runs (which mutates VideoPlayer state)
-        # so the dispatch reflects the user-intent edge.
         self._video._mute_btn.clicked.connect(
-            lambda: self._fsm_dispatch(MuteToggleRequested())
+            lambda: self._dispatch_and_apply(MuteToggleRequested())
         )
-        # Wire volume slider → VolumeSet.
         self._video._vol_slider.valueChanged.connect(
-            lambda v: self._fsm_dispatch(VolumeSet(value=v))
+            lambda v: self._dispatch_and_apply(VolumeSet(value=v))
         )
-        # Wire loop button → LoopModeSet. Dispatched AFTER the legacy
-        # cycle so the new value is what we send.
         self._video._loop_btn.clicked.connect(
-            lambda: self._fsm_dispatch(
+            lambda: self._dispatch_and_apply(
                 LoopModeSet(mode=LoopMode(self._video.loop_state))
             )
         )
+
+    def _dispatch_and_apply(self, event) -> None:
+        """Dispatch an event and apply the returned effects.
+
+        Centralizes the dispatch+apply pattern that every event
+        wire-point in the adapter follows. Replaces the older
+        `effects = self._fsm_dispatch(...); self._apply_effects(effects)`
+        two-line pattern in eventFilter and the bare `_fsm_dispatch`
+        calls in the signal connection lambdas.
+
+        Note the historical bug this method exists to prevent: if a
+        signal lambda only calls `_fsm_dispatch` (which dispatches
+        and logs but does NOT apply effects), the state machine's
+        returned effects never reach widgets. That's how commit 14b
+        broke video auto-fit and Loop=Next play_next without anyone
+        noticing — the lambdas in __init__ were dispatching cleanly
+        but the FitWindowToContent and EmitPlayNextRequested effects
+        they produced were silently dropped. Going through this
+        helper makes the apply step impossible to forget.
+        """
+        effects = self._fsm_dispatch(event)
+        self._apply_effects(effects)
 
     def _fsm_dispatch(self, event) -> list:
         """Dispatch an event to the state machine and log the result.
@@ -454,11 +477,9 @@ class FullscreenPreview(QMainWindow):
         if not hasattr(self, "_state_machine"):
             return
         if self._state_machine.state == State.LOADING_VIDEO:
-            effects = self._fsm_dispatch(VideoStarted())
-            self._apply_effects(effects)
+            self._dispatch_and_apply(VideoStarted())
         elif self._state_machine.state == State.SEEKING_VIDEO:
-            effects = self._fsm_dispatch(SeekCompleted())
-            self._apply_effects(effects)
+            self._dispatch_and_apply(SeekCompleted())
         # Other states: drop. The state machine's release-mode
         # legality check would also drop it; this saves the dispatch
         # round trip.
@@ -905,7 +926,7 @@ class FullscreenPreview(QMainWindow):
         # private helpers. The state machine becomes the single entry
         # point for media load; set_media's body shrinks to dispatch
         # + apply.
-        effects = self._fsm_dispatch(ContentArrived(
+        self._dispatch_and_apply(ContentArrived(
             path=path,
             info=info,
             kind=kind,
@@ -913,7 +934,6 @@ class FullscreenPreview(QMainWindow):
             height=height,
             referer=referer,
         ))
-        self._apply_effects(effects)
         # Note: pre-fit to API dimensions was tried (option A from
         # the perf round) but caused a perceptible slowdown in popout
         # video clicks — the redundant second hyprctl dispatch when
@@ -1240,28 +1260,22 @@ class FullscreenPreview(QMainWindow):
                 self.close()
                 return True
             elif key in (Qt.Key.Key_Left, Qt.Key.Key_H):
-                effects = self._fsm_dispatch(NavigateRequested(direction=-1))
-                self._apply_effects(effects)
+                self._dispatch_and_apply(NavigateRequested(direction=-1))
                 return True
             elif key in (Qt.Key.Key_Right, Qt.Key.Key_L):
-                effects = self._fsm_dispatch(NavigateRequested(direction=1))
-                self._apply_effects(effects)
+                self._dispatch_and_apply(NavigateRequested(direction=1))
                 return True
             elif key in (Qt.Key.Key_Up, Qt.Key.Key_K):
-                effects = self._fsm_dispatch(NavigateRequested(direction=-self._grid_cols))
-                self._apply_effects(effects)
+                self._dispatch_and_apply(NavigateRequested(direction=-self._grid_cols))
                 return True
             elif key in (Qt.Key.Key_Down, Qt.Key.Key_J):
-                effects = self._fsm_dispatch(NavigateRequested(direction=self._grid_cols))
-                self._apply_effects(effects)
+                self._dispatch_and_apply(NavigateRequested(direction=self._grid_cols))
                 return True
             elif key == Qt.Key.Key_F11:
-                effects = self._fsm_dispatch(FullscreenToggled())
-                self._apply_effects(effects)
+                self._dispatch_and_apply(FullscreenToggled())
                 return True
             elif key == Qt.Key.Key_Space and self._stack.currentIndex() == 1:
-                effects = self._fsm_dispatch(TogglePlayRequested())
-                self._apply_effects(effects)
+                self._dispatch_and_apply(TogglePlayRequested())
                 return True
             elif key == Qt.Key.Key_Period and self._stack.currentIndex() == 1:
                 # +/- keys are seek-relative, NOT slider-pin seeks. The
@@ -1279,12 +1293,10 @@ class FullscreenPreview(QMainWindow):
             # Horizontal tilt navigates between posts on either stack
             tilt = event.angleDelta().x()
             if tilt > 30:
-                effects = self._fsm_dispatch(NavigateRequested(direction=-1))
-                self._apply_effects(effects)
+                self._dispatch_and_apply(NavigateRequested(direction=-1))
                 return True
             if tilt < -30:
-                effects = self._fsm_dispatch(NavigateRequested(direction=1))
-                self._apply_effects(effects)
+                self._dispatch_and_apply(NavigateRequested(direction=1))
                 return True
             # Vertical wheel adjusts volume on the video stack only
             if self._stack.currentIndex() == 1:
@@ -1295,7 +1307,7 @@ class FullscreenPreview(QMainWindow):
                     # actual mpv.volume write still happens via the
                     # legacy assignment below — ApplyVolume is a no-op
                     # in 14b (see _apply_effects docstring).
-                    self._fsm_dispatch(VolumeSet(value=vol))
+                    self._dispatch_and_apply(VolumeSet(value=vol))
                     self._video.volume = vol
                     self._show_overlay()
                     return True
@@ -1473,7 +1485,7 @@ class FullscreenPreview(QMainWindow):
                 long_side=float(max(rect.width(), rect.height())),
             )
             # Parallel state machine dispatch for the same event.
-            self._fsm_dispatch(WindowResized(rect=(
+            self._dispatch_and_apply(WindowResized(rect=(
                 rect.x(), rect.y(), rect.width(), rect.height(),
             )))
 
@@ -1504,7 +1516,7 @@ class FullscreenPreview(QMainWindow):
                 long_side=self._viewport.long_side,
             )
             # Parallel state machine dispatch for the same event.
-            self._fsm_dispatch(WindowMoved(rect=(
+            self._dispatch_and_apply(WindowMoved(rect=(
                 rect.x(), rect.y(), rect.width(), rect.height(),
             )))
 
@@ -1550,6 +1562,5 @@ class FullscreenPreview(QMainWindow):
         # [StopMedia, EmitClosed]. StopMedia clears the media stack;
         # EmitClosed emits self.closed which triggers main_window's
         # _on_fullscreen_closed handler.
-        effects = self._fsm_dispatch(CloseRequested())
-        self._apply_effects(effects)
+        self._dispatch_and_apply(CloseRequested())
         super().closeEvent(event)
