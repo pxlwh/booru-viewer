@@ -195,12 +195,16 @@ class BookmarksView(QWidget):
         self._count_label.setText(f"{len(self._bookmarks)} bookmarks")
         thumbs = self._grid.set_posts(len(self._bookmarks))
 
-        from ..core.config import find_library_files
+        # Batch the "is this saved?" check via library_meta. One indexed
+        # query gives us a set of every saved post_id, then per-thumb
+        # membership is O(1). Format-agnostic — works for digit-stem
+        # legacy files AND templated post-refactor saves, where the
+        # old find_library_files(post_id)+digit-stem check silently
+        # failed because the on-disk basename no longer matches the id.
+        saved_ids = self._db.get_saved_post_ids()
         for i, (fav, thumb) in enumerate(zip(self._bookmarks, thumbs)):
             thumb.set_bookmarked(True)
-            # Library state is filesystem-truth and folder-agnostic now —
-            # walk the library by post id, ignore the bookmark's folder.
-            thumb.set_saved_locally(bool(find_library_files(fav.post_id)))
+            thumb.set_saved_locally(fav.post_id in saved_ids)
             # Set cached path for drag-and-drop and copy
             if fav.cached_path and Path(fav.cached_path).exists():
                 thumb._cached_path = fav.cached_path
@@ -323,7 +327,7 @@ class BookmarksView(QWidget):
 
         # Save to Library submenu — folders come from the library
         # filesystem, not the bookmark folder DB.
-        from ..core.config import library_folders, find_library_files
+        from ..core.config import library_folders
         save_lib_menu = menu.addMenu("Save to Library")
         save_lib_unsorted = save_lib_menu.addAction("Unfiled")
         save_lib_menu.addSeparator()
@@ -335,8 +339,10 @@ class BookmarksView(QWidget):
         save_lib_new = save_lib_menu.addAction("+ New Folder...")
 
         unsave_lib = None
-        # Only show unsave if the post is actually on disk somewhere.
-        if find_library_files(fav.post_id):
+        # Only show unsave if the post is actually saved. is_post_in_library
+        # is the format-agnostic DB check — works for digit-stem and
+        # templated filenames alike.
+        if self._db.is_post_in_library(fav.post_id):
             unsave_lib = menu.addAction("Unsave from Library")
         copy_file = menu.addAction("Copy File to Clipboard")
         copy_url = menu.addAction("Copy Image URL")
@@ -407,12 +413,13 @@ class BookmarksView(QWidget):
                         log.warning(f"Bookmark Save As #{fav.post_id} failed: {e}")
         elif action == unsave_lib:
             from ..core.cache import delete_from_library
-            # delete_from_library walks every library folder by post id
-            # now — no folder hint needed (and fav.folder wouldn't be
-            # accurate anyway after the bookmark/library separation).
-            if delete_from_library(fav.post_id):
-                self.refresh()
-                self.bookmarks_changed.emit()
+            # Pass db so templated filenames are matched and the meta
+            # row gets cleaned up. Refresh on success OR on a meta-only
+            # cleanup (orphan row, no on-disk file) — either way the
+            # saved-dot indicator state has changed.
+            delete_from_library(fav.post_id, db=self._db)
+            self.refresh()
+            self.bookmarks_changed.emit()
         elif action == copy_file:
             path = fav.cached_path
             if path and Path(path).exists():
@@ -520,7 +527,7 @@ class BookmarksView(QWidget):
         elif action == unsave_all:
             from ..core.cache import delete_from_library
             for fav in favs:
-                delete_from_library(fav.post_id)
+                delete_from_library(fav.post_id, db=self._db)
             self.refresh()
             self.bookmarks_changed.emit()
         elif action == move_none:
