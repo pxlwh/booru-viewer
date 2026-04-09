@@ -881,20 +881,85 @@ class StateMachine:
         return [ExitFullscreen()]
 
     def _on_window_moved(self, event: WindowMoved) -> list[Effect]:
-        # Real implementation: updates state.viewport from rect (move
-        # only — preserves long_side). Lands in commit 8.
+        """Qt `moveEvent` fired (non-Hyprland only — Hyprland gates
+        this in the adapter because Wayland doesn't expose absolute
+        window position to clients).
+
+        Move-only update: preserve `long_side` from the existing
+        viewport (moves don't change size), but recompute the center
+        from the new rect. If there's no existing viewport yet (first
+        move before any fit), build a fresh one from the rect.
+
+        Skipped during fullscreen — moves while fullscreen aren't
+        user intent for the windowed viewport. Skipped in Closing.
+        """
+        if self.fullscreen or self.state == State.CLOSING:
+            return []
+        x, y, w, h = event.rect
+        if w <= 0 or h <= 0:
+            return []
+        long_side = (
+            self.viewport.long_side if self.viewport is not None
+            else float(max(w, h))
+        )
+        self.viewport = Viewport(
+            center_x=x + w / 2,
+            center_y=y + h / 2,
+            long_side=long_side,
+        )
         return []
 
     def _on_window_resized(self, event: WindowResized) -> list[Effect]:
-        # Real implementation: updates state.viewport from rect
-        # (resize — long_side becomes max(w, h)). Lands in commit 8.
+        """Qt `resizeEvent` fired (non-Hyprland only).
+
+        Full rebuild from the rect: long_side becomes the new
+        max(w, h), center becomes the rect center. Resizes change
+        the user's intent for popout size.
+
+        Skipped during fullscreen and Closing.
+        """
+        if self.fullscreen or self.state == State.CLOSING:
+            return []
+        x, y, w, h = event.rect
+        if w <= 0 or h <= 0:
+            return []
+        self.viewport = Viewport(
+            center_x=x + w / 2,
+            center_y=y + h / 2,
+            long_side=float(max(w, h)),
+        )
         return []
 
     def _on_hyprland_drift_detected(
         self, event: HyprlandDriftDetected
     ) -> list[Effect]:
-        # Real implementation: rebuilds state.viewport from rect.
-        # Lands in commit 8.
+        """Hyprland-side drift detector found that the current window
+        rect differs from the last dispatched rect by more than
+        `_DRIFT_TOLERANCE`. The user moved or resized the window
+        externally (Super+drag, corner resize, window manager
+        intervention).
+
+        On Wayland, Qt's moveEvent / resizeEvent never fire for
+        external compositor-driven movement (xdg-toplevel doesn't
+        expose absolute position). So this event is the only path
+        that captures Hyprland Super+drag.
+
+        Adopt the new state as the viewport's intent: rebuild
+        viewport from the current rect.
+
+        Skipped during fullscreen — drifts while in fullscreen
+        aren't meaningful for the windowed viewport.
+        """
+        if self.fullscreen or self.state == State.CLOSING:
+            return []
+        x, y, w, h = event.rect
+        if w <= 0 or h <= 0:
+            return []
+        self.viewport = Viewport(
+            center_x=x + w / 2,
+            center_y=y + h / 2,
+            long_side=float(max(w, h)),
+        )
         return []
 
     def _on_close_requested(self, event: CloseRequested) -> list[Effect]:
