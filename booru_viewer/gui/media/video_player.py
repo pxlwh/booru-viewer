@@ -201,28 +201,14 @@ class VideoPlayer(QWidget):
         self._eof_ignore_until: float = 0.0
         self._eof_ignore_window_secs: float = 0.25
 
-        # Seek-pending pin window — covers the user-clicked-the-seek-slider
-        # race. The flow: user clicks slider → _ClickSeekSlider.setValue
-        # (visual jumps to click position) → clicked_position emits →
-        # _seek dispatches mpv.seek (async on mpv's thread). Meanwhile
-        # the 100ms _poll tick reads mpv.time_pos (still the OLD
-        # position) and writes it back to the slider via setValue,
-        # snapping the slider visually backward until mpv catches up.
-        # The isSliderDown guard at line ~425 only suppresses the
-        # writeback during a drag — fast clicks don't trigger
-        # isSliderDown. Defence: instead of just *suppressing* the
-        # writeback during the window, we *pin* the slider to the user's
-        # target position on every poll tick that lands inside the
-        # window. That way mpv's lag — however long it is up to the
-        # window length — is invisible. After the window expires,
-        # normal mpv-driven slider updates resume.
-        #
-        # Window is wider than the eof one (500ms vs 250ms) because
-        # network/streaming seeks can take longer than the local-cache
-        # seeks the eof window was sized for.
-        self._seek_pending_until: float = 0.0
-        self._seek_target_ms: int = 0
-        self._seek_pin_window_secs: float = 0.5
+        # The legacy 500ms `_seek_pending_until` pin window that lived
+        # here was removed after `609066c` switched the slider seek
+        # to `'absolute+exact'`. With exact seek, mpv lands at the
+        # click position rather than at a keyframe before it, so the
+        # slider doesn't drag back through the missing time when
+        # `_poll` resumes reading `time_pos` after the seek. The pin
+        # was defense in depth for keyframe-rounding latency that no
+        # longer exists.
 
         # Polling timer for position/duration/pause/eof state
         self._poll_timer = QTimer(self)
@@ -421,33 +407,17 @@ class VideoPlayer(QWidget):
         """Seek to position in milliseconds (from slider).
 
         Uses `'absolute+exact'` (frame-accurate seek) to match the
-        existing `seek_to_ms` and `_seek_relative` methods. The
-        previous `'absolute'` (keyframe-only) mode landed mpv on the
-        nearest keyframe at-or-before the click position, which for
-        sparse-keyframe videos (1-5s GOP) was 1-5s behind where the
-        user clicked. The 500ms `_seek_pending_until` pin window
-        below papered over this for half a second, but afterwards
-        the slider visibly dragged back to mpv's actual (rounded)
-        position and crawled forward — observed in both the embedded
-        preview and the popout slider.
+        existing `seek_to_ms` and `_seek_relative` methods. mpv
+        decodes from the previous keyframe forward to the exact
+        target position, costing 30-100ms more than keyframe-only
+        seek but landing `time_pos` at the click position exactly.
 
-        Frame-accurate seek decodes from the previous keyframe up to
-        the exact target position, costing ~30-100ms more per seek
-        depending on GOP density. That's well under the legacy 500ms
-        pin window, and the resulting `time_pos` after the seek
-        equals the click position exactly, so the slider doesn't
-        need any pin window to mask a discrepancy that no longer
-        exists.
-
-        The `_seek_pending_until` pin remains in place as defense in
-        depth — it's now redundant for keyframe rounding but still
-        smooths over any sub-100ms decode latency between the click
-        and the first `_poll` tick that reads the new `time_pos`.
+        See `609066c` for the drag-back race fix that introduced
+        this. The legacy 500ms `_seek_pending_until` pin window that
+        used to wrap this call was removed after the exact-seek
+        change made it redundant.
         """
         if self._mpv:
-            import time as _time
-            self._seek_target_ms = pos
-            self._seek_pending_until = _time.monotonic() + self._seek_pin_window_secs
             self._mpv.seek(pos / 1000.0, 'absolute+exact')
 
     def _seek_relative(self, ms: int) -> None:
@@ -501,24 +471,17 @@ class VideoPlayer(QWidget):
     def _poll(self) -> None:
         if not self._mpv:
             return
-        # Position
+        # Position. After the `609066c` exact-seek fix and the
+        # subsequent removal of the `_seek_pending_until` pin window,
+        # this is just a straight read-and-write — `mpv.time_pos`
+        # equals the click position immediately after a slider seek
+        # because mpv decodes from the previous keyframe forward to
+        # the exact target before reporting it.
         pos = self._mpv.time_pos
         if pos is not None:
             pos_ms = int(pos * 1000)
             if not self._seek_slider.isSliderDown():
-                # Pin the slider to the user's target while a seek is in
-                # flight — mpv processes seek async, and any poll tick
-                # that fires before mpv reports the new position would
-                # otherwise snap the slider backward. Force the value to
-                # the target every tick inside the pin window; after the
-                # window expires, mpv has caught up and normal writes
-                # resume. See __init__'s `_seek_pin_window_secs` block
-                # for the race trace.
-                import time as _time
-                if _time.monotonic() < self._seek_pending_until:
-                    self._seek_slider.setValue(self._seek_target_ms)
-                else:
-                    self._seek_slider.setValue(pos_ms)
+                self._seek_slider.setValue(pos_ms)
             self._time_label.setText(self._fmt(pos_ms))
 
         # Duration (from observer)
