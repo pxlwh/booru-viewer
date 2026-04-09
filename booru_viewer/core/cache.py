@@ -434,7 +434,7 @@ def is_cached(url: str, dest_dir: Path | None = None) -> bool:
     return cached_path_for(url, dest_dir).exists()
 
 
-def delete_from_library(post_id: int, folder: str | None = None) -> bool:
+def delete_from_library(post_id: int, folder: str | None = None, db=None) -> bool:
     """Delete every saved copy of `post_id` from the library.
 
     Returns True if at least one file was deleted.
@@ -445,15 +445,38 @@ def delete_from_library(post_id: int, folder: str | None = None) -> bool:
     separation work: a bookmark no longer needs to know which folder its
     library file lives in. It also cleans up duplicates left by the old
     pre-fix "save to folder = copy" bug in a single Unsave action.
+
+    Pass `db` to also match templated filenames (post-refactor saves
+    that aren't named {post_id}.{ext}) and to clean up the library_meta
+    row in the same call. Without `db`, only digit-stem files are
+    found and the meta row stays — that's the old broken behavior,
+    preserved as a fallback for callers that don't have a Database
+    handle.
     """
     from .config import find_library_files
-    matches = find_library_files(post_id)
+    matches = find_library_files(post_id, db=db)
     deleted = False
     for path in matches:
         try:
             path.unlink()
             deleted = True
         except OSError:
+            pass
+    # Always drop the meta row, even when no files were unlinked.
+    # Two cases this matters for:
+    #   1. Files were on disk and unlinked — meta row is now stale.
+    #   2. Files were already gone (orphan meta row from a previous
+    #      delete that didn't clean up). The user asked to "unsave"
+    #      this post and the meta should reflect that, even if
+    #      there's nothing left on disk.
+    # Without this cleanup the post stays "saved" in the DB and
+    # is_post_in_library lies forever. The lookup is keyed by
+    # post_id so this is one cheap DELETE regardless of how many
+    # copies were on disk.
+    if db is not None:
+        try:
+            db.remove_library_meta(post_id)
+        except Exception:
             pass
     return deleted
 
