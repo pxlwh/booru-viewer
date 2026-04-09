@@ -615,6 +615,164 @@ class FullscreenPreview(QMainWindow):
         self._is_saved = saved
         self._save_btn.setText("Unsave" if saved else "Save")
 
+    # ------------------------------------------------------------------
+    # Public method interface (commit 15)
+    # ------------------------------------------------------------------
+    #
+    # The methods below replace direct underscore access from
+    # main_window.py. They wrap the existing private fields so
+    # main_window doesn't have to know about VideoPlayer / ImageViewer
+    # / QStackedWidget internals. The legacy private fields stay in
+    # place — these are clean public wrappers, not a re-architecture.
+
+    def is_video_active(self) -> bool:
+        """True if the popout is currently showing a video (vs image).
+
+        Replaces direct `popout._stack.currentIndex() == 1` checks
+        from main_window. Used to gate per-tab video-only operations
+        (volume scroll, seek, pause).
+        """
+        return self._stack.currentIndex() == 1
+
+    def set_toolbar_visibility(
+        self,
+        *,
+        bookmark: bool,
+        save: bool,
+        bl_tag: bool,
+        bl_post: bool,
+    ) -> None:
+        """Per-tab toolbar gating.
+
+        Replaces direct `popout._bookmark_btn.setVisible(...)` etc
+        from main_window's `_update_fullscreen` method. Library tab
+        hides Bookmark / BL Tag / BL Post (no site/post id to act
+        on) but keeps Save (acts as Unsave for the file currently
+        being viewed).
+        """
+        self._bookmark_btn.setVisible(bookmark)
+        self._save_btn.setVisible(save)
+        self._bl_tag_btn.setVisible(bl_tag)
+        self._bl_post_btn.setVisible(bl_post)
+
+    def sync_video_state(
+        self,
+        *,
+        volume: int,
+        mute: bool,
+        autoplay: bool,
+        loop_state: int,
+    ) -> None:
+        """Push state from the embedded preview into the popout's
+        video player.
+
+        Called by main_window's `_open_fullscreen_preview` after the
+        popout is constructed. Replaces direct `popout._video.volume
+        = ...` etc writes. Uses VideoPlayer's existing setters which
+        handle the lazy-mpv pending-state pattern (mute survives
+        first-load via _pending_mute, volume survives via the slider
+        widget acting as persistent storage).
+        """
+        self._video.volume = volume
+        self._video.is_muted = mute
+        self._video.autoplay = autoplay
+        self._video.loop_state = loop_state
+
+    def get_video_state(self) -> dict:
+        """Read video player state for the reverse sync at popout close.
+
+        Returns a dict with `volume`, `mute`, `autoplay`, `loop_state`,
+        and `position_ms` (current playback position in milliseconds,
+        0 if the popout isn't currently on the video stack). Called
+        by main_window's `_on_fullscreen_closed` to push the state
+        back into the embedded preview's video player.
+        """
+        return {
+            "volume": self._video.volume,
+            "mute": self._video.is_muted,
+            "autoplay": self._video.autoplay,
+            "loop_state": self._video.loop_state,
+            "position_ms": (
+                self._video.get_position_ms()
+                if self.is_video_active()
+                else 0
+            ),
+        }
+
+    def seek_video_to(self, ms: int) -> None:
+        """Seek the video to a specific position in milliseconds.
+
+        Used by main_window's seek-after-load pattern when restoring
+        video position across popout open/close cycles. Wraps
+        `VideoPlayer.seek_to_ms` (which uses `'absolute+exact'` for
+        frame-accurate landing — same as the slider's `_seek` after
+        the 609066c drag-back fix).
+        """
+        self._video.seek_to_ms(ms)
+
+    def connect_media_ready_once(self, callback) -> None:
+        """Wire a one-shot callback to the video player's media_ready
+        signal. The callback fires once when the next loaded video
+        becomes ready, then disconnects itself.
+
+        Replaces main_window's manual lambda + try/except disconnect
+        dance for the seek-when-ready pattern (open popout → wait for
+        the new mpv instance to load → restore the embedded preview's
+        playback position).
+        """
+        def _wrapper():
+            try:
+                callback()
+            finally:
+                try:
+                    self._video.media_ready.disconnect(_wrapper)
+                except (TypeError, RuntimeError):
+                    pass
+        self._video.media_ready.connect(_wrapper)
+
+    def pause_media(self) -> None:
+        """Pause the active video player. No-op if no video is loaded.
+
+        Replaces direct `popout._video.pause()` calls from main_window
+        in privacy-screen / blacklist / video-end paths. Goes through
+        VideoPlayer.pause() which handles the play-button text update
+        and respects the lazy-mpv state.
+        """
+        self._video.pause()
+
+    def force_mpv_pause(self) -> None:
+        """Set mpv.pause = True directly without going through Qt
+        property setters or button text updates.
+
+        Used by main_window's `_on_post_activated` to prevent the OLD
+        video from reaching natural EOF during the new post's async
+        download (which would auto-advance past the post the user
+        clicked). Different from `pause_media` because this writes
+        the mpv property directly — no eof-reached side effect, no
+        button text flicker mid-load.
+
+        Replaces the legacy `popout._video._mpv.pause = True` deep
+        attribute access from main_window line ~1125. The
+        `_mpv is None` guard handles the pre-first-load case where
+        `_ensure_mpv` hasn't run yet.
+        """
+        if self._video._mpv is not None:
+            try:
+                self._video._mpv.pause = True
+            except Exception:
+                pass
+
+    def stop_media(self) -> None:
+        """Stop the video and clear the image viewer.
+
+        Used by main_window's blacklist-removal flow when the post
+        being viewed gets blacklisted. Replaces the
+        `popout._viewer.clear() + popout._video.stop()` sequence from
+        main_window with a single call.
+        """
+        self._video.stop()
+        self._viewer.clear()
+
     def set_bookmark_folders_callback(self, callback) -> None:
         """Wire the bookmark folder list source. Called once from app.py
         right after the popout is constructed; matches the embedded

@@ -1120,9 +1120,7 @@ class BooruApp(QMainWindow):
             # or already stopped — pause is a no-op there.
             try:
                 if self._fullscreen_window:
-                    fmpv = self._fullscreen_window._video._mpv
-                    if fmpv is not None:
-                        fmpv.pause = True
+                    self._fullscreen_window.force_mpv_pause()
                 pmpv = self._preview._video_player._mpv
                 if pmpv is not None:
                     pmpv.pause = True
@@ -1336,10 +1334,12 @@ class BooruApp(QMainWindow):
             # visible — it acts as Unsave for the library file currently
             # being viewed, matching the embedded preview's library mode.
             show_full = self._stack.currentIndex() != 2
-            self._fullscreen_window._bookmark_btn.setVisible(show_full)
-            self._fullscreen_window._save_btn.setVisible(True)
-            self._fullscreen_window._bl_tag_btn.setVisible(show_full)
-            self._fullscreen_window._bl_post_btn.setVisible(show_full)
+            self._fullscreen_window.set_toolbar_visibility(
+                bookmark=show_full,
+                save=True,
+                bl_tag=show_full,
+                bl_post=show_full,
+            )
             self._update_fullscreen_state()
 
     def _update_fullscreen_state(self) -> None:
@@ -1795,7 +1795,7 @@ class BooruApp(QMainWindow):
                 if path is not None:
                     self._preview._video_player.pause()
                     if self._fullscreen_window and self._fullscreen_window.isVisible():
-                        self._fullscreen_window._video.pause()
+                        self._fullscreen_window.pause_media()
                     QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
                 else:
                     self._status.showMessage("Bookmark not cached — open it first to download")
@@ -1808,7 +1808,7 @@ class BooruApp(QMainWindow):
             if current and Path(current).exists():
                 self._preview._video_player.pause()
                 if self._fullscreen_window and self._fullscreen_window.isVisible():
-                    self._fullscreen_window._video.pause()
+                    self._fullscreen_window.pause_media()
                 QDesktopServices.openUrl(QUrl.fromLocalFile(current))
             return
         # Browse: original path. Removed the "open random cache file"
@@ -2148,22 +2148,21 @@ class BooruApp(QMainWindow):
         post = self._preview._current_post
         if post:
             self._fullscreen_window.set_post_tags(post.tag_categories, post.tag_list)
-        # Sync video player state from preview to popout
+        # Sync video player state from preview to popout via the
+        # popout's public sync_video_state method (replaces direct
+        # popout._video.* attribute writes).
         pv = self._preview._video_player
-        sv = self._fullscreen_window._video
-        sv.volume = pv.volume
-        sv.is_muted = pv.is_muted
-        sv.autoplay = pv.autoplay
-        sv.loop_state = pv.loop_state
+        self._fullscreen_window.sync_video_state(
+            volume=pv.volume,
+            mute=pv.is_muted,
+            autoplay=pv.autoplay,
+            loop_state=pv.loop_state,
+        )
         # Connect seek-after-load BEFORE set_media so we don't miss media_ready
         if video_pos > 0:
-            def _seek_when_ready():
-                sv.seek_to_ms(video_pos)
-                try:
-                    sv.media_ready.disconnect(_seek_when_ready)
-                except RuntimeError:
-                    pass
-            sv.media_ready.connect(_seek_when_ready)
+            self._fullscreen_window.connect_media_ready_once(
+                lambda: self._fullscreen_window.seek_video_to(video_pos)
+            )
         # Pre-fit dimensions for the popout video pre-fit optimization
         # — `post` is the same `self._preview._current_post` referenced
         # at line 2164 (set above), so reuse it without an extra read.
@@ -2193,18 +2192,20 @@ class BooruApp(QMainWindow):
         # Clear the popout-active flag now that the right splitter is back
         # in its real shape — future splitterMoved events should persist.
         self._popout_active = False
-        # Sync video player state from popout back to preview
-        if self._fullscreen_window:
-            sv = self._fullscreen_window._video
-            pv = self._preview._video_player
-            pv.volume = sv.volume
-            pv.is_muted = sv.is_muted
-            pv.autoplay = sv.autoplay
-            pv.loop_state = sv.loop_state
-        # Grab video position before cleanup
+        # Sync video player state from popout back to preview via
+        # the popout's public get_video_state method (replaces direct
+        # popout._video.* attribute reads + popout._stack.currentIndex
+        # check). The dict carries volume / mute / autoplay / loop_state
+        # / position_ms in one read.
         video_pos = 0
-        if self._fullscreen_window and self._fullscreen_window._stack.currentIndex() == 1:
-            video_pos = self._fullscreen_window._video.get_position_ms()
+        if self._fullscreen_window:
+            vstate = self._fullscreen_window.get_video_state()
+            pv = self._preview._video_player
+            pv.volume = vstate["volume"]
+            pv.is_muted = vstate["mute"]
+            pv.autoplay = vstate["autoplay"]
+            pv.loop_state = vstate["loop_state"]
+            video_pos = vstate["position_ms"]
         # Restore preview with current media
         path = self._preview._current_path
         info = self._preview._info_label.text()
@@ -2390,8 +2391,7 @@ class BooruApp(QMainWindow):
                 if cp == self._preview._current_path:
                     self._preview.clear()
                     if self._fullscreen_window and self._fullscreen_window.isVisible():
-                        self._fullscreen_window._viewer.clear()
-                        self._fullscreen_window._video.stop()
+                        self._fullscreen_window.stop_media()
             self._status.showMessage(f"Blacklisted: {tag}")
             self._remove_blacklisted_from_grid(tag=tag)
         elif action == bl_post_action:
@@ -2419,8 +2419,7 @@ class BooruApp(QMainWindow):
             if cp == self._preview._current_path:
                 self._preview.clear()
                 if self._fullscreen_window and self._fullscreen_window.isVisible():
-                    self._fullscreen_window._viewer.clear()
-                    self._fullscreen_window._video.stop()
+                    self._fullscreen_window.stop_media()
                 break
 
         # Remove from posts list (reverse order to keep indices valid)
@@ -2728,7 +2727,7 @@ class BooruApp(QMainWindow):
             # Pause any playing video before opening externally
             self._preview._video_player.pause()
             if self._fullscreen_window and self._fullscreen_window.isVisible():
-                self._fullscreen_window._video.pause()
+                self._fullscreen_window.pause_media()
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
         else:
             self._status.showMessage("Image not cached yet — double-click to download first")
