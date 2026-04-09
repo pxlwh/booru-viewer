@@ -2671,24 +2671,10 @@ class BooruApp(QMainWindow):
         self._run_async(_fav)
 
     def _batch_download_posts(self, posts: list, dest: str) -> None:
-        # Same _batch_dest stash as _batch_download — _on_batch_progress
-        # incrementally lights saved dots when dest is inside the library.
-        self._batch_dest = Path(dest)
-        async def _batch():
-            for i, post in enumerate(posts):
-                try:
-                    path = await download_image(post.file_url)
-                    ext = Path(path).suffix
-                    target = Path(dest) / f"{post.id}{ext}"
-                    if not target.exists():
-                        import shutil
-                        shutil.copy2(path, target)
-                    self._signals.batch_progress.emit(i + 1, len(posts), post.id)
-                except Exception as e:
-                    log.warning(f"Batch #{post.id} failed: {e}")
-            self._signals.batch_done.emit(f"Downloaded {len(posts)} images to {dest}")
-
-        self._run_async(_batch)
+        """Multi-select Download All entry point. Delegates to
+        _batch_download_to so the in_flight set, library_meta write,
+        and saved-dots refresh share one implementation."""
+        self._batch_download_to(posts, Path(dest))
 
     def _is_current_bookmarked(self, index: int) -> bool:
         site_id = self._site_combo.currentData()
@@ -2827,6 +2813,36 @@ class BooruApp(QMainWindow):
 
     # -- Batch download --
 
+    def _batch_download_to(self, posts: list[Post], dest_dir: Path) -> None:
+        """Download `posts` into `dest_dir`, routing each save through
+        save_post_file with a shared in_flight set so collision-prone
+        templates produce sequential _1, _2 suffixes within the batch.
+
+        Stashes `dest_dir` on `self._batch_dest` so _on_batch_progress
+        and _on_batch_done can decide whether the destination is inside
+        the library and the saved-dots need refreshing. The library_meta
+        write happens automatically inside save_post_file when dest_dir
+        is inside saved_dir() — fixes the v0.2.3 latent bug where batch
+        downloads into a library folder left files unregistered.
+        """
+        from ..core.library_save import save_post_file
+
+        self._batch_dest = dest_dir
+        self._status.showMessage(f"Downloading {len(posts)} images...")
+        in_flight: set[str] = set()
+
+        async def _batch():
+            for i, post in enumerate(posts):
+                try:
+                    src = Path(await download_image(post.file_url))
+                    save_post_file(src, post, dest_dir, self._db, in_flight)
+                    self._signals.batch_progress.emit(i + 1, len(posts), post.id)
+                except Exception as e:
+                    log.warning(f"Batch #{post.id} failed: {e}")
+            self._signals.batch_done.emit(f"Downloaded {len(posts)} images to {dest_dir}")
+
+        self._run_async(_batch)
+
     def _batch_download(self) -> None:
         if not self._posts:
             self._status.showMessage("No posts to download")
@@ -2835,28 +2851,7 @@ class BooruApp(QMainWindow):
         dest = select_directory(self, "Download to folder")
         if not dest:
             return
-
-        # Stash dest so _on_batch_done can decide whether the destination
-        # is inside the library and the saved-dots need refreshing.
-        self._batch_dest = Path(dest)
-        posts = list(self._posts)
-        self._status.showMessage(f"Downloading {len(posts)} images...")
-
-        async def _batch():
-            for i, post in enumerate(posts):
-                try:
-                    path = await download_image(post.file_url)
-                    ext = Path(path).suffix
-                    target = Path(dest) / f"{post.id}{ext}"
-                    if not target.exists():
-                        import shutil
-                        shutil.copy2(path, target)
-                    self._signals.batch_progress.emit(i + 1, len(posts), post.id)
-                except Exception as e:
-                    log.warning(f"Batch #{post.id} failed: {e}")
-            self._signals.batch_done.emit(f"Downloaded {len(posts)} images to {dest}")
-
-        self._run_async(_batch)
+        self._batch_download_to(list(self._posts), Path(dest))
 
     def _on_batch_progress(self, current: int, total: int, post_id: int) -> None:
         self._status.showMessage(f"Downloading {current}/{total}...")
