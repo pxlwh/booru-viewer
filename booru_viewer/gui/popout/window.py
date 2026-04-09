@@ -45,7 +45,31 @@ from .viewport import Viewport, _DRIFT_TOLERANCE
 # dispatch call logs at DEBUG with the event name, state transition,
 # and effect list. The user filters by `POPOUT_FSM` substring to see
 # only the state machine activity during the manual sweep.
+#
+# The booru logger (parent) only has the in-app QTextEdit LogHandler
+# attached (see main_window.py:436-440), so propagating to it routes
+# the dispatch trace to the Ctrl+L log panel — useful but invisible
+# from the shell. We additionally attach a stderr StreamHandler to
+# the adapter logger so `python -m booru_viewer.main_gui 2>&1 |
+# grep POPOUT_FSM` works during the commit-14a verification gate.
+# The handler is tagged with a sentinel attribute so re-imports
+# don't stack duplicates.
+import sys as _sys
 _fsm_log = logging.getLogger("booru.popout.adapter")
+_fsm_log.setLevel(logging.DEBUG)
+if not any(
+    getattr(h, "_is_popout_fsm_stderr", False) for h in _fsm_log.handlers
+):
+    _stderr_handler = logging.StreamHandler(_sys.stderr)
+    _stderr_handler.setLevel(logging.DEBUG)
+    _stderr_handler.setFormatter(
+        logging.Formatter(
+            "[%(asctime)s.%(msecs)03d] %(message)s",
+            datefmt="%H:%M:%S",
+        )
+    )
+    _stderr_handler._is_popout_fsm_stderr = True
+    _fsm_log.addHandler(_stderr_handler)
 
 
 ## Overlay styling for the popout's translucent toolbar / controls bar
