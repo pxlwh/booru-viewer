@@ -28,6 +28,7 @@ import pytest
 
 from booru_viewer.gui.popout.state import (
     # Enums
+    InvalidTransition,
     LoopMode,
     MediaKind,
     State,
@@ -513,6 +514,41 @@ def test_invariant_pending_mute_replayed_into_video():
 #
 # At commit 11 these become env-gated raises (BOORU_VIEWER_STRICT_STATE).
 # At commits 3-10 they return [] (the skeleton's default).
+
+
+def test_strict_mode_raises_invalid_transition(monkeypatch):
+    """When BOORU_VIEWER_STRICT_STATE is set, illegal events raise
+    InvalidTransition instead of dropping silently. This is the
+    development/debug mode that catches programmer errors at the
+    dispatch boundary."""
+    monkeypatch.setenv("BOORU_VIEWER_STRICT_STATE", "1")
+    m = _new_in(State.PLAYING_VIDEO)
+    with pytest.raises(InvalidTransition) as exc_info:
+        m.dispatch(VideoStarted())
+    assert exc_info.value.state == State.PLAYING_VIDEO
+    assert isinstance(exc_info.value.event, VideoStarted)
+
+
+def test_strict_mode_does_not_raise_for_legal_events(monkeypatch):
+    """Legal events go through dispatch normally even under strict mode."""
+    monkeypatch.setenv("BOORU_VIEWER_STRICT_STATE", "1")
+    m = _new_in(State.PLAYING_VIDEO)
+    # SeekRequested IS legal in PlayingVideo — no raise
+    effects = m.dispatch(SeekRequested(target_ms=5000))
+    assert m.state == State.SEEKING_VIDEO
+
+
+def test_strict_mode_legal_but_no_op_does_not_raise(monkeypatch):
+    """The 'legal-but-no-op' events (e.g. VideoEofReached in
+    LoadingVideo, the EOF race fix) must NOT raise in strict mode.
+    They're intentionally accepted and dropped — that's the
+    structural fix, not a programmer error."""
+    monkeypatch.setenv("BOORU_VIEWER_STRICT_STATE", "1")
+    m = _new_in(State.LOADING_VIDEO)
+    # VideoEofReached in LoadingVideo is legal-but-no-op
+    effects = m.dispatch(VideoEofReached())
+    assert effects == []
+    assert m.state == State.LOADING_VIDEO
 
 
 @pytest.mark.parametrize("source_state, illegal_event", [

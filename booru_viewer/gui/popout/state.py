@@ -26,11 +26,48 @@ commits 4-11 of `docs/POPOUT_REFACTOR_PLAN.md`.
 
 from __future__ import annotations
 
+import logging
+import os
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, Union
 
 from .viewport import Viewport
+
+
+log = logging.getLogger("booru.popout.state")
+
+
+class InvalidTransition(Exception):
+    """Raised by `StateMachine.dispatch()` when an event arrives in a
+    state that doesn't accept it.
+
+    Only raised when `BOORU_VIEWER_STRICT_STATE` is set in the
+    environment. In release mode (the default), illegal transitions
+    are dropped silently and a `log.debug` line is emitted instead.
+    Production runs in release mode; development and the test suite
+    can opt into strict mode to catch programmer errors at the
+    dispatch boundary instead of letting them silently no-op.
+
+    The strict-mode raise is the structural alternative to "wait for
+    a downstream symptom and then bisect to find the bad dispatch."
+    """
+
+    def __init__(self, state, event):
+        super().__init__(
+            f"Invalid event {type(event).__name__} in state {state.name}"
+        )
+        self.state = state
+        self.event = event
+
+
+def _strict_mode_enabled() -> bool:
+    """Read the strict-mode env var at dispatch time.
+
+    Per-dispatch read (not cached at import) so monkeypatch in tests
+    works correctly. Cheap — `os.environ.get` is microseconds.
+    """
+    return bool(os.environ.get("BOORU_VIEWER_STRICT_STATE"))
 
 
 # ----------------------------------------------------------------------
@@ -445,6 +482,68 @@ Effect = Union[
 
 
 # ----------------------------------------------------------------------
+# Legality map: which events are valid in which states
+# ----------------------------------------------------------------------
+#
+# Used by `StateMachine.dispatch()` for the env-gated strict-mode
+# `InvalidTransition` raise. In release mode, illegal events are
+# dropped silently (log.debug + return []). In strict mode, they raise
+# to catch programmer errors at the dispatch boundary.
+#
+# A few events are GLOBALLY legal in any non-Closing state:
+#   - NavigateRequested
+#   - MuteToggleRequested / VolumeSet / LoopModeSet
+#   - FullscreenToggled
+#   - WindowMoved / WindowResized / HyprlandDriftDetected
+#   - CloseRequested
+#   - ContentArrived (the adapter can replace media at any time)
+#
+# State-specific events are listed per state. Some events are
+# "legal-but-no-op" — most importantly VideoEofReached in LoadingVideo
+# and SeekingVideo (the EOF race fix accepts these and drops them
+# without acting). Those count as legal because the state machine
+# intentionally observes them; the dropping IS the behavior.
+
+_GLOBAL_NON_CLOSING_EVENTS: frozenset[type] = frozenset({
+    ContentArrived,
+    NavigateRequested,
+    MuteToggleRequested,
+    VolumeSet,
+    LoopModeSet,
+    FullscreenToggled,
+    WindowMoved,
+    WindowResized,
+    HyprlandDriftDetected,
+    CloseRequested,
+})
+
+_LEGAL_EVENTS_BY_STATE: dict[State, frozenset[type]] = {
+    State.AWAITING_CONTENT: _GLOBAL_NON_CLOSING_EVENTS | frozenset({Open}),
+    State.DISPLAYING_IMAGE: _GLOBAL_NON_CLOSING_EVENTS,
+    State.LOADING_VIDEO: _GLOBAL_NON_CLOSING_EVENTS | frozenset({
+        VideoStarted,
+        VideoEofReached,    # legal-but-no-op (EOF race fix)
+        VideoSizeKnown,
+    }),
+    State.PLAYING_VIDEO: _GLOBAL_NON_CLOSING_EVENTS | frozenset({
+        VideoEofReached,
+        VideoSizeKnown,
+        SeekRequested,
+        TogglePlayRequested,
+    }),
+    State.SEEKING_VIDEO: _GLOBAL_NON_CLOSING_EVENTS | frozenset({
+        VideoEofReached,    # legal-but-no-op (drops during seek)
+        VideoSizeKnown,
+        SeekRequested,
+        SeekCompleted,
+    }),
+    # Closing is terminal — every event drops at the dispatch entry,
+    # so the legal set is empty (no event reaches the legality check).
+    State.CLOSING: frozenset(),
+}
+
+
+# ----------------------------------------------------------------------
 # StateMachine
 # ----------------------------------------------------------------------
 
@@ -562,7 +661,24 @@ class StateMachine:
         if self.state == State.CLOSING:
             return []
 
-        # Skeleton routing. Real handlers land in later commits.
+        # Legality check: env-gated strict mode (BOORU_VIEWER_STRICT_STATE)
+        # raises InvalidTransition; release mode drops + logs at debug.
+        # The legality map distinguishes "intentionally legal-but-no-op"
+        # (e.g. VideoEofReached in LoadingVideo — the EOF race fix) from
+        # "structurally invalid" (e.g. SeekRequested in DisplayingImage —
+        # no video to seek into).
+        legal_events = _LEGAL_EVENTS_BY_STATE.get(self.state, frozenset())
+        if type(event) not in legal_events:
+            if _strict_mode_enabled():
+                raise InvalidTransition(self.state, event)
+            log.debug(
+                "Dropping illegal event %s in state %s",
+                type(event).__name__,
+                self.state.name,
+            )
+            return []
+
+        # Routing.
         match event:
             case Open():
                 return self._on_open(event)
@@ -1075,4 +1191,5 @@ __all__ = [
     "Effect",
     # Machine
     "StateMachine",
+    "InvalidTransition",
 ]
