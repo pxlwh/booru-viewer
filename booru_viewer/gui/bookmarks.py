@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..core.db import Database, Bookmark
+from ..core.api.base import Post
 from ..core.cache import download_thumbnail
 from ..core.concurrency import run_on_app_loop
 from .grid import ThumbnailGrid
@@ -243,25 +244,56 @@ class BookmarksView(QWidget):
         if 0 <= index < len(self._bookmarks):
             self.bookmark_activated.emit(self._bookmarks[index])
 
+    def _bookmark_to_post(self, fav: Bookmark) -> Post:
+        """Adapt a Bookmark into a Post for the renderer / save flow.
+
+        The unified save_post_file flow takes a Post (because it's
+        called from the browse side too), so bookmarks borrow Post
+        shape just for the duration of the save call. Bookmark already
+        carries every field the renderer reads — this adapter is the
+        one place to update if Post's field set drifts later.
+        """
+        return Post(
+            id=fav.post_id,
+            file_url=fav.file_url,
+            preview_url=fav.preview_url,
+            tags=fav.tags,
+            score=fav.score or 0,
+            rating=fav.rating,
+            source=fav.source,
+            tag_categories=fav.tag_categories or {},
+        )
+
+    def _save_bookmark_to_library(self, fav: Bookmark, folder: str | None) -> None:
+        """Copy a bookmarked image into the library, optionally inside
+        a subfolder, routing through the unified save_post_file flow.
+
+        Fixes the latent v0.2.3 bug where bookmark→library copies
+        wrote files but never registered library_meta rows — those
+        files were on disk but invisible to Library tag-search."""
+        from ..core.config import saved_dir, saved_folder_dir
+        from ..core.library_save import save_post_file
+
+        if not (fav.cached_path and Path(fav.cached_path).exists()):
+            return
+        try:
+            dest_dir = saved_folder_dir(folder) if folder else saved_dir()
+        except ValueError:
+            return
+        src = Path(fav.cached_path)
+        post = self._bookmark_to_post(fav)
+        try:
+            save_post_file(src, post, dest_dir, self._db)
+        except Exception as e:
+            log.warning(f"Bookmark→library save #{fav.post_id} failed: {e}")
+
     def _copy_to_library_unsorted(self, fav: Bookmark) -> None:
         """Copy a bookmarked image to the unsorted library folder."""
-        from ..core.config import saved_dir
-        if fav.cached_path and Path(fav.cached_path).exists():
-            import shutil
-            src = Path(fav.cached_path)
-            dest = saved_dir() / f"{fav.post_id}{src.suffix}"
-            if not dest.exists():
-                shutil.copy2(src, dest)
+        self._save_bookmark_to_library(fav, None)
 
     def _copy_to_library(self, fav: Bookmark, folder: str) -> None:
-        """Copy a bookmarked image to the library folder on disk."""
-        from ..core.config import saved_folder_dir
-        if fav.cached_path and Path(fav.cached_path).exists():
-            import shutil
-            src = Path(fav.cached_path)
-            dest = saved_folder_dir(folder) / f"{fav.post_id}{src.suffix}"
-            if not dest.exists():
-                shutil.copy2(src, dest)
+        """Copy a bookmarked image to the named library subfolder."""
+        self._save_bookmark_to_library(fav, folder)
 
     def _new_folder(self) -> None:
         name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
