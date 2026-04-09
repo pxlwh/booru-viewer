@@ -128,28 +128,59 @@ def library_folders() -> list[str]:
     return sorted(d.name for d in root.iterdir() if d.is_dir())
 
 
-def find_library_files(post_id: int) -> list[Path]:
+def find_library_files(post_id: int, db=None) -> list[Path]:
     """Return all library files matching `post_id` across every folder.
 
     The library has a flat shape: root + one level of subdirectories.
-    We walk it shallowly (one iterdir of root + one iterdir per subdir)
-    looking for any media file whose stem equals str(post_id). Used by:
-    - "is this post saved?" badges (any match → yes)
-    - delete_from_library (delete every match — handles duplicates left
-      by the old save-to-folder copy bug in a single click)
-    - the move-aware _save_to_library / library "Move to Folder" actions
+    Walks shallowly (one iterdir of root + one iterdir per subdir)
+    and matches files in two ways:
+      1. Legacy v0.2.3 layout: stem equals str(post_id) (e.g. 12345.jpg).
+      2. Templated layout (post-refactor): basename appears in
+         `library_meta.filename` for this post_id.
+
+    The templated match requires `db` — when None, only the legacy
+    digit-stem path runs. Pass `db=self._db` from any caller that
+    has a Database instance handy (essentially every gui caller).
+    Used by:
+      - delete_from_library (delete every copy on disk)
+      - main_window's bookmark→library preview lookup
+      - the unified save flow's pre-existing-copy detection (now
+        handled inside save_post_file via _same_post_on_disk)
     """
     matches: list[Path] = []
     root = saved_dir()
     if not root.is_dir():
         return matches
+
     stem = str(post_id)
+
+    # Templated filenames stored for this post, if a db handle was passed.
+    templated: set[str] = set()
+    if db is not None:
+        try:
+            rows = db.conn.execute(
+                "SELECT filename FROM library_meta WHERE post_id = ? AND filename != ''",
+                (post_id,),
+            ).fetchall()
+            templated = {r["filename"] for r in rows}
+        except Exception:
+            pass  # DB issue → degrade to digit-stem-only matching
+
+    def _matches(p: Path) -> bool:
+        if p.suffix.lower() not in MEDIA_EXTENSIONS:
+            return False
+        if p.stem == stem:
+            return True
+        if p.name in templated:
+            return True
+        return False
+
     for entry in root.iterdir():
-        if entry.is_file() and entry.stem == stem and entry.suffix.lower() in MEDIA_EXTENSIONS:
+        if entry.is_file() and _matches(entry):
             matches.append(entry)
         elif entry.is_dir():
             for sub in entry.iterdir():
-                if sub.is_file() and sub.stem == stem and sub.suffix.lower() in MEDIA_EXTENSIONS:
+                if sub.is_file() and _matches(sub):
                     matches.append(sub)
     return matches
 
