@@ -2732,105 +2732,53 @@ class BooruApp(QMainWindow):
         else:
             self._status.showMessage("Image not cached yet — double-click to download first")
 
-    def _save_to_library(self, post: Post, folder: str | None) -> None:
-        """Save (or relocate) an image in the library folder structure.
+    def _copy_library_thumb(self, post: Post) -> None:
+        """Copy a post's browse thumbnail into the library thumbnail
+        cache so the Library tab can paint it without re-downloading.
+        No-op if there's no preview_url or the source thumb isn't cached."""
+        if not post.preview_url:
+            return
+        from ..core.config import thumbnails_dir
+        from ..core.cache import cached_path_for
+        thumb_src = cached_path_for(post.preview_url, thumbnails_dir())
+        if not thumb_src.exists():
+            return
+        lib_thumb_dir = thumbnails_dir() / "library"
+        lib_thumb_dir.mkdir(parents=True, exist_ok=True)
+        lib_thumb = lib_thumb_dir / f"{post.id}.jpg"
+        if not lib_thumb.exists():
+            import shutil
+            shutil.copy2(thumb_src, lib_thumb)
 
-        If the post is already saved somewhere in the library, the existing
-        file is renamed into the target folder rather than re-downloading.
-        This is what makes "Save to Library → SomeFolder" act like a move
-        when the post is already in Unfiled (or another folder), instead
-        of producing a duplicate. rename() is atomic on the same filesystem
-        so a crash mid-move can never leave both copies behind.
+    def _save_to_library(self, post: Post, folder: str | None) -> None:
+        """Save a post into the library, optionally inside a subfolder.
+
+        Routes through the unified save_post_file flow so the filename
+        template, sequential collision suffixes, same-post idempotency,
+        and library_meta write are all handled in one place. Re-saving
+        the same post into the same folder is a no-op (idempotent);
+        saving into a different folder produces a second copy without
+        touching the first.
         """
-        from ..core.config import saved_dir, saved_folder_dir, MEDIA_EXTENSIONS
+        from ..core.config import saved_dir, saved_folder_dir
+        from ..core.library_save import save_post_file
 
         self._status.showMessage(f"Saving #{post.id} to library...")
-
-        # Resolve destination synchronously — saved_folder_dir() does
-        # the path-traversal check and may raise ValueError. Surface
-        # that error here rather than from inside the async closure.
         try:
-            if folder:
-                dest_dir = saved_folder_dir(folder)
-            else:
-                dest_dir = saved_dir()
+            dest_dir = saved_folder_dir(folder) if folder else saved_dir()
         except ValueError as e:
             self._status.showMessage(f"Invalid folder name: {e}")
             return
-        dest_resolved = dest_dir.resolve()
-
-        # Look for an existing copy of this post anywhere in the library.
-        # The library is shallow (root + one level of subdirectories) so
-        # this is cheap — at most one iterdir per top-level entry.
-        existing: Path | None = None
-        root = saved_dir()
-        if root.is_dir():
-            stem = str(post.id)
-            for entry in root.iterdir():
-                if entry.is_file() and entry.stem == stem and entry.suffix.lower() in MEDIA_EXTENSIONS:
-                    existing = entry
-                    break
-                if entry.is_dir():
-                    for sub in entry.iterdir():
-                        if sub.is_file() and sub.stem == stem and sub.suffix.lower() in MEDIA_EXTENSIONS:
-                            existing = sub
-                            break
-                    if existing is not None:
-                        break
 
         async def _save():
             try:
-                if existing is not None:
-                    # Already in the library — relocate instead of re-saving.
-                    if existing.parent.resolve() != dest_resolved:
-                        target = dest_dir / existing.name
-                        if target.exists():
-                            # Destination already has a file with the same
-                            # name (matched by post id, so it's the same
-                            # post). Drop the source to collapse the
-                            # duplicate rather than leaving both behind.
-                            existing.unlink()
-                        else:
-                            try:
-                                existing.rename(target)
-                            except OSError:
-                                # Cross-device rename — fall back to copy+unlink.
-                                import shutil as _sh
-                                _sh.move(str(existing), str(target))
-                else:
-                    # Not in the library yet — pull from cache and copy in.
-                    path = await download_image(post.file_url)
-                    ext = Path(path).suffix
-                    dest = dest_dir / f"{post.id}{ext}"
-                    if not dest.exists():
-                        import shutil
-                        shutil.copy2(path, dest)
-
-                # Copy browse thumbnail to library thumbnail cache
-                if post.preview_url:
-                    from ..core.config import thumbnails_dir
-                    from ..core.cache import cached_path_for as _cpf
-                    thumb_src = _cpf(post.preview_url, thumbnails_dir())
-                    if thumb_src.exists():
-                        lib_thumb_dir = thumbnails_dir() / "library"
-                        lib_thumb_dir.mkdir(parents=True, exist_ok=True)
-                        lib_thumb = lib_thumb_dir / f"{post.id}.jpg"
-                        if not lib_thumb.exists():
-                            import shutil as _sh
-                            _sh.copy2(thumb_src, lib_thumb)
-
-                # Store metadata for library search
-                self._db.save_library_meta(
-                    post_id=post.id, tags=post.tags,
-                    tag_categories=post.tag_categories,
-                    score=post.score, rating=post.rating,
-                    source=post.source, file_url=post.file_url,
-                )
-
+                src = Path(await download_image(post.file_url))
+                save_post_file(src, post, dest_dir, self._db)
+                self._copy_library_thumb(post)
                 where = folder or "Unfiled"
                 self._signals.bookmark_done.emit(
                     self._grid.selected_index,
-                    f"Saved #{post.id} to {where}"
+                    f"Saved #{post.id} to {where}",
                 )
             except Exception as e:
                 self._signals.bookmark_error.emit(str(e))
