@@ -609,9 +609,22 @@ class StateMachine:
     # ------------------------------------------------------------------
 
     def _on_open(self, event: Open) -> list[Effect]:
-        # Real implementation: stash saved_geo / saved_fullscreen /
-        # monitor on self for the first ContentArrived to consume.
-        # Lands in commit 5.
+        """Initial popout-open event from the adapter.
+
+        Stashes the cross-popout-session class-level state
+        (`_saved_geometry`, `_saved_fullscreen`, the chosen monitor)
+        on the state machine instance for the first ContentArrived
+        handler to consume. After Open the machine is still in
+        AwaitingContent — the actual viewport seeding from saved_geo
+        happens inside the first ContentArrived (commit 8 wires the
+        actual viewport math; this commit just stashes the inputs).
+
+        No effects: the popout window is already constructed and
+        showing. The first content load triggers the first fit.
+        """
+        self.saved_geo = event.saved_geo
+        self.saved_fullscreen = event.saved_fullscreen
+        self.monitor = event.monitor
         return []
 
     def _on_content_arrived(self, event: ContentArrived) -> list[Effect]:
@@ -652,9 +665,34 @@ class StateMachine:
         return []
 
     def _on_navigate_requested(self, event: NavigateRequested) -> list[Effect]:
-        # Real implementation: emits StopMedia + EmitNavigate,
-        # transitions to AwaitingContent. Lands in commit 5.
-        return []
+        """**Double-load race fix (replaces 31d02d3c's upstream signal-
+        chain trust fix at the popout layer).**
+
+        From a media-bearing state (DisplayingImage / LoadingVideo /
+        PlayingVideo / SeekingVideo): transition to AwaitingContent
+        and emit `[StopMedia, EmitNavigate]`. The StopMedia clears the
+        current surface so mpv doesn't keep playing the previous video
+        during the async download wait. The EmitNavigate tells
+        main_window to advance selection and eventually deliver the
+        new content via ContentArrived.
+
+        From AwaitingContent itself (rapid Right-arrow spam, second
+        nav before main_window has delivered): emit EmitNavigate
+        ALONE — no StopMedia, because there's nothing to stop. The
+        state stays AwaitingContent. **The state machine never
+        produces two LoadVideo / LoadImage effects for the same
+        navigation cycle, no matter how many NavigateRequested events
+        the user fires off.** That structural property is what makes
+        the eof race impossible at the popout layer.
+        """
+        if self.state == State.AWAITING_CONTENT:
+            return [EmitNavigate(direction=event.direction)]
+        # Media-bearing state: clear current media + emit nav
+        self.state = State.AWAITING_CONTENT
+        return [
+            StopMedia(),
+            EmitNavigate(direction=event.direction),
+        ]
 
     def _on_video_started(self, event: VideoStarted) -> list[Effect]:
         """LoadingVideo → PlayingVideo. Persistence effects fire here.
