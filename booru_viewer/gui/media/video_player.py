@@ -36,6 +36,17 @@ class VideoPlayer(QWidget):
     play_next = Signal()       # emitted when video ends in "Next" mode
     media_ready = Signal()     # emitted when media is loaded and duration is known
     video_size = Signal(int, int)  # (width, height) emitted when video dimensions are known
+    # Emitted whenever mpv fires its `playback-restart` event. This event
+    # arrives once after each loadfile (when playback actually starts
+    # producing frames) and once after each completed seek. The popout's
+    # state machine adapter listens to this signal and dispatches either
+    # VideoStarted or SeekCompleted depending on which state it's in
+    # (LoadingVideo vs SeekingVideo). The pre-state-machine code did not
+    # need this signal because it used a 500ms timestamp window to fake
+    # a seek-done edge; the state machine refactor replaces that window
+    # with this real event. Probe results in docs/POPOUT_REFACTOR_PLAN.md
+    # confirm exactly one event per load and one per seek.
+    playback_restart = Signal()
 
     # QSS-controllable letterbox / pillarbox color. mpv paints the area
     # around the video frame in this color instead of the default black,
@@ -246,6 +257,16 @@ class VideoPlayer(QWidget):
         self._mpv.observe_property('duration', self._on_duration_change)
         self._mpv.observe_property('eof-reached', self._on_eof_reached)
         self._mpv.observe_property('video-params', self._on_video_params)
+        # Forward mpv's `playback-restart` event to the Qt-side signal so
+        # the popout's state machine adapter can dispatch VideoStarted /
+        # SeekCompleted events on the GUI thread. mpv's event_callback
+        # decorator runs on mpv's event thread; emitting a Qt Signal is
+        # thread-safe and the receiving slot runs on the connection's
+        # target thread (typically the GUI main loop via the default
+        # AutoConnection from the same-thread receiver).
+        @self._mpv.event_callback('playback-restart')
+        def _emit_playback_restart(_event):
+            self.playback_restart.emit()
         self._pending_video_size: tuple[int, int] | None = None
         # Push any QSS-set letterbox color into mpv now that the instance
         # exists. The qproperty-letterboxColor setter is a no-op if mpv
