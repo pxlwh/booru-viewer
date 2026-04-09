@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 from ..media.constants import _is_video
 from ..media.image_viewer import ImageViewer
 from ..media.video_player import VideoPlayer
+from . import hyprland
 from .effects import (
     ApplyLoopMode,
     ApplyMute,
@@ -137,20 +138,25 @@ class FullscreenPreview(QMainWindow):
         self._stack.addWidget(self._viewer)
 
         self._video = VideoPlayer()
-        # Note: the legacy `self._video.play_next.connect(self.play_next_requested)`
-        # signal-to-signal forwarding was removed in commit 14b. The
-        # state machine dispatch path now handles play_next_requested
-        # via the EmitPlayNextRequested effect:
-        #   1. mpv eof-reached → VideoPlayer.play_next emits
-        #   2. Adapter dispatch lambda (wired in __init__) →
-        #      VideoEofReached event
-        #   3. State machine PlayingVideo + Loop=Next → emits
-        #      EmitPlayNextRequested effect
-        #   4. _apply_effects → self.play_next_requested.emit()
-        # Keeping the legacy forwarding here would double-emit the
-        # signal and cause main_window to navigate twice on every
-        # video EOF in Loop=Next mode.
-        self._video.video_size.connect(self._on_video_size)
+        # Note: two legacy VideoPlayer signal connections removed in
+        # commits 14b and 16:
+        #
+        # - `self._video.play_next.connect(self.play_next_requested)`
+        #   (removed in 14b): the EmitPlayNextRequested effect now
+        #   emits play_next_requested via the state machine dispatch
+        #   path. Keeping the forwarding would double-emit the signal
+        #   and cause main_window to navigate twice on every video
+        #   EOF in Loop=Next mode.
+        #
+        # - `self._video.video_size.connect(self._on_video_size)`
+        #   (removed in 16): the dispatch path's VideoSizeKnown
+        #   handler emits FitWindowToContent which the apply path
+        #   delegates to _fit_to_content. The legacy direct call to
+        #   _on_video_size → _fit_to_content was a parallel duplicate
+        #   that the same-rect skip in _fit_to_content made harmless,
+        #   but it muddied the trace. The dispatch lambda below is
+        #   wired in the same __init__ block (post state machine
+        #   construction) and is now the sole path.
         self._stack.addWidget(self._video)
 
         self.setCentralWidget(central)
@@ -923,13 +929,9 @@ class FullscreenPreview(QMainWindow):
         # eventFilter on mouse-move into the top/bottom edge zones),
         # not pop back up after every navigation.
 
-    def _on_video_size(self, w: int, h: int) -> None:
-        if not self.isFullScreen() and w > 0 and h > 0:
-            self._fit_to_content(w, h)
-
     def _is_hypr_floating(self) -> bool | None:
         """Check if this window is floating in Hyprland. None if not on Hyprland."""
-        win = self._hyprctl_get_window()
+        win = hyprland.get_window(self.windowTitle())
         if win is None:
             return None  # not Hyprland
         return bool(win.get("floating"))
@@ -988,7 +990,7 @@ class FullscreenPreview(QMainWindow):
         """
         if floating is True:
             if win is None:
-                win = self._hyprctl_get_window()
+                win = hyprland.get_window(self.windowTitle())
             if win and win.get("at") and win.get("size"):
                 wx, wy = win["at"]
                 ww, wh = win["size"]
@@ -1061,7 +1063,7 @@ class FullscreenPreview(QMainWindow):
         # moved or resized the window externally since our last dispatch.
         if floating is True and self._last_dispatched_rect is not None:
             if win is None:
-                win = self._hyprctl_get_window()
+                win = hyprland.get_window(self.windowTitle())
             if win and win.get("at") and win.get("size"):
                 cur_x, cur_y = win["at"]
                 cur_w, cur_h = win["size"]
@@ -1117,7 +1119,7 @@ class FullscreenPreview(QMainWindow):
         # from three to one, eliminating ~6ms of UI freeze per navigation.
         win = None
         if on_hypr:
-            win = self._hyprctl_get_window()
+            win = hyprland.get_window(self.windowTitle())
             if win is None:
                 if _retry < 5:
                     QTimer.singleShot(
@@ -1129,7 +1131,7 @@ class FullscreenPreview(QMainWindow):
         else:
             floating = None
         if floating is False:
-            self._hyprctl_resize(0, 0)  # tiled: just set keep_aspect_ratio
+            hyprland.resize(self.windowTitle(), 0, 0)  # tiled: just set keep_aspect_ratio
             return
         aspect = content_w / content_h
         screen = self.screen()
@@ -1172,7 +1174,7 @@ class FullscreenPreview(QMainWindow):
                 # Hyprland: hyprctl is the sole authority. Calling self.resize()
                 # here would race with the batch below and produce visible flashing
                 # when the window also has to move.
-                self._hyprctl_resize_and_move(w, h, x, y, win=win)
+                hyprland.resize_and_move(self.windowTitle(), w, h, x, y, win=win)
             else:
                 # Non-Hyprland fallback: Qt drives geometry directly. Use
                 # setGeometry with the computed top-left rather than resize()
@@ -1312,30 +1314,6 @@ class FullscreenPreview(QMainWindow):
             self._ui_visible = self._toolbar.isVisible() or self._video._controls_bar.isVisible()
         return super().eventFilter(obj, event)
 
-    # Hyprland helpers — moved to popout/hyprland.py in commit 13. These
-    # methods are now thin shims around the module-level functions so
-    # the existing call sites in this file (`_fit_to_content`,
-    # `_enter_fullscreen`, `closeEvent`) keep working byte-for-byte.
-    # Commit 14's adapter rewrite drops the shims and calls the
-    # hyprland module directly.
-
-    def _hyprctl_get_window(self) -> dict | None:
-        """Shim → `popout.hyprland.get_window`."""
-        from . import hyprland
-        return hyprland.get_window(self.windowTitle())
-
-    def _hyprctl_resize(self, w: int, h: int) -> None:
-        """Shim → `popout.hyprland.resize`."""
-        from . import hyprland
-        hyprland.resize(self.windowTitle(), w, h)
-
-    def _hyprctl_resize_and_move(
-        self, w: int, h: int, x: int, y: int, win: dict | None = None
-    ) -> None:
-        """Shim → `popout.hyprland.resize_and_move`."""
-        from . import hyprland
-        hyprland.resize_and_move(self.windowTitle(), w, h, x, y, win=win)
-
     def privacy_hide(self) -> None:
         """Cover the popout's content with a black overlay for privacy.
 
@@ -1375,7 +1353,7 @@ class FullscreenPreview(QMainWindow):
         `_viewport` here makes the restore correct regardless.
         """
         from PySide6.QtCore import QRect
-        win = self._hyprctl_get_window()
+        win = hyprland.get_window(self.windowTitle())
         if win and win.get("at") and win.get("size"):
             x, y = win["at"]
             w, h = win["size"]
@@ -1559,7 +1537,7 @@ class FullscreenPreview(QMainWindow):
         FullscreenPreview._saved_fullscreen = self.isFullScreen()
         if not self.isFullScreen():
             # On Hyprland, Qt doesn't know the real position — ask the WM
-            win = self._hyprctl_get_window()
+            win = hyprland.get_window(self.windowTitle())
             if win and win.get("at") and win.get("size"):
                 from PySide6.QtCore import QRect
                 x, y = win["at"]
