@@ -615,11 +615,40 @@ class StateMachine:
         return []
 
     def _on_content_arrived(self, event: ContentArrived) -> list[Effect]:
-        # Real implementation: routes to LoadImage or LoadVideo,
-        # transitions to DisplayingImage / LoadingVideo, emits
-        # FitWindowToContent. First-time path consumes saved_geo;
-        # subsequent paths use persistent viewport. Lands in commits
-        # 4 (video) + 10 (image).
+        """Route the new content by media kind.
+
+        Snapshot the content into `current_*` fields regardless of
+        kind so the rest of the state machine can read them. Then
+        transition to LoadingVideo (video) or DisplayingImage (image,
+        commit 10) and emit the appropriate load + fit effects.
+
+        The first-content-load one-shot consumes `saved_geo` to seed
+        the viewport before the first fit (commit 8 wires the actual
+        seeding). After this commit, every ContentArrived flips
+        `is_first_content_load` to False — the saved_geo path runs at
+        most once per popout open.
+        """
+        self.current_path = event.path
+        self.current_info = event.info
+        self.current_kind = event.kind
+        self.current_width = event.width
+        self.current_height = event.height
+
+        if event.kind == MediaKind.VIDEO:
+            self.is_first_content_load = False
+            self.state = State.LOADING_VIDEO
+            return [
+                LoadVideo(
+                    path=event.path,
+                    info=event.info,
+                    referer=event.referer,
+                ),
+                FitWindowToContent(
+                    content_w=event.width,
+                    content_h=event.height,
+                ),
+            ]
+        # Image / GIF lands in commit 10 (DisplayingImage transitions).
         return []
 
     def _on_navigate_requested(self, event: NavigateRequested) -> list[Effect]:
@@ -628,20 +657,65 @@ class StateMachine:
         return []
 
     def _on_video_started(self, event: VideoStarted) -> list[Effect]:
-        # Real implementation: LoadingVideo → PlayingVideo, emits
-        # ApplyMute / ApplyVolume / ApplyLoopMode. Lands in commit 4.
-        return []
+        """LoadingVideo → PlayingVideo. Persistence effects fire here.
+
+        The state machine pushes its persistent values (mute, volume,
+        loop_mode) into mpv on the entry edge. The mute value is the
+        critical one — it survives lazy mpv creation by being held on
+        the state machine instead of mpv (replaces the
+        VideoPlayer._pending_mute pattern at the popout layer).
+
+        Only valid in LoadingVideo. PlayingVideo→PlayingVideo would
+        be illegal (no entry edge to fire on); SeekingVideo→PlayingVideo
+        is the SeekCompleted path, not VideoStarted.
+        """
+        if self.state != State.LOADING_VIDEO:
+            return []
+        self.state = State.PLAYING_VIDEO
+        return [
+            ApplyMute(value=self.mute),
+            ApplyVolume(value=self.volume),
+            ApplyLoopMode(value=self.loop_mode.value),
+        ]
 
     def _on_video_eof_reached(self, event: VideoEofReached) -> list[Effect]:
-        # Real implementation: only valid in PlayingVideo. Loop=Next
-        # emits EmitPlayNextRequested. Loop=Once emits TogglePlay (to
-        # pause). Loop=Loop is a no-op (mpv handles it). Other states
-        # drop. Lands in commit 4 — this is the EOF race fix.
+        """**EOF race fix (replaces fda3b10b's 250ms timestamp window).**
+
+        Only valid input in PlayingVideo. In every other state — most
+        importantly LoadingVideo, where the stale-eof race lived —
+        the event is dropped without changing state or emitting
+        effects. This is the structural fix: the previous fix used
+        a wall-clock window to suppress eof events arriving within
+        250ms of `play_file`; the state machine subsumes that by
+        only accepting eof when we're actually in PlayingVideo.
+
+        In PlayingVideo:
+        - Loop=Next: emit EmitPlayNextRequested so main_window
+          advances to the next post.
+        - Loop=Once: emit nothing — mpv with keep_open=yes naturally
+          pauses at the end of the file. No state transition; the
+          user can manually click Play to restart.
+        - Loop=Loop: emit nothing — mpv's loop-file=inf handles
+          the restart internally.
+        """
+        if self.state != State.PLAYING_VIDEO:
+            return []
+        if self.loop_mode == LoopMode.NEXT:
+            return [EmitPlayNextRequested()]
         return []
 
     def _on_video_size_known(self, event: VideoSizeKnown) -> list[Effect]:
-        # Real implementation: emits FitWindowToContent. Lands in
-        # commits 4 + 8.
+        """mpv reported new dimensions — refit the popout window.
+
+        Valid in LoadingVideo (first frame) and PlayingVideo
+        (mid-playback aspect change, rare but possible with
+        anamorphic sources). Other states drop.
+        """
+        if self.state in (State.LOADING_VIDEO, State.PLAYING_VIDEO):
+            return [FitWindowToContent(
+                content_w=event.width,
+                content_h=event.height,
+            )]
         return []
 
     def _on_seek_requested(self, event: SeekRequested) -> list[Effect]:
@@ -674,8 +748,11 @@ class StateMachine:
     def _on_toggle_play_requested(
         self, event: TogglePlayRequested
     ) -> list[Effect]:
-        # Real implementation: only valid in PlayingVideo. Emits
-        # TogglePlay. Lands in commit 4.
+        """Space key / play button. Only valid in PlayingVideo —
+        toggling play during a load or seek would race with mpv's
+        own state machine and produce undefined behavior."""
+        if self.state == State.PLAYING_VIDEO:
+            return [TogglePlay()]
         return []
 
     def _on_fullscreen_toggled(self, event: FullscreenToggled) -> list[Effect]:
