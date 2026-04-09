@@ -757,13 +757,51 @@ class StateMachine:
         return []
 
     def _on_seek_requested(self, event: SeekRequested) -> list[Effect]:
-        # Real implementation: PlayingVideo → SeekingVideo, sets
-        # seek_target_ms, emits SeekVideoTo. Lands in commit 6.
+        """**Slider pin replaces 96a0a9d's 500ms _seek_pending_until.**
+
+        Two valid source states:
+
+        - PlayingVideo: enter SeekingVideo, stash target_ms, emit
+          SeekVideoTo. The slider pin behavior is read-path:
+          `compute_slider_display_ms` returns `seek_target_ms`
+          while in SeekingVideo regardless of mpv's lagging or
+          keyframe-rounded `time_pos`.
+
+        - SeekingVideo: a second seek before the first one completed.
+          Replace the target — the user clicked again, so the new
+          target is what they want pinned. Emit a fresh SeekVideoTo.
+          Stay in SeekingVideo. mpv handles back-to-back seeks fine;
+          its own playback-restart event for the latest seek is what
+          will eventually fire SeekCompleted.
+
+        SeekRequested in any other state (AwaitingContent /
+        DisplayingImage / LoadingVideo / Closing): drop. There's no
+        video to seek into.
+
+        No timestamp window. The state machine subsumes the 500ms
+        suppression by holding SeekingVideo until SeekCompleted
+        arrives (which is mpv's `playback-restart` after the seek,
+        wired in the adapter).
+        """
+        if self.state in (State.PLAYING_VIDEO, State.SEEKING_VIDEO):
+            self.state = State.SEEKING_VIDEO
+            self.seek_target_ms = event.target_ms
+            return [SeekVideoTo(target_ms=event.target_ms)]
         return []
 
     def _on_seek_completed(self, event: SeekCompleted) -> list[Effect]:
-        # Real implementation: SeekingVideo → PlayingVideo. Lands in
-        # commit 6.
+        """SeekingVideo → PlayingVideo.
+
+        Triggered by the adapter receiving mpv's `playback-restart`
+        event AND finding the state machine in SeekingVideo (the
+        adapter distinguishes load-restart from seek-restart by
+        checking current state — see VideoStarted handler).
+
+        After this transition, `compute_slider_display_ms` returns
+        the actual mpv `time_pos` again instead of the pinned target.
+        """
+        if self.state == State.SEEKING_VIDEO:
+            self.state = State.PLAYING_VIDEO
         return []
 
     def _on_mute_toggle_requested(
