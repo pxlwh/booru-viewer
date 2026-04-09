@@ -190,7 +190,12 @@ def render_filename_template(template: str, post: "Post", ext: str) -> str:
     cats = post.tag_categories or {}
 
     def _join_cat(name: str) -> str:
-        items = cats.get(name) or []
+        # API clients (danbooru.py, e621.py) store categories with
+        # Capitalized keys ("Artist", "Character", ...) — that's the
+        # convention info_panel/preview_pane already iterate against.
+        # Accept either casing here so future drift in either direction
+        # doesn't silently break templates.
+        items = cats.get(name) or cats.get(name.lower()) or cats.get(name.capitalize()) or []
         return "_".join(items)
 
     # %md5% — most boorus name files by md5 in the URL path
@@ -213,12 +218,12 @@ def render_filename_template(template: str, post: "Post", ext: str) -> str:
         "%ext%": ext.lstrip("."),
         "%rating%": post.rating or "",
         "%score%": str(post.score),
-        "%artist%": _join_cat("artist"),
-        "%character%": _join_cat("character"),
-        "%copyright%": _join_cat("copyright"),
-        "%general%": _join_cat("general"),
-        "%meta%": _join_cat("meta"),
-        "%species%": _join_cat("species"),
+        "%artist%": _join_cat("Artist"),
+        "%character%": _join_cat("Character"),
+        "%copyright%": _join_cat("Copyright"),
+        "%general%": _join_cat("General"),
+        "%meta%": _join_cat("Meta"),
+        "%species%": _join_cat("Species"),
     }
 
     rendered = template
