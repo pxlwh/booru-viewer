@@ -364,18 +364,6 @@ class ThumbnailGrid(QScrollArea):
         self.setWidget(self._flow)
         self.setWidgetResizable(True)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        # Force the vertical scrollbar to always be visible so its width
-        # is always reserved in the viewport. With the default
-        # ScrollBarAsNeeded, the viewport width drops by ~14-16px when
-        # the scrollbar first appears, and FlowLayout's column count
-        # (computed as `viewport.width() // (THUMB_SIZE + THUMB_SPACING)`)
-        # flips down by 1 if the grid width was sitting within a
-        # scrollbar-width of a column boundary. Visible symptom: the
-        # grid collapses by a column the first time content overflows.
-        # AlwaysOn keeps the scrollbar's width reserved permanently so
-        # the column math is stable across the scrollbar visibility
-        # transition.
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self._thumbs: list[ThumbnailWidget] = []
         self._selected_index = -1
         self._multi_selected: set[int] = set()
