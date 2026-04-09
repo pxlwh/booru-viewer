@@ -9,5 +9,6 @@ build/
 venv/
 docs/
 project.md
+tests/
 *.bak/
 *.dll
