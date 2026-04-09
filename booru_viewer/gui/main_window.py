@@ -1447,16 +1447,32 @@ class BooruApp(QMainWindow):
         if evicted_thumbs:
             log.info(f"Auto-evicted {evicted_thumbs} thumbnails")
 
+    def _post_id_from_library_path(self, path: Path) -> int | None:
+        """Resolve a library file path back to its post_id.
+
+        Templated filenames look up library_meta.filename (post-refactor
+        saves like 12345_hatsune_miku.jpg). Legacy v0.2.3 digit-stem
+        files (12345.jpg) use int(stem) directly. Returns None if
+        neither resolves — e.g. an unrelated file dropped into the
+        library directory.
+        """
+        pid = self._db.get_library_post_id_by_filename(path.name)
+        if pid is not None:
+            return pid
+        if path.stem.isdigit():
+            return int(path.stem)
+        return None
+
     def _set_library_info(self, path: str) -> None:
         """Update info panel with library metadata for the given file."""
-        stem = Path(path).stem
-        if not stem.isdigit():
+        post_id = self._post_id_from_library_path(Path(path))
+        if post_id is None:
             return
-        meta = self._db.get_library_meta(int(stem))
+        meta = self._db.get_library_meta(post_id)
         if meta:
             from ..core.api.base import Post
             p = Post(
-                id=int(stem), file_url=meta.get("file_url", ""),
+                id=post_id, file_url=meta.get("file_url", ""),
                 preview_url=None, tags=meta.get("tags", ""),
                 score=meta.get("score", 0), rating=meta.get("rating"),
                 source=meta.get("source"), tag_categories=meta.get("tag_categories", {}),
@@ -1475,10 +1491,11 @@ class BooruApp(QMainWindow):
         self._set_preview_media(path, Path(path).name)
         self._update_fullscreen(path, Path(path).name)
         self._set_library_info(path)
-        # Build a Post from library metadata so toolbar actions work
-        stem = Path(path).stem
-        if stem.isdigit():
-            post_id = int(stem)
+        # Build a Post from library metadata so toolbar actions work.
+        # Templated filenames go through library_meta.filename;
+        # legacy digit-stem files use int(stem).
+        post_id = self._post_id_from_library_path(Path(path))
+        if post_id is not None:
             from ..core.api.base import Post
             meta = self._db.get_library_meta(post_id) or {}
             post = Post(
