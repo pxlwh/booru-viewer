@@ -2790,18 +2790,40 @@ class BooruApp(QMainWindow):
         self._run_async(_save)
 
     def _save_as(self, post: Post) -> None:
+        """Open a Save As dialog for a single post and write the file
+        through the unified save_post_file flow.
+
+        The default name in the dialog comes from rendering the user's
+        library_filename_template against the post; the user can edit
+        before confirming. If the chosen destination ends up inside
+        saved_dir(), save_post_file registers a library_meta row —
+        a behavior change from v0.2.3 (where Save As never wrote meta
+        regardless of destination)."""
         from ..core.cache import cached_path_for
+        from ..core.config import render_filename_template
+        from ..core.library_save import save_post_file
         from .dialogs import save_file
+
         src = cached_path_for(post.file_url)
         if not src.exists():
             self._status.showMessage("Image not cached — double-click to download first")
             return
         ext = src.suffix
-        dest = save_file(self, "Save Image", f"post_{post.id}{ext}", f"Images (*{ext})")
-        if dest:
-            import shutil
-            shutil.copy2(src, dest)
-            self._status.showMessage(f"Saved to {dest}")
+        template = self._db.get_setting("library_filename_template")
+        default_name = render_filename_template(template, post, ext)
+        dest = save_file(self, "Save Image", default_name, f"Images (*{ext})")
+        if not dest:
+            return
+        dest_path = Path(dest)
+        try:
+            actual = save_post_file(
+                src, post, dest_path.parent, self._db,
+                explicit_name=dest_path.name,
+            )
+        except Exception as e:
+            self._status.showMessage(f"Save failed: {e}")
+            return
+        self._status.showMessage(f"Saved to {actual}")
 
     # -- Batch download --
 
