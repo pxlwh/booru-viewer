@@ -8,30 +8,6 @@ If you find this useful, consider buying me a coffee:
 
 [![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-00ff00?style=for-the-badge&logo=ko-fi&logoColor=00ff00&labelColor=000000&color=006600)](https://ko-fi.com/paxmoe)
 
-## Screenshots
-
-**Windows 11 — Light Theme**
-
-<picture><img src="screenshots/windows11-light.png" alt="Windows 11 — Light Theme" width="700"></picture>
-
-**Windows 11 — Dark Theme (auto-detected)**
-
-<picture><img src="screenshots/windows11-dark.png" alt="Windows 11 — Dark Theme" width="700"></picture>
-
-**Windows 10 — Light Theme**
-
-<picture><img src="screenshots/windows.png" alt="Windows 10 — Light Theme" width="700"></picture>
-
-**Windows 10 — Dark Theme (auto-detected)**
-
-<picture><img src="screenshots/windows-dark.png" alt="Windows 10 — Dark Theme" width="700"></picture>
-
-**Linux — Styled via system Qt6 theme**
-
-<picture><img src="screenshots/linux.png" alt="Linux — System Qt6 theme" width="700"></picture>
-
-Supports custom styling via `custom.qss` — see [Theming](#theming).
-
 ## Why booru-viewer
 
 There are a few other desktop booru clients worth knowing about. [ahoviewer](https://github.com/ahodesuka/ahoviewer) is the most mature one. [Grabber](https://github.com/Bionus/imgbrd-grabber) is the most popular. [Hydrus](https://github.com/hydrusnetwork/hydrus) is a full local-first media tagging system that happens to import from boorus, which puts it in a different category entirely.
@@ -43,6 +19,14 @@ Two things are different here:
 **You bookmark and save like you do in a web browser.** Bookmark is a pointer. Save actually writes the file. Library items live as `12345.jpg` in `~/.local/share/booru-viewer/saved/` and you can open them in Thunar or whatever you use. The difference from ahoviewer is that the tags, source, score, and folder all live in SQLite next to the files. You don't have to invent filenames or build a folder hierarchy. Search by tag, find what you saved. Your images are normal files on disk. If the database breaks, your saves don't go with it.
 
 **It's built for tiling Wayland.** Hyprland integration with opt-out env vars if you want your own window rules. Wayland `app_id` set so `windowrule = float, class:^(booru-viewer)$` works. The whole UI is themeable through a `@palette` preprocessor. Six bundled themes ship: Catppuccin, Nord, Gruvbox, Tokyo Night, Everforest, Solarized. Each comes in rounded and square. No other client in the space cares whether you're on GNOME or Hyprland.
+
+## Screenshot
+
+**Linux — Styled via system Qt6 theme**
+
+<picture><img src="screenshots/linux.png" alt="Linux — System Qt6 theme" width="700"></picture>
+
+Supports custom styling via `custom.qss` — see [Theming](#theming).
 
 ## Features
 
