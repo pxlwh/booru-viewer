@@ -2589,31 +2589,35 @@ class BooruApp(QMainWindow):
         self._run_async(_do)
 
     def _bulk_save(self, indices: list[int], posts: list[Post], folder: str | None) -> None:
-        site_id = self._site_combo.currentData()
+        """Bulk-save the selected posts into the library, optionally inside a subfolder.
+
+        Each iteration routes through save_post_file with a shared
+        in_flight set so template-collision-prone batches (e.g.
+        %artist% on a page that has many posts by the same artist) get
+        sequential _1, _2, _3 suffixes instead of clobbering each other.
+        """
+        from ..core.config import saved_dir, saved_folder_dir
+        from ..core.library_save import save_post_file
+
         where = folder or "Unfiled"
         self._status.showMessage(f"Saving {len(posts)} to {where}...")
+        try:
+            dest_dir = saved_folder_dir(folder) if folder else saved_dir()
+        except ValueError as e:
+            self._status.showMessage(f"Invalid folder name: {e}")
+            return
+
+        in_flight: set[str] = set()
 
         async def _do():
-            from ..core.config import saved_dir, saved_folder_dir
-            import shutil
             for i, (idx, post) in enumerate(zip(indices, posts)):
                 try:
-                    path = await download_image(post.file_url)
-                    ext = Path(path).suffix
-                    dest_dir = saved_folder_dir(folder) if folder else saved_dir()
-                    dest = dest_dir / f"{post.id}{ext}"
-                    if not dest.exists():
-                        shutil.copy2(path, dest)
-                    # Store metadata for library search
-                    self._db.save_library_meta(
-                        post_id=post.id, tags=post.tags,
-                        tag_categories=post.tag_categories,
-                        score=post.score, rating=post.rating,
-                        source=post.source, file_url=post.file_url,
-                    )
+                    src = Path(await download_image(post.file_url))
+                    save_post_file(src, post, dest_dir, self._db, in_flight)
+                    self._copy_library_thumb(post)
                     self._signals.bookmark_done.emit(idx, f"Saved {i+1}/{len(posts)} to {where}")
                 except Exception as e:
-                    log.warning(f"Operation failed: {e}")
+                    log.warning(f"Bulk save #{post.id} failed: {e}")
             self._signals.batch_done.emit(f"Saved {len(posts)} to {where}")
 
         self._run_async(_do)
