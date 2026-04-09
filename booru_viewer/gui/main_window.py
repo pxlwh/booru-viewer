@@ -997,13 +997,13 @@ class BooruApp(QMainWindow):
             self._loading = False
             return
 
-        from ..core.config import saved_dir
         from ..core.cache import cached_path_for, cache_dir
         site_id = self._site_combo.currentData()
-        _sd = saved_dir()
-        _saved_ids: set[int] = set()
-        if _sd.exists():
-            _saved_ids = {int(f.stem) for f in _sd.iterdir() if f.is_file() and f.stem.isdigit()}
+        # library_meta-driven saved-id set: format-agnostic, so it
+        # sees both digit-stem v0.2.3 files and templated post-refactor
+        # saves. The old root-only iterdir + stem.isdigit() filter
+        # missed both subfolder saves and templated filenames.
+        _saved_ids = self._db.get_saved_post_ids()
 
         # Pre-fetch bookmarks → set, and pre-scan cache dir → set, so the
         # per-post checks below avoid N synchronous SQLite/stat calls on the
@@ -1539,8 +1539,10 @@ class BooruApp(QMainWindow):
 
         # Try saved library — walk by post id; the file may live in any
         # library folder regardless of which bookmark folder fav is in.
+        # Pass db so templated filenames also match (without it, only
+        # legacy digit-stem files would be found).
         from ..core.config import find_library_files
-        for path in find_library_files(fav.post_id):
+        for path in find_library_files(fav.post_id, db=self._db):
             self._set_preview_media(str(path), info)
             self._update_fullscreen(str(path), info)
             return
@@ -1919,12 +1921,11 @@ class BooruApp(QMainWindow):
     def _is_post_saved(self, post_id: int) -> bool:
         """Check if a post is saved in the library (any folder).
 
-        Walks the library by post id rather than consulting the bookmark
-        folder list — library folders are filesystem-truth now, and a
-        post can be in any folder regardless of bookmark state.
+        Goes through library_meta — format-agnostic, sees both
+        digit-stem v0.2.3 files and templated post-refactor saves.
+        Single indexed SELECT, no filesystem walk.
         """
-        from ..core.config import find_library_files
-        return bool(find_library_files(post_id))
+        return self._db.is_post_in_library(post_id)
 
     def _get_preview_post(self):
         """Get the post currently shown in the preview, from grid or stored ref."""
@@ -2026,10 +2027,12 @@ class BooruApp(QMainWindow):
         post, idx = self._get_preview_post()
         if not post:
             return
-        # delete_from_library now walks every library folder by post id
-        # and deletes every match in one call — no folder hint needed.
+        # delete_from_library walks every library folder by post id and
+        # deletes every match in one call — no folder hint needed. Pass
+        # db so templated filenames also get unlinked AND the meta row
+        # gets cleaned up.
         from ..core.cache import delete_from_library
-        deleted = delete_from_library(post.id)
+        deleted = delete_from_library(post.id, db=self._db)
         if deleted:
             self._status.showMessage(f"Removed #{post.id} from library")
             self._preview.update_save_state(False)
@@ -2428,10 +2431,8 @@ class BooruApp(QMainWindow):
 
         # Rebuild grid with remaining posts
         thumbs = self._grid.set_posts(len(self._posts))
-        from ..core.config import saved_dir
         site_id = self._site_combo.currentData()
-        _sd = saved_dir()
-        _saved_ids = {int(f.stem) for f in _sd.iterdir() if f.is_file() and f.stem.isdigit()} if _sd.exists() else set()
+        _saved_ids = self._db.get_saved_post_ids()
 
         for i, (post, thumb) in enumerate(zip(self._posts, thumbs)):
             if site_id and self._db.is_bookmarked(site_id, post.id):
@@ -2635,7 +2636,7 @@ class BooruApp(QMainWindow):
         """
         from ..core.cache import delete_from_library
         for post in posts:
-            delete_from_library(post.id)
+            delete_from_library(post.id, db=self._db)
         for idx in indices:
             if 0 <= idx < len(self._grid._thumbs):
                 self._grid._thumbs[idx].set_saved_locally(False)
