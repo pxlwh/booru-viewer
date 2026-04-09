@@ -4,22 +4,6 @@ A booru client for people who keep what they save and rice what they run.
 
 Qt6 desktop app for Linux and Windows. Browse, search, and archive Danbooru, e621, Gelbooru, and Moebooru. Fully themeable.
 
-If you find this useful, consider buying me a coffee:
-
-[![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-00ff00?style=for-the-badge&logo=ko-fi&logoColor=00ff00&labelColor=000000&color=006600)](https://ko-fi.com/paxmoe)
-
-## Why booru-viewer
-
-There are a few other desktop booru clients worth knowing about. [ahoviewer](https://github.com/ahodesuka/ahoviewer) is the most mature one. [Grabber](https://github.com/Bionus/imgbrd-grabber) is the most popular. [Hydrus](https://github.com/hydrusnetwork/hydrus) is a full local-first media tagging system that happens to import from boorus, which puts it in a different category entirely.
-
-ahoviewer is the closest to what this is, but its "save" opens a file dialog and dumps the file into a folder you organize yourself. Most ricers who want a daily-driver booru client end up wrestling with Hydrus, scripting Grabber from the CLI, or just keeping browser tabs open.
-
-Two things are different here:
-
-**You bookmark and save like you do in a web browser.** Bookmark is a pointer. Save actually writes the file. Library items live as `12345.jpg` in `~/.local/share/booru-viewer/saved/` and you can open them in Thunar or whatever you use. The difference from ahoviewer is that the tags, source, score, and folder all live in SQLite next to the files. You don't have to invent filenames or build a folder hierarchy. Search by tag, find what you saved. Your images are normal files on disk. If the database breaks, your saves don't go with it.
-
-**It's built for tiling Wayland.** Hyprland integration with opt-out env vars if you want your own window rules. Wayland `app_id` set so `windowrule = float, class:^(booru-viewer)$` works. The whole UI is themeable through a `@palette` preprocessor. Six bundled themes ship: Catppuccin, Nord, Gruvbox, Tokyo Night, Everforest, Solarized. Each comes in rounded and square. No other client in the space cares whether you're on GNOME or Hyprland.
-
 ## Screenshot
 
 **Linux — Styled via system Qt6 theme**
@@ -300,6 +284,12 @@ To back up everything: copy `saved/` for the files themselves and `booru.db` for
 booru-viewer makes **no connections** except to the booru sites you configure. There is no telemetry, analytics, update checking, or phoning home. All data stays local on your machine.
 
 Every outgoing request is logged in Settings > Network so you can verify this yourself — you will only see requests to the booru API endpoints and CDNs you chose to connect to.
+
+## Support
+
+If you find this useful, consider buying me a coffee:
+
+[![Ko-fi](https://img.shields.io/badge/Support-Ko--fi-00ff00?style=for-the-badge&logo=ko-fi&logoColor=00ff00&labelColor=000000&color=006600)](https://ko-fi.com/paxmoe)
 
 ## License
 
