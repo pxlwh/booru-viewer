@@ -583,6 +583,76 @@ class Database:
                  datetime.now(timezone.utc).isoformat(), filename),
             )
 
+    def reconcile_library_meta(self) -> int:
+        """Drop library_meta rows whose files are no longer on disk.
+
+        Walks every row, checks for both digit-stem (legacy v0.2.3)
+        and templated (post-refactor) filenames in saved_dir() + one
+        level of subdirectories, and deletes rows where neither is
+        found. Returns the number of rows removed.
+
+        Cleans up the orphan rows that were leaked by the old
+        delete_from_library before it learned to clean up after
+        itself. Safe to call repeatedly — a no-op once the DB is
+        consistent with disk.
+
+        Skips reconciliation entirely if saved_dir() is missing or
+        empty (defensive — a removable drive temporarily unmounted
+        shouldn't trigger a wholesale meta wipe).
+        """
+        from .config import saved_dir, MEDIA_EXTENSIONS
+        sd = saved_dir()
+        if not sd.is_dir():
+            return 0
+
+        # Build the set of (post_id present on disk). Walks shallow:
+        # root + one level of subdirectories.
+        on_disk_files: list[Path] = []
+        for entry in sd.iterdir():
+            if entry.is_file() and entry.suffix.lower() in MEDIA_EXTENSIONS:
+                on_disk_files.append(entry)
+            elif entry.is_dir():
+                for sub in entry.iterdir():
+                    if sub.is_file() and sub.suffix.lower() in MEDIA_EXTENSIONS:
+                        on_disk_files.append(sub)
+        if not on_disk_files:
+            # No files at all — refuse to reconcile. Could be an
+            # unmounted drive, a freshly-cleared library, etc. The
+            # cost of a false positive (wiping every meta row) is
+            # higher than the cost of leaving stale rows.
+            return 0
+
+        present_post_ids: set[int] = set()
+        for f in on_disk_files:
+            if f.stem.isdigit():
+                present_post_ids.add(int(f.stem))
+        # Templated files: look up by filename
+        for f in on_disk_files:
+            if not f.stem.isdigit():
+                row = self.conn.execute(
+                    "SELECT post_id FROM library_meta WHERE filename = ? LIMIT 1",
+                    (f.name,),
+                ).fetchone()
+                if row is not None:
+                    present_post_ids.add(row["post_id"])
+
+        all_meta_ids = self.get_saved_post_ids()
+        stale = all_meta_ids - present_post_ids
+        if not stale:
+            return 0
+
+        with self._write():
+            BATCH = 500
+            stale_list = list(stale)
+            for i in range(0, len(stale_list), BATCH):
+                chunk = stale_list[i:i + BATCH]
+                placeholders = ",".join("?" * len(chunk))
+                self.conn.execute(
+                    f"DELETE FROM library_meta WHERE post_id IN ({placeholders})",
+                    chunk,
+                )
+        return len(stale)
+
     def is_post_in_library(self, post_id: int) -> bool:
         """True iff a `library_meta` row exists for `post_id`.
 
