@@ -832,9 +832,53 @@ class StateMachine:
         return []
 
     def _on_fullscreen_toggled(self, event: FullscreenToggled) -> list[Effect]:
-        # Real implementation: enter snapshots viewport into
-        # pre_fullscreen_viewport. Exit restores. Lands in commit 7.
-        return []
+        """**F11 round-trip viewport preservation (705e6c6 made
+        structural).**
+
+        Enter (current state: not fullscreen):
+          - Snapshot `viewport` into `pre_fullscreen_viewport`
+          - Set `fullscreen = True`
+          - Emit `EnterFullscreen` effect
+
+        Exit (current state: fullscreen):
+          - Restore `viewport` from `pre_fullscreen_viewport`
+          - Clear `pre_fullscreen_viewport`
+          - Set `fullscreen = False`
+          - Emit `ExitFullscreen` effect (which causes the adapter
+            to defer a FitWindowToContent on the next event-loop
+            tick — matching the current QTimer.singleShot(0, ...)
+            pattern at popout/window.py:1023)
+
+        The viewport snapshot at the moment of entering is the key.
+        Whether the user got to that position via Super+drag (no Qt
+        moveEvent on Wayland), nav (which doesn't update viewport
+        unless drift is detected), or external resize, the
+        `pre_fullscreen_viewport` snapshot captures the viewport
+        AS IT IS RIGHT NOW. F11 exit restores it exactly.
+
+        The 705e6c6 commit fixed this in the legacy code by
+        explicitly writing the current Hyprland window state into
+        `_viewport` inside `_enter_fullscreen` — the state machine
+        version is structurally equivalent. The adapter's
+        EnterFullscreen handler reads the current Hyprland geometry
+        and dispatches a `HyprlandDriftDetected` event before the
+        FullscreenToggled, which updates `viewport` to current
+        reality, then FullscreenToggled snapshots that into
+        `pre_fullscreen_viewport`.
+
+        Valid in every non-Closing state. Closing drops it (handled
+        at the dispatch entry).
+        """
+        if not self.fullscreen:
+            self.pre_fullscreen_viewport = self.viewport
+            self.fullscreen = True
+            return [EnterFullscreen()]
+        # Exiting fullscreen
+        if self.pre_fullscreen_viewport is not None:
+            self.viewport = self.pre_fullscreen_viewport
+        self.pre_fullscreen_viewport = None
+        self.fullscreen = False
+        return [ExitFullscreen()]
 
     def _on_window_moved(self, event: WindowMoved) -> list[Effect]:
         # Real implementation: updates state.viewport from rect (move
