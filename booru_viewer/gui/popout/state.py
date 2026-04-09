@@ -807,19 +807,58 @@ class StateMachine:
     def _on_mute_toggle_requested(
         self, event: MuteToggleRequested
     ) -> list[Effect]:
-        # Real implementation: flips state.mute, emits ApplyMute.
-        # Lands in commit 9.
-        return []
+        """**Pending mute fix structural (replaces 0a68182's
+        _pending_mute lazy-replay pattern at the popout layer).**
+
+        Flip `state.mute` unconditionally — independent of which
+        media state we're in, independent of whether mpv exists.
+        Emit `ApplyMute` so the adapter pushes the new value into
+        mpv if mpv is currently alive.
+
+        For the "user mutes before any video has loaded" case, the
+        ApplyMute effect is still emitted but the adapter's apply
+        handler routes it through `VideoPlayer.is_muted = value`,
+        which uses VideoPlayer's existing `_pending_mute` field as
+        defense in depth (the pre-mpv buffer survives until
+        `_ensure_mpv` runs). Either way, the mute value persists.
+
+        On the next LoadingVideo → PlayingVideo transition,
+        `_on_video_started` emits ApplyMute(state.mute) again as
+        part of the entry effects, so the freshly-loaded video
+        starts in the right mute state regardless of when the user
+        toggled.
+
+        Valid in every non-Closing state.
+        """
+        self.mute = not self.mute
+        return [ApplyMute(value=self.mute)]
 
     def _on_volume_set(self, event: VolumeSet) -> list[Effect]:
-        # Real implementation: sets state.volume, emits ApplyVolume.
-        # Lands in commit 9.
-        return []
+        """User adjusted the volume slider or scroll-wheeled over the
+        video area. Update `state.volume` (clamped to 0-100), emit
+        ApplyVolume.
+
+        Same persistence pattern as mute: state.volume is the source
+        of truth, replayed on every PlayingVideo entry.
+
+        Valid in every non-Closing state.
+        """
+        self.volume = max(0, min(100, event.value))
+        return [ApplyVolume(value=self.volume)]
 
     def _on_loop_mode_set(self, event: LoopModeSet) -> list[Effect]:
-        # Real implementation: sets state.loop_mode, emits
-        # ApplyLoopMode. Lands in commit 9.
-        return []
+        """User clicked the Loop / Once / Next button cycle. Update
+        `state.loop_mode`, emit ApplyLoopMode.
+
+        loop_mode also gates `_on_video_eof_reached`'s decision
+        between EmitPlayNextRequested (Next), no-op (Once and Loop),
+        so changing it during PlayingVideo affects what happens at
+        the next EOF without needing any other state mutation.
+
+        Valid in every non-Closing state.
+        """
+        self.loop_mode = event.mode
+        return [ApplyLoopMode(value=self.loop_mode.value)]
 
     def _on_toggle_play_requested(
         self, event: TogglePlayRequested
