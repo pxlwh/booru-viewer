@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QRect, QTimer, Signal
@@ -14,7 +15,37 @@ from PySide6.QtWidgets import (
 from ..media.constants import _is_video
 from ..media.image_viewer import ImageViewer
 from ..media.video_player import VideoPlayer
+from .state import (
+    CloseRequested,
+    ContentArrived,
+    FullscreenToggled,
+    LoopMode,
+    LoopModeSet,
+    MediaKind,
+    MuteToggleRequested,
+    NavigateRequested,
+    Open,
+    SeekCompleted,
+    SeekRequested,
+    State,
+    StateMachine,
+    TogglePlayRequested,
+    VideoEofReached,
+    VideoSizeKnown,
+    VideoStarted,
+    VolumeSet,
+    WindowMoved,
+    WindowResized,
+)
 from .viewport import Viewport, _DRIFT_TOLERANCE
+
+
+# Adapter logger — separate from the popout's main `booru` logger so
+# the dispatch trace can be filtered independently. Format: every
+# dispatch call logs at DEBUG with the event name, state transition,
+# and effect list. The user filters by `POPOUT_FSM` substring to see
+# only the state machine activity during the manual sweep.
+_fsm_log = logging.getLogger("booru.popout.adapter")
 
 
 ## Overlay styling for the popout's translucent toolbar / controls bar
@@ -262,6 +293,116 @@ class FullscreenPreview(QMainWindow):
         else:
             self.showFullScreen()
 
+        # ---- State machine adapter wiring (commit 14a) ----
+        # Construct the pure-Python state machine and dispatch the
+        # initial Open event with the cross-popout-session class state
+        # the legacy code stashed above. The state machine runs in
+        # PARALLEL with the legacy imperative code: every Qt event
+        # handler / mpv signal / button click below dispatches a state
+        # machine event AND continues to run the existing imperative
+        # action. The state machine's returned effects are LOGGED at
+        # DEBUG, not applied to widgets. The legacy path stays
+        # authoritative through commit 14a; commit 14b switches the
+        # authority to the dispatch path.
+        #
+        # The grid_cols field is used by the keyboard nav handlers
+        # for the Up/Down ±cols stride.
+        self._state_machine = StateMachine()
+        self._state_machine.grid_cols = grid_cols
+        saved_geo_tuple = None
+        if FullscreenPreview._saved_geometry:
+            sg = FullscreenPreview._saved_geometry
+            saved_geo_tuple = (sg.x(), sg.y(), sg.width(), sg.height())
+        self._fsm_dispatch(Open(
+            saved_geo=saved_geo_tuple,
+            saved_fullscreen=bool(FullscreenPreview._saved_fullscreen),
+            monitor=monitor,
+        ))
+
+        # Wire VideoPlayer's playback_restart Signal (added in commit 1)
+        # to the adapter's dispatch routing. mpv emits playback-restart
+        # once after each loadfile and once after each completed seek;
+        # the adapter distinguishes by checking the state machine's
+        # current state at dispatch time.
+        self._video.playback_restart.connect(self._on_video_playback_restart)
+        # Wire video EOF (already connected to play_next_requested
+        # signal above) — additionally dispatch VideoEofReached.
+        self._video.play_next.connect(
+            lambda: self._fsm_dispatch(VideoEofReached())
+        )
+        # Wire video size known.
+        self._video.video_size.connect(
+            lambda w, h: self._fsm_dispatch(VideoSizeKnown(width=w, height=h))
+        )
+        # Wire seek slider clicks → SeekRequested.
+        self._video._seek_slider.clicked_position.connect(
+            lambda v: self._fsm_dispatch(SeekRequested(target_ms=v))
+        )
+        # Wire mute button → MuteToggleRequested. Dispatch BEFORE the
+        # legacy _toggle_mute runs (which mutates VideoPlayer state)
+        # so the dispatch reflects the user-intent edge.
+        self._video._mute_btn.clicked.connect(
+            lambda: self._fsm_dispatch(MuteToggleRequested())
+        )
+        # Wire volume slider → VolumeSet.
+        self._video._vol_slider.valueChanged.connect(
+            lambda v: self._fsm_dispatch(VolumeSet(value=v))
+        )
+        # Wire loop button → LoopModeSet. Dispatched AFTER the legacy
+        # cycle so the new value is what we send.
+        self._video._loop_btn.clicked.connect(
+            lambda: self._fsm_dispatch(
+                LoopModeSet(mode=LoopMode(self._video.loop_state))
+            )
+        )
+
+    def _fsm_dispatch(self, event) -> list:
+        """Dispatch an event to the state machine and log the result.
+
+        Adapter-internal helper. Centralizes the dispatch + log path
+        so every wire-point is one line. Returns the effect list for
+        callers that want to inspect it (commit 14a doesn't use the
+        return value; commit 14b will pattern-match and apply).
+
+        The hasattr guard handles edge cases where Qt events might
+        fire during __init__ (e.g. resizeEvent on the first show())
+        before the state machine has been constructed. After
+        construction the guard is always True.
+        """
+        if not hasattr(self, "_state_machine"):
+            return []
+        old_state = self._state_machine.state
+        effects = self._state_machine.dispatch(event)
+        new_state = self._state_machine.state
+        _fsm_log.debug(
+            "POPOUT_FSM %s | %s -> %s | effects=%s",
+            type(event).__name__,
+            old_state.name,
+            new_state.name,
+            [type(e).__name__ for e in effects],
+        )
+        return effects
+
+    def _on_video_playback_restart(self) -> None:
+        """mpv `playback-restart` event arrived (via VideoPlayer's
+        playback_restart Signal added in commit 1). Distinguish
+        VideoStarted (after load) from SeekCompleted (after seek) by
+        the state machine's current state.
+
+        This is the ONE place the adapter peeks at state to choose an
+        event type — it's a read, not a write, and it's the price of
+        having a single mpv event mean two different things.
+        """
+        if not hasattr(self, "_state_machine"):
+            return
+        if self._state_machine.state == State.LOADING_VIDEO:
+            self._fsm_dispatch(VideoStarted())
+        elif self._state_machine.state == State.SEEKING_VIDEO:
+            self._fsm_dispatch(SeekCompleted())
+        # Other states: drop. The state machine's release-mode
+        # legality check would also drop it; this saves the dispatch
+        # round trip.
+
     _saved_geometry = None  # remembers window size/position across opens
     _saved_fullscreen = False
     _current_tags: dict[str, list[str]] = {}
@@ -390,6 +531,35 @@ class FullscreenPreview(QMainWindow):
         """
         self._info_label.setText(info)
         ext = Path(path).suffix.lower()
+
+        # State machine dispatch (parallel — legacy code below stays
+        # authoritative through commit 14a).
+        if _is_video(path):
+            kind = MediaKind.VIDEO
+        elif ext == ".gif":
+            kind = MediaKind.GIF
+        else:
+            kind = MediaKind.IMAGE
+        # Detect streaming URL → set referer for the dispatch payload.
+        # This matches the per-file referrer the legacy play_file path
+        # already sets at media/video_player.py:343-347.
+        referer = None
+        if path.startswith(("http://", "https://")):
+            try:
+                from urllib.parse import urlparse
+                from ...core.cache import _referer_for
+                referer = _referer_for(urlparse(path))
+            except Exception:
+                pass
+        self._fsm_dispatch(ContentArrived(
+            path=path,
+            info=info,
+            kind=kind,
+            width=width,
+            height=height,
+            referer=referer,
+        ))
+
         if _is_video(path):
             self._viewer.clear()
             self._video.stop()
@@ -735,30 +905,43 @@ class FullscreenPreview(QMainWindow):
                     self._show_overlay()
                 return True
             elif key in (Qt.Key.Key_Escape, Qt.Key.Key_Q):
+                self._fsm_dispatch(CloseRequested())
                 self.close()
                 return True
             elif key in (Qt.Key.Key_Left, Qt.Key.Key_H):
+                self._fsm_dispatch(NavigateRequested(direction=-1))
                 self.navigate.emit(-1)
                 return True
             elif key in (Qt.Key.Key_Right, Qt.Key.Key_L):
+                self._fsm_dispatch(NavigateRequested(direction=1))
                 self.navigate.emit(1)
                 return True
             elif key in (Qt.Key.Key_Up, Qt.Key.Key_K):
+                self._fsm_dispatch(NavigateRequested(direction=-self._grid_cols))
                 self.navigate.emit(-self._grid_cols)
                 return True
             elif key in (Qt.Key.Key_Down, Qt.Key.Key_J):
+                self._fsm_dispatch(NavigateRequested(direction=self._grid_cols))
                 self.navigate.emit(self._grid_cols)
                 return True
             elif key == Qt.Key.Key_F11:
+                self._fsm_dispatch(FullscreenToggled())
                 if self.isFullScreen():
                     self._exit_fullscreen()
                 else:
                     self._enter_fullscreen()
                 return True
             elif key == Qt.Key.Key_Space and self._stack.currentIndex() == 1:
+                self._fsm_dispatch(TogglePlayRequested())
                 self._video._toggle_play()
                 return True
             elif key == Qt.Key.Key_Period and self._stack.currentIndex() == 1:
+                # +/- keys are seek-relative, NOT slider-pin seeks. The
+                # state machine's SeekRequested is for slider-driven
+                # seeks. The +/- keys go straight to mpv via the
+                # legacy path; the dispatch path doesn't see them in
+                # 14a (commit 14b will route them through SeekRequested
+                # with a target_ms computed from current position).
                 self._video._seek_relative(1800)
                 return True
             elif key == Qt.Key.Key_Comma and self._stack.currentIndex() == 1:
@@ -768,9 +951,11 @@ class FullscreenPreview(QMainWindow):
             # Horizontal tilt navigates between posts on either stack
             tilt = event.angleDelta().x()
             if tilt > 30:
+                self._fsm_dispatch(NavigateRequested(direction=-1))
                 self.navigate.emit(-1)
                 return True
             if tilt < -30:
+                self._fsm_dispatch(NavigateRequested(direction=1))
                 self.navigate.emit(1)
                 return True
             # Vertical wheel adjusts volume on the video stack only
@@ -778,6 +963,7 @@ class FullscreenPreview(QMainWindow):
                 delta = event.angleDelta().y()
                 if delta:
                     vol = max(0, min(100, self._video.volume + (5 if delta > 0 else -5)))
+                    self._fsm_dispatch(VolumeSet(value=vol))
                     self._video.volume = vol
                     self._show_overlay()
                     return True
@@ -978,6 +1164,10 @@ class FullscreenPreview(QMainWindow):
                 center_y=rect.y() + rect.height() / 2,
                 long_side=float(max(rect.width(), rect.height())),
             )
+            # Parallel state machine dispatch for the same event.
+            self._fsm_dispatch(WindowResized(rect=(
+                rect.x(), rect.y(), rect.width(), rect.height(),
+            )))
 
     def moveEvent(self, event) -> None:
         super().moveEvent(event)
@@ -1005,6 +1195,10 @@ class FullscreenPreview(QMainWindow):
                 center_y=rect.y() + rect.height() / 2,
                 long_side=self._viewport.long_side,
             )
+            # Parallel state machine dispatch for the same event.
+            self._fsm_dispatch(WindowMoved(rect=(
+                rect.x(), rect.y(), rect.width(), rect.height(),
+            )))
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -1023,6 +1217,9 @@ class FullscreenPreview(QMainWindow):
 
     def closeEvent(self, event) -> None:
         from PySide6.QtWidgets import QApplication
+        # Parallel state machine dispatch — Closing is terminal in
+        # the state machine, every subsequent dispatch will be a no-op.
+        self._fsm_dispatch(CloseRequested())
         # Save window state for next open
         FullscreenPreview._saved_fullscreen = self.isFullScreen()
         if not self.isFullScreen():
