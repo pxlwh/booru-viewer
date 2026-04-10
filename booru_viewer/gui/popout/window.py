@@ -115,6 +115,8 @@ class FullscreenPreview(QMainWindow):
     unsave_requested = Signal()
     blacklist_tag_requested = Signal(str)  # tag name
     blacklist_post_requested = Signal()
+    open_in_default = Signal()
+    open_in_browser = Signal()
     privacy_requested = Signal()
     closed = Signal()
 
@@ -128,6 +130,8 @@ class FullscreenPreview(QMainWindow):
         central.setLayout(QVBoxLayout())
         central.layout().setContentsMargins(0, 0, 0, 0)
         central.layout().setSpacing(0)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._on_context_menu)
 
         # Media stack (fills entire window)
         self._stack = QStackedWidget()
@@ -878,6 +882,97 @@ class FullscreenPreview(QMainWindow):
                 self.bookmark_to_folder.emit(name.strip())
         elif id(action) in folder_actions:
             self.bookmark_to_folder.emit(folder_actions[id(action)])
+
+    def _on_context_menu(self, pos) -> None:
+        menu = QMenu(self)
+
+        # Bookmark: unbookmark if already bookmarked, folder submenu if not
+        fav_action = None
+        bm_folder_actions = {}
+        bm_new_action = None
+        bm_unfiled = None
+        if self._is_bookmarked:
+            fav_action = menu.addAction("Unbookmark")
+        else:
+            bm_menu = menu.addMenu("Bookmark as")
+            bm_unfiled = bm_menu.addAction("Unfiled")
+            bm_menu.addSeparator()
+            if self._bookmark_folders_callback:
+                for folder in self._bookmark_folders_callback():
+                    a = bm_menu.addAction(folder)
+                    bm_folder_actions[id(a)] = folder
+            bm_menu.addSeparator()
+            bm_new_action = bm_menu.addAction("+ New Folder...")
+
+        save_menu = menu.addMenu("Save to Library")
+        save_unsorted = save_menu.addAction("Unfiled")
+        save_menu.addSeparator()
+        save_folder_actions = {}
+        if self._folders_callback:
+            for folder in self._folders_callback():
+                a = save_menu.addAction(folder)
+                save_folder_actions[id(a)] = folder
+        save_menu.addSeparator()
+        save_new = save_menu.addAction("+ New Folder...")
+
+        unsave_action = None
+        if self._is_saved:
+            unsave_action = menu.addAction("Unsave from Library")
+
+        menu.addSeparator()
+        copy_action = menu.addAction("Copy File to Clipboard")
+        open_action = menu.addAction("Open in Default App")
+        browser_action = menu.addAction("Open in Browser")
+
+        reset_action = None
+        if self._stack.currentIndex() == 0:
+            reset_action = menu.addAction("Reset View")
+
+        menu.addSeparator()
+        close_action = menu.addAction("Close Popout")
+
+        action = menu.exec(self.mapToGlobal(pos))
+        if not action:
+            return
+        if action == fav_action:
+            self.bookmark_requested.emit()
+        elif action == bm_unfiled:
+            self.bookmark_to_folder.emit("")
+        elif action == bm_new_action:
+            name, ok = QInputDialog.getText(self, "New Bookmark Folder", "Folder name:")
+            if ok and name.strip():
+                self.bookmark_to_folder.emit(name.strip())
+        elif id(action) in bm_folder_actions:
+            self.bookmark_to_folder.emit(bm_folder_actions[id(action)])
+        elif action == save_unsorted:
+            self.save_to_folder.emit("")
+        elif action == save_new:
+            name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
+            if ok and name.strip():
+                self.save_to_folder.emit(name.strip())
+        elif id(action) in save_folder_actions:
+            self.save_to_folder.emit(save_folder_actions[id(action)])
+        elif action == unsave_action:
+            self.unsave_requested.emit()
+        elif action == copy_action:
+            from PySide6.QtWidgets import QApplication
+            from PySide6.QtGui import QPixmap as _QP
+            pix = self._viewer._pixmap
+            if pix and not pix.isNull():
+                QApplication.clipboard().setPixmap(pix)
+            elif self._state.current_path:
+                pix = _QP(self._state.current_path)
+                if not pix.isNull():
+                    QApplication.clipboard().setPixmap(pix)
+        elif action == open_action:
+            self.open_in_default.emit()
+        elif action == browser_action:
+            self.open_in_browser.emit()
+        elif action == reset_action:
+            self._viewer._fit_to_view()
+            self._viewer.update()
+        elif action == close_action:
+            self.close()
 
     def set_media(self, path: str, info: str = "", width: int = 0, height: int = 0) -> None:
         """Display `path` in the popout, info string above it.
