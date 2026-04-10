@@ -667,6 +667,37 @@ class BooruApp(QMainWindow):
             self._media_ctrl.on_post_activated(index)
 
 
+    def _update_fullscreen(self, path: str, info: str) -> None:
+        """Sync the fullscreen window with the current preview media."""
+        if self._fullscreen_window and self._fullscreen_window.isVisible():
+            self._preview._video_player.stop()
+            cp = self._preview._current_post
+            w = cp.width if cp else 0
+            h = cp.height if cp else 0
+            self._fullscreen_window.set_media(path, info, width=w, height=h)
+            show_full = self._stack.currentIndex() != 2
+            self._fullscreen_window.set_toolbar_visibility(
+                bookmark=show_full,
+                save=True,
+                bl_tag=show_full,
+                bl_post=show_full,
+            )
+            self._update_fullscreen_state()
+
+    def _update_fullscreen_state(self) -> None:
+        """Update popout button states by mirroring the embedded preview."""
+        if not self._fullscreen_window:
+            return
+        self._fullscreen_window.update_state(
+            self._preview._is_bookmarked,
+            self._preview._is_saved,
+        )
+        post = self._preview._current_post
+        if post is not None:
+            self._fullscreen_window.set_post_tags(
+                post.tag_categories or {}, post.tag_list
+            )
+
     def _show_library_post(self, path: str) -> None:
         # Read actual image dimensions so the popout can pre-fit and
         # set keep_aspect_ratio. library_meta doesn't store w/h, so
