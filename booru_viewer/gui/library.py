@@ -189,7 +189,17 @@ class LibraryView(QWidget):
             thumb._cached_path = str(filepath)
             thumb.setToolTip(filepath.name)
             thumb.set_saved_locally(True)
-            cached_thumb = lib_thumb_dir / f"{filepath.stem}.jpg"
+            # Thumbnails are stored by post_id (from _copy_library_thumb),
+            # not by filename stem. Resolve post_id so templated filenames
+            # like artist_12345.jpg find their thumbnail correctly.
+            thumb_name = filepath.stem  # default: digit-stem fallback
+            if self._db:
+                pid = self._db.get_library_post_id_by_filename(filepath.name)
+                if pid is not None:
+                    thumb_name = str(pid)
+                elif filepath.stem.isdigit():
+                    thumb_name = filepath.stem
+            cached_thumb = lib_thumb_dir / f"{thumb_name}.jpg"
             if cached_thumb.exists():
                 pix = QPixmap(str(cached_thumb))
                 if not pix.isNull():
