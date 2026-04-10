@@ -155,6 +155,11 @@ class BooruApp(QMainWindow):
         if 0 <= index < len(self._grid._thumbs):
             self._grid._thumbs[index].set_prefetch_progress(progress)
 
+    def _get_category_fetcher(self):
+        """Return the CategoryFetcher for the active site, or None."""
+        client = self._make_client()
+        return client.category_fetcher if client else None
+
     def _ensure_post_categories_async(self, post) -> None:
         """Schedule an async ensure_categories if the post needs it.
 
@@ -2677,10 +2682,11 @@ class BooruApp(QMainWindow):
         in_flight: set[str] = set()
 
         async def _do():
+            fetcher = self._get_category_fetcher()
             for i, (idx, post) in enumerate(zip(indices, posts)):
                 try:
                     src = Path(await download_image(post.file_url))
-                    save_post_file(src, post, dest_dir, self._db, in_flight)
+                    await save_post_file(src, post, dest_dir, self._db, in_flight, category_fetcher=fetcher)
                     self._copy_library_thumb(post)
                     self._signals.bookmark_done.emit(idx, f"Saved {i+1}/{len(posts)} to {where}")
                 except Exception as e:
@@ -2830,7 +2836,7 @@ class BooruApp(QMainWindow):
         async def _save():
             try:
                 src = Path(await download_image(post.file_url))
-                save_post_file(src, post, dest_dir, self._db)
+                await save_post_file(src, post, dest_dir, self._db, category_fetcher=self._get_category_fetcher())
                 self._copy_library_thumb(post)
                 where = folder or "Unfiled"
                 self._signals.bookmark_done.emit(
@@ -2868,15 +2874,22 @@ class BooruApp(QMainWindow):
         if not dest:
             return
         dest_path = Path(dest)
-        try:
-            actual = save_post_file(
-                src, post, dest_path.parent, self._db,
-                explicit_name=dest_path.name,
-            )
-        except Exception as e:
-            self._status.showMessage(f"Save failed: {e}")
-            return
-        self._status.showMessage(f"Saved to {actual}")
+
+        async def _do_save():
+            try:
+                actual = await save_post_file(
+                    src, post, dest_path.parent, self._db,
+                    explicit_name=dest_path.name,
+                    category_fetcher=self._get_category_fetcher(),
+                )
+                self._signals.bookmark_done.emit(
+                    self._grid.selected_index,
+                    f"Saved to {actual}",
+                )
+            except Exception as e:
+                self._signals.bookmark_error.emit(f"Save failed: {e}")
+
+        self._run_async(_do_save)
 
     # -- Batch download --
 
@@ -2899,10 +2912,11 @@ class BooruApp(QMainWindow):
         in_flight: set[str] = set()
 
         async def _batch():
+            fetcher = self._get_category_fetcher()
             for i, post in enumerate(posts):
                 try:
                     src = Path(await download_image(post.file_url))
-                    save_post_file(src, post, dest_dir, self._db, in_flight)
+                    await save_post_file(src, post, dest_dir, self._db, in_flight, category_fetcher=fetcher)
                     self._signals.batch_progress.emit(i + 1, len(posts), post.id)
                 except Exception as e:
                     log.warning(f"Batch #{post.id} failed: {e}")
