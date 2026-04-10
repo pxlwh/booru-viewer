@@ -89,6 +89,7 @@ class DanbooruClient(BooruClient):
             width=item.get("image_width", 0),
             height=item.get("image_height", 0),
             created_at=_parse_date(item.get("created_at")),
+            tag_categories=self._extract_tag_categories(item),
         )
 
     async def autocomplete(self, query: str, limit: int = 10) -> list[str]:
