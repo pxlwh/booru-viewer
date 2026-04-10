@@ -444,7 +444,7 @@ class SettingsDialog(QDialog):
             "%artist% %character% %copyright% %general% %meta% %species%\n"
             "Applies to every save action: Save to Library, Save As, Batch Download, "
             "multi-select bulk operations, and bookmark→library copies.\n"
-            "Note: Gelbooru and Moebooru only support %id% / %md5% / %score% / %rating% / %ext%."
+            "All tokens work on all sites. Category tokens are fetched on demand."
         )
         tmpl_help.setWordWrap(True)
         tmpl_help.setStyleSheet("color: palette(mid); font-size: 10pt;")
