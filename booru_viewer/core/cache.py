@@ -506,7 +506,7 @@ def evict_oldest(max_bytes: int, protected_paths: set[str] | None = None) -> int
     for f in files:
         if current <= max_bytes:
             break
-        if not f.is_file() or str(f) in protected:
+        if not f.is_file() or str(f) in protected or f.suffix == ".part":
             continue
         size = f.stat().st_size
         f.unlink()
