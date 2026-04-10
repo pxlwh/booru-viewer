@@ -64,6 +64,7 @@ from .search_controller import SearchController
 from .media_controller import MediaController
 from .popout_controller import PopoutController
 from .post_actions import PostActionsController
+from .context_menus import ContextMenuHandler
 
 log = logging.getLogger("booru")
 
@@ -131,6 +132,7 @@ class BooruApp(QMainWindow):
         self._media_ctrl = MediaController(self)
         self._popout_ctrl = PopoutController(self)
         self._post_actions = PostActionsController(self)
+        self._context = ContextMenuHandler(self)
         self._main_window_save_timer = QTimer(self)
         self._main_window_save_timer.setSingleShot(True)
         self._main_window_save_timer.setInterval(300)
@@ -316,8 +318,8 @@ class BooruApp(QMainWindow):
         self._grid = ThumbnailGrid()
         self._grid.post_selected.connect(self._on_post_selected)
         self._grid.post_activated.connect(self._media_ctrl.on_post_activated)
-        self._grid.context_requested.connect(self._on_context_menu)
-        self._grid.multi_context_requested.connect(self._on_multi_context_menu)
+        self._grid.context_requested.connect(self._context.show_single)
+        self._grid.multi_context_requested.connect(self._context.show_multi)
         self._grid.nav_past_end.connect(self._search_ctrl.on_nav_past_end)
         self._grid.nav_before_start.connect(self._search_ctrl.on_nav_before_start)
         self._stack.addWidget(self._grid)
@@ -912,268 +914,6 @@ class BooruApp(QMainWindow):
 
     def _close_preview(self) -> None:
         self._preview.clear()
-
-    # -- Context menu --
-
-    def _on_context_menu(self, index: int, pos) -> None:
-        if index < 0 or index >= len(self._posts):
-            return
-        post = self._posts[index]
-        menu = QMenu(self)
-
-        open_browser = menu.addAction("Open in Browser")
-        open_default = menu.addAction("Open in Default App")
-        menu.addSeparator()
-        save_as = menu.addAction("Save As...")
-
-        # Save to Library submenu — folders come from the library
-        # filesystem, not the bookmark folder DB.
-        from ..core.config import library_folders
-        save_lib_menu = menu.addMenu("Save to Library")
-        save_lib_unsorted = save_lib_menu.addAction("Unfiled")
-        save_lib_menu.addSeparator()
-        save_lib_folders = {}
-        for folder in library_folders():
-            a = save_lib_menu.addAction(folder)
-            save_lib_folders[id(a)] = folder
-        save_lib_menu.addSeparator()
-        save_lib_new = save_lib_menu.addAction("+ New Folder...")
-
-        unsave_lib = None
-        if self._post_actions.is_post_saved(post.id):
-            unsave_lib = menu.addAction("Unsave from Library")
-        copy_clipboard = menu.addAction("Copy File to Clipboard")
-        copy_url = menu.addAction("Copy Image URL")
-        copy_tags = menu.addAction("Copy Tags")
-        menu.addSeparator()
-
-        # Bookmark action: when not yet bookmarked, offer "Bookmark as"
-        # with a submenu of bookmark folders so the user can file the
-        # new bookmark in one click. Bookmark folders come from the DB
-        # (separate name space from library folders). When already
-        # bookmarked, the action collapses to a flat "Remove Bookmark"
-        # — re-filing an existing bookmark belongs in the bookmarks tab
-        # right-click menu's "Move to Folder" submenu.
-        fav_action = None
-        bm_folder_actions: dict[int, str] = {}
-        bm_unfiled = None
-        bm_new = None
-        if self._post_actions.is_current_bookmarked(index):
-            fav_action = menu.addAction("Remove Bookmark")
-        else:
-            fav_menu = menu.addMenu("Bookmark as")
-            bm_unfiled = fav_menu.addAction("Unfiled")
-            fav_menu.addSeparator()
-            for folder in self._db.get_folders():
-                a = fav_menu.addAction(folder)
-                bm_folder_actions[id(a)] = folder
-            fav_menu.addSeparator()
-            bm_new = fav_menu.addAction("+ New Folder...")
-        menu.addSeparator()
-        bl_menu = menu.addMenu("Blacklist Tag")
-        if post.tag_categories:
-            for category, tags in post.tag_categories.items():
-                cat_menu = bl_menu.addMenu(category)
-                for tag in tags[:30]:
-                    cat_menu.addAction(tag)
-        else:
-            for tag in post.tag_list[:30]:
-                bl_menu.addAction(tag)
-        bl_post_action = menu.addAction("Blacklist Post")
-
-        action = menu.exec(pos)
-        if not action:
-            return
-
-        if action == open_browser:
-            self._open_in_browser(post)
-        elif action == open_default:
-            self._open_in_default(post)
-        elif action == save_as:
-            self._post_actions.save_as(post)
-        elif action == save_lib_unsorted:
-            self._post_actions.save_to_library(post, None)
-        elif action == save_lib_new:
-            from PySide6.QtWidgets import QInputDialog, QMessageBox
-            name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
-            if ok and name.strip():
-                # _save_to_library → saved_folder_dir() does the mkdir
-                # and the path-traversal check; we surface the same error
-                # message it would emit so a bad name is reported clearly.
-                try:
-                    from ..core.config import saved_folder_dir
-                    saved_folder_dir(name.strip())
-                except ValueError as e:
-                    QMessageBox.warning(self, "Invalid Folder Name", str(e))
-                    return
-                self._post_actions.save_to_library(post, name.strip())
-        elif id(action) in save_lib_folders:
-            self._post_actions.save_to_library(post, save_lib_folders[id(action)])
-        elif action == unsave_lib:
-            self._preview._current_post = post
-            self._post_actions.unsave_from_preview()
-        elif action == copy_clipboard:
-            self._copy_file_to_clipboard()
-        elif action == copy_url:
-            QApplication.clipboard().setText(post.file_url)
-            self._status.showMessage("URL copied")
-        elif action == copy_tags:
-            QApplication.clipboard().setText(post.tags)
-            self._status.showMessage("Tags copied")
-        elif fav_action is not None and action == fav_action:
-            # Currently bookmarked → flat "Remove Bookmark" path.
-            self._post_actions.toggle_bookmark(index)
-        elif bm_unfiled is not None and action == bm_unfiled:
-            self._post_actions.toggle_bookmark(index, None)
-        elif bm_new is not None and action == bm_new:
-            from PySide6.QtWidgets import QInputDialog, QMessageBox
-            name, ok = QInputDialog.getText(self, "New Bookmark Folder", "Folder name:")
-            if ok and name.strip():
-                # Bookmark folders are DB-managed; add_folder validates
-                # the name and is the same call the bookmarks tab uses.
-                try:
-                    self._db.add_folder(name.strip())
-                except ValueError as e:
-                    QMessageBox.warning(self, "Invalid Folder Name", str(e))
-                    return
-                self._post_actions.toggle_bookmark(index, name.strip())
-        elif id(action) in bm_folder_actions:
-            self._post_actions.toggle_bookmark(index, bm_folder_actions[id(action)])
-        elif self._is_child_of_menu(action, bl_menu):
-            tag = action.text()
-            self._db.add_blacklisted_tag(tag)
-            self._db.set_setting("blacklist_enabled", "1")
-            # Clear preview if the previewed post has this tag
-            if self._preview._current_path and tag in post.tag_list:
-                from ..core.cache import cached_path_for
-                cp = str(cached_path_for(post.file_url))
-                if cp == self._preview._current_path:
-                    self._preview.clear()
-                    if self._popout_ctrl.window and self._popout_ctrl.window.isVisible():
-                        self._popout_ctrl.window.stop_media()
-            self._status.showMessage(f"Blacklisted: {tag}")
-            self._search_ctrl.remove_blacklisted_from_grid(tag=tag)
-        elif action == bl_post_action:
-            self._db.add_blacklisted_post(post.file_url)
-            self._search_ctrl.remove_blacklisted_from_grid(post_url=post.file_url)
-            self._status.showMessage(f"Post #{post.id} blacklisted")
-            self._search_ctrl.do_search()
-
-    @staticmethod
-    def _is_child_of_menu(action, menu) -> bool:
-        parent = action.parent()
-        while parent:
-            if parent == menu:
-                return True
-            parent = getattr(parent, 'parent', lambda: None)()
-        return False
-
-    def _on_multi_context_menu(self, indices: list, pos) -> None:
-        """Context menu for multi-selected posts.
-
-        Library and bookmark actions are split into independent
-        save/unsave and bookmark/remove-bookmark pairs (mirroring the
-        single-post menu's separation), with symmetric conditional
-        visibility: each action only appears when the selection actually
-        contains posts the action would affect. Save All to Library
-        appears only when at least one post is unsaved; Unsave All from
-        Library only when at least one is saved; Bookmark All only when
-        at least one is unbookmarked; Remove All Bookmarks only when at
-        least one is bookmarked.
-        """
-        posts = [self._posts[i] for i in indices if 0 <= i < len(self._posts)]
-        if not posts:
-            return
-        count = len(posts)
-
-        site_id = self._site_combo.currentData()
-        any_bookmarked = bool(site_id) and any(self._db.is_bookmarked(site_id, p.id) for p in posts)
-        any_unbookmarked = bool(site_id) and any(not self._db.is_bookmarked(site_id, p.id) for p in posts)
-        any_saved = any(self._post_actions.is_post_saved(p.id) for p in posts)
-        any_unsaved = any(not self._post_actions.is_post_saved(p.id) for p in posts)
-
-        menu = QMenu(self)
-
-        # Library section
-        save_menu = None
-        save_unsorted = None
-        save_new = None
-        save_folder_actions: dict[int, str] = {}
-        if any_unsaved:
-            from ..core.config import library_folders
-            save_menu = menu.addMenu(f"Save All to Library ({count})")
-            save_unsorted = save_menu.addAction("Unfiled")
-            for folder in library_folders():
-                a = save_menu.addAction(folder)
-                save_folder_actions[id(a)] = folder
-            save_menu.addSeparator()
-            save_new = save_menu.addAction("+ New Folder...")
-
-        unsave_lib_all = None
-        if any_saved:
-            unsave_lib_all = menu.addAction(f"Unsave All from Library ({count})")
-
-        # Bookmark section
-        if (any_unsaved or any_saved) and (any_unbookmarked or any_bookmarked):
-            menu.addSeparator()
-
-        fav_all = None
-        if any_unbookmarked:
-            fav_all = menu.addAction(f"Bookmark All ({count})")
-
-        unfav_all = None
-        if any_bookmarked:
-            unfav_all = menu.addAction(f"Remove All Bookmarks ({count})")
-
-        # Always-shown actions
-        if any_unsaved or any_saved or any_unbookmarked or any_bookmarked:
-            menu.addSeparator()
-        batch_dl = menu.addAction(f"Download All ({count})...")
-        copy_urls = menu.addAction("Copy All URLs")
-
-        action = menu.exec(pos)
-        if not action:
-            return
-
-        if fav_all is not None and action == fav_all:
-            self._post_actions.bulk_bookmark(indices, posts)
-        elif save_unsorted is not None and action == save_unsorted:
-            self._post_actions.bulk_save(indices, posts, None)
-        elif save_new is not None and action == save_new:
-            from PySide6.QtWidgets import QInputDialog, QMessageBox
-            name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
-            if ok and name.strip():
-                try:
-                    from ..core.config import saved_folder_dir
-                    saved_folder_dir(name.strip())
-                except ValueError as e:
-                    QMessageBox.warning(self, "Invalid Folder Name", str(e))
-                    return
-                self._post_actions.bulk_save(indices, posts, name.strip())
-        elif id(action) in save_folder_actions:
-            self._post_actions.bulk_save(indices, posts, save_folder_actions[id(action)])
-        elif unsave_lib_all is not None and action == unsave_lib_all:
-            self._post_actions.bulk_unsave(indices, posts)
-        elif action == batch_dl:
-            from .dialogs import select_directory
-            dest = select_directory(self, "Download to folder")
-            if dest:
-                self._post_actions.batch_download_posts(posts, dest)
-        elif unfav_all is not None and action == unfav_all:
-            if site_id:
-                for post in posts:
-                    self._db.remove_bookmark(site_id, post.id)
-                for idx in indices:
-                    if 0 <= idx < len(self._grid._thumbs):
-                        self._grid._thumbs[idx].set_bookmarked(False)
-                self._grid._clear_multi()
-                self._status.showMessage(f"Removed {count} bookmarks")
-                if self._stack.currentIndex() == 1:
-                    self._bookmarks_view.refresh()
-        elif action == copy_urls:
-            urls = "\n".join(p.file_url for p in posts)
-            QApplication.clipboard().setText(urls)
-            self._status.showMessage(f"Copied {count} URLs")
 
     def _open_post_id_in_browser(self, post_id: int, site_id: int | None = None) -> None:
         """Open the post page in the system browser. site_id selects which
