@@ -70,6 +70,18 @@ class _MpvGLWidget(QWidget):
             # don't care about a tiny quality dip during ramp-up.
             vd_lavc_fast="yes",
             vd_lavc_skiploopfilter="nonkey",
+            # Network streaming tuning for the uncached-video fast path.
+            # cache=yes is mpv's default for network sources but explicit
+            # is clearer. cache_pause=no keeps playback running through
+            # brief buffer underruns instead of pausing — for short booru
+            # clips a momentary stutter beats a pause icon. demuxer caps
+            # keep RAM bounded. network_timeout=10 replaces mpv's ~60s
+            # default so stalled connections surface errors promptly.
+            cache="yes",
+            cache_pause="no",
+            demuxer_max_bytes="50MiB",
+            demuxer_readahead_secs="20",
+            network_timeout="10",
         )
         # Wire up the GL surface's callbacks to us
         self._gl._owner = self
