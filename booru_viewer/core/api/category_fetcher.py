@@ -136,15 +136,23 @@ class CategoryFetcher:
     def try_compose_from_cache(self, post: "Post") -> bool:
         """Build ``post.tag_categories`` from cached labels.
 
-        Returns True if **every** tag in ``post.tag_list`` has a
-        cached label (i.e. the composition is complete).  When True
-        the post is fully categorized and no HTTP is needed.
+        Populates ``post.tag_categories`` with whatever tags ARE
+        cached, even if some are missing.  Returns True when at least
+        one tag was categorized (meaning the post is usable — the
+        info panel can render categories, templates can resolve
+        ``%artist%`` / ``%character%`` etc.).  Returns False only
+        when the cache has literally nothing for any of the post's
+        tags, which means a fetch is needed.
+
+        Tags not in the cache are simply absent from the category
+        dict.  They stay in ``post.tags`` (the flat string) and can
+        be picked up by a later per-post fetch if needed.
         """
         tags = post.tag_list
         if not tags:
             return True
         cached = self._db.get_tag_labels(self._site_id, tags)
-        if len(cached) < len(set(tags)):
+        if not cached:
             return False
         cats: dict[str, list[str]] = {}
         for tag in tags:
@@ -153,7 +161,7 @@ class CategoryFetcher:
                 cats.setdefault(label, []).append(tag)
         if cats:
             post.tag_categories = _canonical_order(cats)
-        return True
+        return bool(cats)
 
     # ----- batch tag API fast path -----
 
