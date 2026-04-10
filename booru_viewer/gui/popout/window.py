@@ -592,15 +592,15 @@ class FullscreenPreview(QMainWindow):
     def _apply_load_video(self, e: LoadVideo) -> None:
         """Apply LoadVideo effect — hand the path or URL to mpv.
 
-        Mirrors the legacy `set_media` body's video branch. play_file
-        already handles the http(s) → referer detection internally
-        (see media/video_player.py:343-347), so the adapter doesn't
-        need to thread the referer through.
+        Stack switch happens FIRST so the video surface is visible
+        the moment mpv produces its first frame. clear() releases the
+        previous image (now hidden behind the video surface). No
+        explicit stop() — loadfile("replace") atomically replaces the
+        current file without the eof side-effect of command('stop').
         """
-        self._viewer.clear()
-        self._video.stop()
-        self._video.play_file(e.path, e.info)
         self._stack.setCurrentIndex(1)
+        self._viewer.clear()
+        self._video.play_file(e.path, e.info)
 
     def _apply_stop_media(self) -> None:
         """Apply StopMedia effect — clear both surfaces.
@@ -719,7 +719,7 @@ class FullscreenPreview(QMainWindow):
             "mute": self._video.is_muted,
             "autoplay": self._video.autoplay,
             "loop_state": self._video.loop_state,
-            "position_ms": (
+            "position_ms": getattr(self, "_close_position_ms", None) or (
                 self._video.get_position_ms()
                 if self.is_video_active()
                 else 0
@@ -1558,6 +1558,14 @@ class FullscreenPreview(QMainWindow):
             else:
                 FullscreenPreview._saved_geometry = self.frameGeometry()
         QApplication.instance().removeEventFilter(self)
+        # Snapshot video position BEFORE StopMedia destroys it.
+        # _on_fullscreen_closed reads this via get_video_state() to
+        # seek the embedded preview to the same position.
+        self._close_position_ms = (
+            self._video.get_position_ms()
+            if self.is_video_active()
+            else 0
+        )
         # NOW dispatch + apply CloseRequested. Effects are
         # [StopMedia, EmitClosed]. StopMedia clears the media stack;
         # EmitClosed emits self.closed which triggers main_window's
