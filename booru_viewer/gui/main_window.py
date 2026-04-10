@@ -60,6 +60,7 @@ from .async_signals import AsyncSignals
 from .info_panel import InfoPanel
 from .window_state import WindowStateController
 from .privacy import PrivacyController
+from .search_controller import SearchController
 
 log = logging.getLogger("booru")
 
@@ -86,13 +87,6 @@ class BooruApp(QMainWindow):
             grid_mod.THUMB_SIZE = saved_thumb
         self._current_site: Site | None = None
         self._posts: list[Post] = []
-        self._current_page = 1
-        self._current_tags = ""
-        self._current_rating = "all"
-        self._min_score = 0
-        self._loading = False
-        self._search = SearchState()
-        self._last_scroll_page = 0
         self._prefetch_pause = asyncio.Event()
         self._prefetch_pause.set()  # not paused
         self._signals = AsyncSignals()
@@ -132,6 +126,7 @@ class BooruApp(QMainWindow):
         # 300ms debounce pattern as the splitter saver.
         self._window_state = WindowStateController(self)
         self._privacy = PrivacyController(self)
+        self._search_ctrl = SearchController(self)
         self._main_window_save_timer = QTimer(self)
         self._main_window_save_timer.setSingleShot(True)
         self._main_window_save_timer.setInterval(300)
@@ -144,16 +139,16 @@ class BooruApp(QMainWindow):
     def _setup_signals(self) -> None:
         Q = Qt.ConnectionType.QueuedConnection
         s = self._signals
-        s.search_done.connect(self._on_search_done, Q)
-        s.search_append.connect(self._on_search_append, Q)
-        s.search_error.connect(self._on_search_error, Q)
-        s.thumb_done.connect(self._on_thumb_done, Q)
+        s.search_done.connect(self._search_ctrl.on_search_done, Q)
+        s.search_append.connect(self._search_ctrl.on_search_append, Q)
+        s.search_error.connect(self._search_ctrl.on_search_error, Q)
+        s.thumb_done.connect(self._search_ctrl.on_thumb_done, Q)
         s.image_done.connect(self._on_image_done, Q)
         s.image_error.connect(self._on_image_error, Q)
         s.video_stream.connect(self._on_video_stream, Q)
         s.bookmark_done.connect(self._on_bookmark_done, Q)
         s.bookmark_error.connect(self._on_bookmark_error, Q)
-        s.autocomplete_done.connect(self._on_autocomplete_done, Q)
+        s.autocomplete_done.connect(self._search_ctrl.on_autocomplete_done, Q)
         s.batch_progress.connect(self._on_batch_progress, Q)
         s.batch_done.connect(self._on_batch_done, Q)
         s.download_progress.connect(self._on_download_progress, Q)
@@ -212,13 +207,6 @@ class BooruApp(QMainWindow):
         if 0 <= idx < len(self._posts) and self._posts[idx].id == post.id:
             self._info_panel.set_post(post)
             self._preview.set_post_tags(post.tag_categories, post.tag_list)
-
-    def _clear_loading(self) -> None:
-        self._loading = False
-
-    def _on_search_error(self, e: str) -> None:
-        self._loading = False
-        self._status.showMessage(f"Error: {e}")
 
     def _on_image_error(self, e: str) -> None:
         self._dl_progress.hide()
@@ -295,8 +283,8 @@ class BooruApp(QMainWindow):
         top.addWidget(self._page_spin)
 
         self._search_bar = SearchBar(db=self._db)
-        self._search_bar.search_requested.connect(self._on_search)
-        self._search_bar.autocomplete_requested.connect(self._request_autocomplete)
+        self._search_bar.search_requested.connect(self._search_ctrl.on_search)
+        self._search_bar.autocomplete_requested.connect(self._search_ctrl.request_autocomplete)
         top.addWidget(self._search_bar, stretch=1)
 
         layout.addLayout(top)
@@ -333,8 +321,8 @@ class BooruApp(QMainWindow):
         self._grid.post_activated.connect(self._on_post_activated)
         self._grid.context_requested.connect(self._on_context_menu)
         self._grid.multi_context_requested.connect(self._on_multi_context_menu)
-        self._grid.nav_past_end.connect(self._on_nav_past_end)
-        self._grid.nav_before_start.connect(self._on_nav_before_start)
+        self._grid.nav_past_end.connect(self._search_ctrl.on_nav_past_end)
+        self._grid.nav_before_start.connect(self._search_ctrl.on_nav_before_start)
         self._stack.addWidget(self._grid)
 
         self._bookmarks_view = BookmarksView(self._db)
@@ -469,21 +457,20 @@ class BooruApp(QMainWindow):
         bottom_nav.addWidget(self._page_label)
         self._prev_page_btn = QPushButton("Prev")
         self._prev_page_btn.setFixedWidth(60)
-        self._prev_page_btn.clicked.connect(self._prev_page)
+        self._prev_page_btn.clicked.connect(self._search_ctrl.prev_page)
         bottom_nav.addWidget(self._prev_page_btn)
         self._next_page_btn = QPushButton("Next")
         self._next_page_btn.setFixedWidth(60)
-        self._next_page_btn.clicked.connect(self._next_page)
+        self._next_page_btn.clicked.connect(self._search_ctrl.next_page)
         bottom_nav.addWidget(self._next_page_btn)
         bottom_nav.addStretch()
         layout.addWidget(self._bottom_nav)
 
-        # Infinite scroll
-        self._infinite_scroll = self._db.get_setting_bool("infinite_scroll")
-        if self._infinite_scroll:
+        # Infinite scroll (state lives on _search_ctrl, but UI visibility here)
+        if self._search_ctrl._infinite_scroll:
             self._bottom_nav.hide()
-        self._grid.reached_bottom.connect(self._on_reached_bottom)
-        self._grid.verticalScrollBar().rangeChanged.connect(self._on_scroll_range_changed)
+        self._grid.reached_bottom.connect(self._search_ctrl.on_reached_bottom)
+        self._grid.verticalScrollBar().rangeChanged.connect(self._search_ctrl.on_scroll_range_changed)
 
         # Log panel
         self._log_text = QTextEdit()
@@ -598,12 +585,10 @@ class BooruApp(QMainWindow):
         self._posts.clear()
         self._grid.set_posts(0)
         self._preview.clear()
-        if hasattr(self, '_search') and self._search:
-            self._search.shown_post_ids.clear()
-            self._search.page_cache.clear()
+        self._search_ctrl.reset()
 
     def _on_rating_changed(self, text: str) -> None:
-        self._current_rating = text.lower()
+        self._search_ctrl._current_rating = text.lower()
 
     def _switch_view(self, index: int) -> None:
         self._stack.setCurrentIndex(index)
@@ -649,499 +634,15 @@ class BooruApp(QMainWindow):
         self._preview.clear()
         self._switch_view(0)
         self._search_bar.set_text(tag)
-        self._on_search(tag)
+        self._search_ctrl.on_search(tag)
 
-    # -- Search --
+    # (Search methods moved to search_controller.py)
 
-    def _on_search(self, tags: str) -> None:
-        self._current_tags = tags
-        self._current_page = self._page_spin.value()
-        self._search = SearchState()
-        self._min_score = self._score_spin.value()
-        self._preview.clear()
-        self._next_page_btn.setVisible(True)
-        self._prev_page_btn.setVisible(False)
-        self._do_search()
+    # (_on_reached_bottom moved to search_controller.py)
 
-    def _prev_page(self) -> None:
-        if self._current_page > 1:
-            self._current_page -= 1
-            if self._current_page in self._search.page_cache:
-                self._signals.search_done.emit(self._search.page_cache[self._current_page])
-            else:
-                self._do_search()
+    # (_scroll_next_page, _scroll_prev_page moved to search_controller.py)
 
-    def _next_page(self) -> None:
-        if self._loading:
-            return
-        self._current_page += 1
-        if self._current_page in self._search.page_cache:
-            self._signals.search_done.emit(self._search.page_cache[self._current_page])
-            return
-        self._do_search()
-
-    def _on_nav_past_end(self) -> None:
-        if self._infinite_scroll:
-            return  # infinite scroll handles this via reached_bottom
-        self._search.nav_page_turn = "first"
-        self._next_page()
-
-    def _on_nav_before_start(self) -> None:
-        if self._infinite_scroll:
-            return
-        if self._current_page > 1:
-            self._search.nav_page_turn = "last"
-            self._prev_page()
-
-    def _on_reached_bottom(self) -> None:
-        if not self._infinite_scroll or self._loading or self._search.infinite_exhausted:
-            return
-        self._loading = True
-        self._current_page += 1
-
-        search_tags = self._build_search_tags()
-        page = self._current_page
-        limit = self._db.get_setting_int("page_size") or 40
-
-        bl_tags = set()
-        if self._db.get_setting_bool("blacklist_enabled"):
-            bl_tags = set(self._db.get_blacklisted_tags())
-        bl_posts = self._db.get_blacklisted_posts()
-        shown_ids = self._search.shown_post_ids.copy()
-        seen = shown_ids.copy()  # local dedup for this backfill round
-
-        # Per-pass drop counters — same shape as _do_search's instrumentation
-        # so the two code paths produce comparable log lines.
-        drops = {"bl_tags": 0, "bl_posts": 0, "dedup": 0}
-
-        def _filter(posts):
-            n0 = len(posts)
-            if bl_tags:
-                posts = [p for p in posts if not bl_tags.intersection(p.tag_list)]
-            n1 = len(posts)
-            drops["bl_tags"] += n0 - n1
-            if bl_posts:
-                posts = [p for p in posts if p.file_url not in bl_posts]
-            n2 = len(posts)
-            drops["bl_posts"] += n1 - n2
-            posts = [p for p in posts if p.id not in seen]
-            n3 = len(posts)
-            drops["dedup"] += n2 - n3
-            seen.update(p.id for p in posts)
-            return posts
-
-        async def _search():
-            client = self._make_client()
-            collected = []
-            raw_total = 0
-            last_page = page
-            api_exhausted = False
-            try:
-                current_page = page
-                batch = await client.search(tags=search_tags, page=current_page, limit=limit)
-                raw_total += len(batch)
-                last_page = current_page
-                filtered = _filter(batch)
-                collected.extend(filtered)
-                if len(batch) < limit:
-                    api_exhausted = True
-                elif len(collected) < limit:
-                    for _ in range(9):
-                        await asyncio.sleep(0.3)
-                        current_page += 1
-                        batch = await client.search(tags=search_tags, page=current_page, limit=limit)
-                        raw_total += len(batch)
-                        last_page = current_page
-                        filtered = _filter(batch)
-                        collected.extend(filtered)
-                        if len(batch) < limit:
-                            api_exhausted = True
-                            break
-                        if len(collected) >= limit:
-                            break
-            except Exception as e:
-                log.warning(f"Infinite scroll fetch failed: {e}")
-            finally:
-                self._search.infinite_last_page = last_page
-                self._search.infinite_api_exhausted = api_exhausted
-                log.debug(
-                    f"on_reached_bottom: limit={limit} api_returned_total={raw_total} kept={len(collected[:limit])} "
-                    f"drops_bl_tags={drops['bl_tags']} drops_bl_posts={drops['bl_posts']} drops_dedup={drops['dedup']} "
-                    f"api_exhausted={api_exhausted} last_page={last_page}"
-                )
-                self._signals.search_append.emit(collected[:limit])
-                await client.close()
-
-        self._run_async(_search)
-
-    def _scroll_next_page(self) -> None:
-        if self._loading:
-            return
-        self._current_page += 1
-        self._do_search()
-
-    def _scroll_prev_page(self) -> None:
-        if self._loading or self._current_page <= 1:
-            return
-        self._current_page -= 1
-        self._do_search()
-
-    def _build_search_tags(self) -> str:
-        """Build tag string with rating filter and negative tags."""
-        parts = []
-        if self._current_tags:
-            parts.append(self._current_tags)
-
-        # Rating filter — site-specific syntax
-        # Danbooru/Gelbooru: 4-tier (general, sensitive, questionable, explicit)
-        # Moebooru/e621: 3-tier (safe, questionable, explicit)
-        rating = self._current_rating
-        if rating != "all" and self._current_site:
-            api = self._current_site.api_type
-            if api == "danbooru":
-                # Danbooru accepts both full words and single letters
-                danbooru_map = {
-                    "general": "g", "sensitive": "s",
-                    "questionable": "q", "explicit": "e",
-                }
-                if rating in danbooru_map:
-                    parts.append(f"rating:{danbooru_map[rating]}")
-            elif api == "gelbooru":
-                # Gelbooru requires full words, no abbreviations
-                gelbooru_map = {
-                    "general": "general", "sensitive": "sensitive",
-                    "questionable": "questionable", "explicit": "explicit",
-                }
-                if rating in gelbooru_map:
-                    parts.append(f"rating:{gelbooru_map[rating]}")
-            elif api == "e621":
-                # e621: 3-tier (s/q/e), accepts both full words and letters
-                e621_map = {
-                    "general": "s", "sensitive": "s",
-                    "questionable": "q", "explicit": "e",
-                }
-                if rating in e621_map:
-                    parts.append(f"rating:{e621_map[rating]}")
-            else:
-                # Moebooru (yande.re, konachan) — 3-tier, full words work
-                # "general" and "sensitive" don't exist, map to "safe"
-                moebooru_map = {
-                    "general": "safe", "sensitive": "safe",
-                    "questionable": "questionable", "explicit": "explicit",
-                }
-                if rating in moebooru_map:
-                    parts.append(f"rating:{moebooru_map[rating]}")
-
-        # Score filter
-        if self._min_score > 0:
-            parts.append(f"score:>={self._min_score}")
-
-        # Media type filter
-        media = self._media_filter.currentText()
-        if media == "Animated":
-            parts.append("animated")
-        elif media == "Video":
-            parts.append("video")
-        elif media == "GIF":
-            parts.append("animated_gif")
-        elif media == "Audio":
-            parts.append("audio")
-
-        return " ".join(parts)
-
-    def _do_search(self) -> None:
-        if not self._current_site:
-            self._status.showMessage("No site selected")
-            return
-        self._loading = True
-        self._page_label.setText(f"Page {self._current_page}")
-        self._status.showMessage("Searching...")
-
-        search_tags = self._build_search_tags()
-        log.info(f"Search: tags='{search_tags}' rating={self._current_rating}")
-        page = self._current_page
-        limit = self._db.get_setting_int("page_size") or 40
-
-        # Gather blacklist filters once on the main thread
-        bl_tags = set()
-        if self._db.get_setting_bool("blacklist_enabled"):
-            bl_tags = set(self._db.get_blacklisted_tags())
-        bl_posts = self._db.get_blacklisted_posts()
-        shown_ids = self._search.shown_post_ids.copy()
-        seen = shown_ids.copy()
-
-        # Per-pass drop counters for the at-end-flag instrumentation. The
-        # filter mutates this dict via closure capture so the outer scope
-        # can read the totals after the loop. Lets us distinguish "API
-        # ran out" from "client-side filter trimmed the page".
-        drops = {"bl_tags": 0, "bl_posts": 0, "dedup": 0}
-
-        def _filter(posts):
-            n0 = len(posts)
-            if bl_tags:
-                posts = [p for p in posts if not bl_tags.intersection(p.tag_list)]
-            n1 = len(posts)
-            drops["bl_tags"] += n0 - n1
-            if bl_posts:
-                posts = [p for p in posts if p.file_url not in bl_posts]
-            n2 = len(posts)
-            drops["bl_posts"] += n1 - n2
-            posts = [p for p in posts if p.id not in seen]
-            n3 = len(posts)
-            drops["dedup"] += n2 - n3
-            seen.update(p.id for p in posts)
-            return posts
-
-        async def _search():
-            client = self._make_client()
-            try:
-                collected = []
-                raw_total = 0
-                current_page = page
-                batch = await client.search(tags=search_tags, page=current_page, limit=limit)
-                raw_total += len(batch)
-                filtered = _filter(batch)
-                collected.extend(filtered)
-                # Backfill only if first page didn't return enough after filtering
-                if len(collected) < limit and len(batch) >= limit:
-                    for _ in range(9):
-                        await asyncio.sleep(0.3)
-                        current_page += 1
-                        batch = await client.search(tags=search_tags, page=current_page, limit=limit)
-                        raw_total += len(batch)
-                        filtered = _filter(batch)
-                        collected.extend(filtered)
-                        log.debug(f"Backfill: page={current_page} batch={len(batch)} filtered={len(filtered)} total={len(collected)}/{limit}")
-                        if len(collected) >= limit or len(batch) < limit:
-                            break
-                log.debug(
-                    f"do_search: limit={limit} api_returned_total={raw_total} kept={len(collected[:limit])} "
-                    f"drops_bl_tags={drops['bl_tags']} drops_bl_posts={drops['bl_posts']} drops_dedup={drops['dedup']} "
-                    f"last_batch_size={len(batch)} api_short_signal={len(batch) < limit}"
-                )
-                self._signals.search_done.emit(collected[:limit])
-            except Exception as e:
-                self._signals.search_error.emit(str(e))
-            finally:
-                await client.close()
-
-        self._run_async(_search)
-
-    def _on_search_done(self, posts: list) -> None:
-        self._page_label.setText(f"Page {self._current_page}")
-        self._posts = posts
-        # Cache page results and track shown IDs
-        ss = self._search
-        ss.shown_post_ids.update(p.id for p in posts)
-        ss.page_cache[self._current_page] = posts
-        # Cap page cache in pagination mode (infinite scroll needs all pages)
-        if not self._infinite_scroll and len(ss.page_cache) > 10:
-            oldest = min(ss.page_cache.keys())
-            del ss.page_cache[oldest]
-        limit = self._db.get_setting_int("page_size") or 40
-        at_end = len(posts) < limit
-        log.debug(f"on_search_done: displayed_count={len(posts)} limit={limit} at_end={at_end}")
-        if at_end:
-            self._status.showMessage(f"{len(posts)} results (end)")
-        else:
-            self._status.showMessage(f"{len(posts)} results")
-        # Update pagination buttons
-        self._prev_page_btn.setVisible(self._current_page > 1)
-        self._next_page_btn.setVisible(not at_end)
-        thumbs = self._grid.set_posts(len(posts))
-        self._grid.scroll_to_top()
-        # Clear loading after a brief delay so scroll signals don't re-trigger
-        QTimer.singleShot(100, self._clear_loading)
-
-        from ..core.config import saved_dir
-        from ..core.cache import cached_path_for, cache_dir
-        site_id = self._site_combo.currentData()
-
-        # library_meta-driven saved-id set: format-agnostic, covers both
-        # digit-stem v0.2.3 files and templated post-refactor saves.
-        _saved_ids = self._db.get_saved_post_ids()
-
-        # Pre-fetch bookmarks for the site once and project to a post-id set
-        # so the per-post check below is an O(1) membership test instead of
-        # a synchronous SQLite query (was N queries on the GUI thread).
-        _favs = self._db.get_bookmarks(site_id=site_id) if site_id else []
-        _bookmarked_ids: set[int] = {f.post_id for f in _favs}
-
-        # Pre-scan the cache dir into a name set so the per-post drag-path
-        # lookup is one stat-equivalent (one iterdir) instead of N stat calls.
-        _cd = cache_dir()
-        _cached_names: set[str] = set()
-        if _cd.exists():
-            _cached_names = {f.name for f in _cd.iterdir() if f.is_file()}
-
-        for i, (post, thumb) in enumerate(zip(posts, thumbs)):
-            # Bookmark status (DB)
-            if post.id in _bookmarked_ids:
-                thumb.set_bookmarked(True)
-            # Saved status (filesystem) — _saved_ids already covers both
-            # the unsorted root and every library subdirectory.
-            thumb.set_saved_locally(post.id in _saved_ids)
-            # Set drag path from cache
-            cached = cached_path_for(post.file_url)
-            if cached.name in _cached_names:
-                thumb._cached_path = str(cached)
-
-            if post.preview_url:
-                self._fetch_thumbnail(i, post.preview_url)
-
-        # Auto-select first/last post if page turn was triggered by navigation
-        turn = self._search.nav_page_turn
-        if turn and posts:
-            self._search.nav_page_turn = None
-            if turn == "first":
-                idx = 0
-            else:
-                idx = len(posts) - 1
-            self._grid._select(idx)
-            self._on_post_activated(idx)
-
-        self._grid.setFocus()
-
-        # Start prefetching from top of page
-        if self._db.get_setting("prefetch_mode") in ("Nearby", "Aggressive") and posts:
-            self._prefetch_adjacent(0)
-
-        # Infinite scroll: if first page doesn't fill viewport, load more
-        if self._infinite_scroll and posts:
-            QTimer.singleShot(200, self._check_viewport_fill)
-
-    def _on_scroll_range_changed(self, _min: int, max_val: int) -> None:
-        """Scrollbar range changed (resize/splitter) — check if viewport needs filling."""
-        if max_val == 0 and self._infinite_scroll and self._posts:
-            QTimer.singleShot(100, self._check_viewport_fill)
-
-    def _check_viewport_fill(self) -> None:
-        """If content doesn't fill the viewport, trigger infinite scroll."""
-        if not self._infinite_scroll or self._loading or self._search.infinite_exhausted:
-            return
-        # Force layout update so scrollbar range is current
-        self._grid.widget().updateGeometry()
-        QApplication.processEvents()
-        sb = self._grid.verticalScrollBar()
-        if sb.maximum() == 0 and self._posts:
-            self._on_reached_bottom()
-
-    def _on_search_append(self, posts: list) -> None:
-        """Queue posts and add them one at a time as thumbnails arrive."""
-        ss = self._search
-
-        if not posts:
-            # Only advance page if API is exhausted — otherwise we retry
-            if ss.infinite_api_exhausted and ss.infinite_last_page > self._current_page:
-                self._current_page = ss.infinite_last_page
-            self._loading = False
-            # Only mark exhausted if the API itself returned a short page,
-            # not just because blacklist/dedup filtering emptied the results
-            if ss.infinite_api_exhausted:
-                ss.infinite_exhausted = True
-                self._status.showMessage(f"{len(self._posts)} results (end)")
-            else:
-                # Viewport still not full ��� keep loading
-                QTimer.singleShot(100, self._check_viewport_fill)
-            return
-        # Advance page counter past pages consumed by backfill
-        if ss.infinite_last_page > self._current_page:
-            self._current_page = ss.infinite_last_page
-        ss.shown_post_ids.update(p.id for p in posts)
-        ss.append_queue.extend(posts)
-        self._drain_append_queue()
-
-    def _drain_append_queue(self) -> None:
-        """Add all queued posts to the grid at once, thumbnails load async."""
-        ss = self._search
-        if not ss.append_queue:
-            self._loading = False
-            return
-
-        from ..core.cache import cached_path_for, cache_dir
-        site_id = self._site_combo.currentData()
-        # library_meta-driven saved-id set: format-agnostic, so it
-        # sees both digit-stem v0.2.3 files and templated post-refactor
-        # saves. The old root-only iterdir + stem.isdigit() filter
-        # missed both subfolder saves and templated filenames.
-        _saved_ids = self._db.get_saved_post_ids()
-
-        # Pre-fetch bookmarks → set, and pre-scan cache dir → set, so the
-        # per-post checks below avoid N synchronous SQLite/stat calls on the
-        # GUI thread (matches the optimisation in _on_search_done).
-        _favs = self._db.get_bookmarks(site_id=site_id) if site_id else []
-        _bookmarked_ids: set[int] = {f.post_id for f in _favs}
-        _cd = cache_dir()
-        _cached_names: set[str] = set()
-        if _cd.exists():
-            _cached_names = {f.name for f in _cd.iterdir() if f.is_file()}
-
-        posts = ss.append_queue[:]
-        ss.append_queue.clear()
-        start_idx = len(self._posts)
-        self._posts.extend(posts)
-        thumbs = self._grid.append_posts(len(posts))
-
-        for i, (post, thumb) in enumerate(zip(posts, thumbs)):
-            idx = start_idx + i
-            if post.id in _bookmarked_ids:
-                thumb.set_bookmarked(True)
-            thumb.set_saved_locally(post.id in _saved_ids)
-            cached = cached_path_for(post.file_url)
-            if cached.name in _cached_names:
-                thumb._cached_path = str(cached)
-            if post.preview_url:
-                self._fetch_thumbnail(idx, post.preview_url)
-
-        self._status.showMessage(f"{len(self._posts)} results")
-
-        # All done — unlock loading, evict
-        self._loading = False
-        self._auto_evict_cache()
-        # Check if still at bottom or content doesn't fill viewport
-        sb = self._grid.verticalScrollBar()
-        from .grid import THUMB_SIZE, THUMB_SPACING
-        threshold = THUMB_SIZE + THUMB_SPACING * 2
-        if sb.maximum() == 0 or sb.value() >= sb.maximum() - threshold:
-            self._on_reached_bottom()
-
-    def _fetch_thumbnail(self, index: int, url: str) -> None:
-        async def _download():
-            try:
-                path = await download_thumbnail(url)
-                self._signals.thumb_done.emit(index, str(path))
-            except Exception as e:
-                log.warning(f"Thumb #{index} failed: {e}")
-        self._run_async(_download)
-
-    def _on_thumb_done(self, index: int, path: str) -> None:
-        thumbs = self._grid._thumbs
-        if 0 <= index < len(thumbs):
-            pix = QPixmap(path)
-            if not pix.isNull():
-                thumbs[index].set_pixmap(pix)
-
-    # -- Autocomplete --
-
-    def _request_autocomplete(self, query: str) -> None:
-        if not self._current_site or len(query) < 2:
-            return
-
-        async def _ac():
-            client = self._make_client()
-            try:
-                results = await client.autocomplete(query)
-                self._signals.autocomplete_done.emit(results)
-            except Exception as e:
-                log.warning(f"Operation failed: {e}")
-            finally:
-                await client.close()
-
-        self._run_async(_ac)
-
-    def _on_autocomplete_done(self, suggestions: list) -> None:
-        self._search_bar.set_suggestions(suggestions)
-
+    # (_build_search_tags through _on_autocomplete_done moved to search_controller.py)
     # -- Post selection / preview --
 
     def _on_post_selected(self, index: int) -> None:
@@ -1801,12 +1302,12 @@ class BooruApp(QMainWindow):
             log.info(f"Navigate: direction={direction} current={self._grid.selected_index} next={idx} total={len(self._posts)}")
             if 0 <= idx < len(self._posts):
                 self._grid._select(idx)
-            elif idx >= len(self._posts) and direction > 0 and len(self._posts) > 0 and not self._infinite_scroll:
-                self._search.nav_page_turn = "first"
-                self._next_page()
-            elif idx < 0 and direction < 0 and self._current_page > 1 and not self._infinite_scroll:
-                self._search.nav_page_turn = "last"
-                self._prev_page()
+            elif idx >= len(self._posts) and direction > 0 and len(self._posts) > 0 and not self._search_ctrl._infinite_scroll:
+                self._search_ctrl._search.nav_page_turn = "first"
+                self._search_ctrl.next_page()
+            elif idx < 0 and direction < 0 and self._search_ctrl._current_page > 1 and not self._search_ctrl._infinite_scroll:
+                self._search_ctrl._search.nav_page_turn = "last"
+                self._search_ctrl.prev_page()
 
     def _on_video_end_next(self) -> None:
         """Auto-advance from end of video in 'Next' mode.
@@ -1972,7 +1473,7 @@ class BooruApp(QMainWindow):
         self._db.add_blacklisted_tag(tag)
         self._db.set_setting("blacklist_enabled", "1")
         self._status.showMessage(f"Blacklisted: {tag}")
-        self._remove_blacklisted_from_grid(tag=tag)
+        self._search_ctrl.remove_blacklisted_from_grid(tag=tag)
 
     def _blacklist_post_from_popout(self) -> None:
         post, idx = self._get_preview_post()
@@ -1986,7 +1487,7 @@ class BooruApp(QMainWindow):
                 return
             self._db.add_blacklisted_post(post.file_url)
             self._status.showMessage(f"Post #{post.id} blacklisted")
-            self._remove_blacklisted_from_grid(post_url=post.file_url)
+            self._search_ctrl.remove_blacklisted_from_grid(post_url=post.file_url)
 
     def _open_fullscreen_preview(self) -> None:
         path = self._preview._current_path
@@ -2305,56 +1806,12 @@ class BooruApp(QMainWindow):
                     if self._fullscreen_window and self._fullscreen_window.isVisible():
                         self._fullscreen_window.stop_media()
             self._status.showMessage(f"Blacklisted: {tag}")
-            self._remove_blacklisted_from_grid(tag=tag)
+            self._search_ctrl.remove_blacklisted_from_grid(tag=tag)
         elif action == bl_post_action:
             self._db.add_blacklisted_post(post.file_url)
-            self._remove_blacklisted_from_grid(post_url=post.file_url)
+            self._search_ctrl.remove_blacklisted_from_grid(post_url=post.file_url)
             self._status.showMessage(f"Post #{post.id} blacklisted")
-            self._do_search()
-
-    def _remove_blacklisted_from_grid(self, tag: str = None, post_url: str = None) -> None:
-        """Remove matching posts from the grid in-place without re-searching."""
-        to_remove = []
-        for i, post in enumerate(self._posts):
-            if tag and tag in post.tag_list:
-                to_remove.append(i)
-            elif post_url and post.file_url == post_url:
-                to_remove.append(i)
-
-        if not to_remove:
-            return
-
-        # Check if previewed post is being removed
-        from ..core.cache import cached_path_for
-        for i in to_remove:
-            cp = str(cached_path_for(self._posts[i].file_url))
-            if cp == self._preview._current_path:
-                self._preview.clear()
-                if self._fullscreen_window and self._fullscreen_window.isVisible():
-                    self._fullscreen_window.stop_media()
-                break
-
-        # Remove from posts list (reverse order to keep indices valid)
-        for i in reversed(to_remove):
-            self._posts.pop(i)
-
-        # Rebuild grid with remaining posts
-        thumbs = self._grid.set_posts(len(self._posts))
-        site_id = self._site_combo.currentData()
-        _saved_ids = self._db.get_saved_post_ids()
-
-        for i, (post, thumb) in enumerate(zip(self._posts, thumbs)):
-            if site_id and self._db.is_bookmarked(site_id, post.id):
-                thumb.set_bookmarked(True)
-            thumb.set_saved_locally(post.id in _saved_ids)
-            from ..core.cache import cached_path_for as cpf
-            cached = cpf(post.file_url)
-            if cached.exists():
-                thumb._cached_path = str(cached)
-            if post.preview_url:
-                self._fetch_thumbnail(i, post.preview_url)
-
-        self._status.showMessage(f"{len(self._posts)} results — {len(to_remove)} removed")
+            self._search_ctrl.do_search()
 
     @staticmethod
     def _is_child_of_menu(action, menu) -> bool:
@@ -2826,8 +2283,8 @@ class BooruApp(QMainWindow):
         self._score_spin.setValue(self._db.get_setting_int("default_score"))
         self._bookmarks_view.refresh()
         # Apply infinite scroll toggle live
-        self._infinite_scroll = self._db.get_setting_bool("infinite_scroll")
-        self._bottom_nav.setVisible(not self._infinite_scroll)
+        self._search_ctrl._infinite_scroll = self._db.get_setting_bool("infinite_scroll")
+        self._bottom_nav.setVisible(not self._search_ctrl._infinite_scroll)
         # Apply library dir
         lib_dir = self._db.get_setting("library_dir")
         if lib_dir:
