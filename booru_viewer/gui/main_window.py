@@ -149,10 +149,50 @@ class BooruApp(QMainWindow):
         s.batch_done.connect(self._on_batch_done, Q)
         s.download_progress.connect(self._on_download_progress, Q)
         s.prefetch_progress.connect(self._on_prefetch_progress, Q)
+        s.categories_updated.connect(self._on_categories_updated, Q)
 
     def _on_prefetch_progress(self, index: int, progress: float) -> None:
         if 0 <= index < len(self._grid._thumbs):
             self._grid._thumbs[index].set_prefetch_progress(progress)
+
+    def _ensure_post_categories_async(self, post) -> None:
+        """Schedule an async ensure_categories if the post needs it.
+
+        No-op if the post already has categories, or if the active
+        client doesn't have a CategoryFetcher attached.
+        """
+        if post.tag_categories:
+            return
+        client = self._make_client()
+        if client is None or client.category_fetcher is None:
+            return
+        fetcher = client.category_fetcher
+        signals = self._signals
+
+        async def _do():
+            try:
+                await fetcher.ensure_categories(post)
+                if post.tag_categories:
+                    signals.categories_updated.emit(post)
+            except Exception as e:
+                log.debug(f"ensure_categories failed: {e}")
+
+        asyncio.run_coroutine_threadsafe(_do(), self._async_loop)
+
+    def _on_categories_updated(self, post) -> None:
+        """Background tag-category fill completed for a post.
+
+        Re-render the info panel and preview pane if either is
+        currently showing this post. The post object was mutated in
+        place by the CategoryFetcher, so we just call the panel's
+        set_post / set_post_tags again to pick up the new dict.
+        """
+        if not post or not post.tag_categories:
+            return
+        idx = self._grid.selected_index
+        if 0 <= idx < len(self._posts) and self._posts[idx].id == post.id:
+            self._info_panel.set_post(post)
+            self._preview.set_post_tags(post.tag_categories, post.tag_list)
 
     def _clear_loading(self) -> None:
         self._loading = False
@@ -516,7 +556,10 @@ class BooruApp(QMainWindow):
         if not self._current_site:
             return None
         s = self._current_site
-        return client_for_type(s.api_type, s.url, s.api_key, s.api_user)
+        return client_for_type(
+            s.api_type, s.url, s.api_key, s.api_user,
+            db=self._db, site_id=s.id,
+        )
 
     def _on_site_changed(self, index: int) -> None:
         if index < 0:
@@ -1129,6 +1172,12 @@ class BooruApp(QMainWindow):
             self._preview._current_post = post
             self._preview._current_site_id = self._site_combo.currentData()
             self._preview.set_post_tags(post.tag_categories, post.tag_list)
+            # Kick off async category fill if the post has none yet.
+            # The background prefetch from search() may not have
+            # reached this post; ensure_categories is the safety net.
+            # When it completes, the categories_updated signal fires
+            # and the slot re-renders both panels.
+            self._ensure_post_categories_async(post)
             site_id = self._preview._current_site_id
             self._preview.update_bookmark_state(
                 bool(site_id and self._db.is_bookmarked(site_id, post.id))
