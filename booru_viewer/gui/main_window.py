@@ -9,8 +9,8 @@ import sys
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, Signal, QObject, QUrl, Property
-from PySide6.QtGui import QPixmap, QAction, QKeySequence, QDesktopServices, QShortcut, QColor
+from PySide6.QtCore import Qt, QTimer, Signal, QUrl
+from PySide6.QtGui import QPixmap, QAction, QKeySequence, QDesktopServices, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -23,22 +23,17 @@ from PySide6.QtWidgets import (
     QPushButton,
     QStatusBar,
     QSplitter,
-    QMessageBox,
     QTextEdit,
-    QMenu,
-    QFileDialog,
     QSpinBox,
-    QScrollArea,
     QProgressBar,
 )
 
-from dataclasses import dataclass, field
+from dataclasses import field
 
 from ..core.db import Database, Site
 from ..core.api.base import BooruClient, Post
 from ..core.api.detect import client_for_type
-from ..core.cache import download_image, download_thumbnail, cache_size_bytes, evict_oldest, evict_oldest_thumbnails
-from ..core.config import MEDIA_EXTENSIONS
+from ..core.cache import download_image
 
 from .grid import ThumbnailGrid
 from .preview_pane import ImagePreview
@@ -48,13 +43,6 @@ from .bookmarks import BookmarksView
 from .library import LibraryView
 from .settings import SettingsDialog
 
-# Imports added by the refactor: classes that used to live in app.py but
-# now live in their canonical sibling modules. Originally these resolved
-# through the app.py module namespace; main_window.py imports them
-# explicitly so the same bare-name lookups inside BooruApp methods
-# (`SearchState(...)`, `LogHandler(...)`, etc.) keep resolving the same
-# class objects.
-from .search_state import SearchState
 from .log_handler import LogHandler
 from .async_signals import AsyncSignals
 from .info_panel import InfoPanel
