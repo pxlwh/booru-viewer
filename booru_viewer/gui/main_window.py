@@ -120,6 +120,11 @@ class BooruApp(QMainWindow):
         self._setup_ui()
         self._setup_menu()
         self._load_sites()
+        # One-shot orphan cleanup — must run after DB + library dir are
+        # configured, before the library tab is first populated.
+        orphans = self._db.reconcile_library_meta()
+        if orphans:
+            log.info("Reconciled %d orphan library_meta rows", orphans)
         # Debounced save for the main window state — fires from resizeEvent
         # (and from the splitter timer's flush on close). Uses the same
         # 300ms debounce pattern as the splitter saver.

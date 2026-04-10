@@ -328,6 +328,9 @@ class Database:
 
     def delete_site(self, site_id: int) -> None:
         with self._write():
+            self.conn.execute("DELETE FROM tag_types WHERE site_id = ?", (site_id,))
+            self.conn.execute("DELETE FROM search_history WHERE site_id = ?", (site_id,))
+            self.conn.execute("DELETE FROM saved_searches WHERE site_id = ?", (site_id,))
             self.conn.execute("DELETE FROM favorites WHERE site_id = ?", (site_id,))
             self.conn.execute("DELETE FROM sites WHERE id = ?", (site_id,))
 
