@@ -151,17 +151,22 @@ class CategoryFetcher:
     def try_compose_from_cache(self, post: "Post") -> bool:
         """Build ``post.tag_categories`` from cached labels.
 
-        Populates ``post.tag_categories`` with whatever tags ARE
-        cached, even if some are missing.  Returns True when at least
-        one tag was categorized (meaning the post is usable — the
-        info panel can render categories, templates can resolve
-        ``%artist%`` / ``%character%`` etc.).  Returns False only
-        when the cache has literally nothing for any of the post's
-        tags, which means a fetch is needed.
+        ALWAYS populates ``post.tag_categories`` with whatever tags
+        ARE cached, even if some are missing — so the info panel can
+        render partial categories immediately while a fetch is
+        in-flight.
 
-        Tags not in the cache are simply absent from the category
-        dict.  They stay in ``post.tags`` (the flat string) and can
-        be picked up by a later per-post fetch if needed.
+        Returns True only when **every** unique tag in the post has
+        a cached label (100% coverage = no fetch needed). Returns
+        False when any tags are missing, signaling the caller that a
+        fetch should follow to fill the gaps.
+
+        This distinction is critical for ``ensure_categories``:
+        partial compose populates the post for display, but the
+        dispatcher continues to the fetch path because False was
+        returned. Without the 100%-or-False rule, a single cached
+        tag would make ``ensure_categories`` skip the fetch and
+        leave the post at 1/N coverage forever.
         """
         tags = post.tag_list
         if not tags:
@@ -176,7 +181,7 @@ class CategoryFetcher:
                 cats.setdefault(label, []).append(tag)
         if cats:
             post.tag_categories = _canonical_order(cats)
-        return bool(cats)
+        return len(cached) >= len(set(tags))
 
     # ----- batch tag API fast path -----
 
