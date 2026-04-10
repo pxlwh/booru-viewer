@@ -183,7 +183,7 @@ BOORU_VIEWER_NO_HYPR_RULES=1 booru-viewer
 - httpx
 - Pillow
 - python-mpv
-- mpv (system package on Linux, bundled DLL on Windows)
+- mpv
 
 ## Keybinds
 
