@@ -332,13 +332,34 @@ class CategoryFetcher:
             self._inflight.pop(post.id, None)
 
     async def _do_ensure(self, post: "Post") -> None:
-        """Inner dispatch for ensure_categories."""
-        # Batch API path (for single-post ensure, e.g. click or save)
-        if self._batch_api_works is True and self._batch_api_available():
-            await self.fetch_via_tag_api([post])
-            if post.tag_categories:
-                return
-        # HTML fallback
+        """Inner dispatch for ensure_categories.
+
+        Tries the batch API when it's known to work (True) OR not yet
+        probed (None). The result doubles as an inline probe: if the
+        batch produced categories, it works (save True); if it
+        returned nothing useful, it's broken (save False). Falls
+        through to HTML scrape as the universal fallback.
+        """
+        if self._batch_api_works is not False and self._batch_api_available():
+            try:
+                await self.fetch_via_tag_api([post])
+            except Exception as e:
+                log.debug("Batch API ensure failed (transient): %s", e)
+                # Leave _batch_api_works at None → retry next call
+            else:
+                if post.tag_categories:
+                    if self._batch_api_works is None:
+                        self._batch_api_works = True
+                        self._save_probe_result(True)
+                    return
+                # Batch returned nothing → broken API (Rule34) or
+                # the specific post has only unknown tags (very rare).
+                if self._batch_api_works is None:
+                    self._batch_api_works = False
+                    self._save_probe_result(False)
+        # HTML scrape fallback (works on Rule34/Safebooru.org/Moebooru,
+        # returns empty on Gelbooru proper which is fine because the
+        # batch path above covers Gelbooru)
         await self.fetch_post(post)
 
     # ----- dispatch: prefetch (batch, fire-and-forget) -----
