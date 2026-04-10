@@ -7,8 +7,6 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtGui import QPixmap
-
 from ..core.cache import download_image, cache_size_bytes, evict_oldest, evict_oldest_thumbnails
 
 if TYPE_CHECKING:
@@ -265,6 +263,7 @@ class MediaController:
         if _is_video(path):
             return 0, 0
         try:
+            from PySide6.QtGui import QPixmap
             pix = QPixmap(path)
             if not pix.isNull():
                 return pix.width(), pix.height()

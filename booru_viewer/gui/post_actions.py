@@ -6,8 +6,6 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtWidgets import QMessageBox
-
 from ..core.cache import download_image
 
 if TYPE_CHECKING:
@@ -163,6 +161,7 @@ class PostActionsController:
         self._app._popout_ctrl.update_state()
 
     def blacklist_tag_from_popout(self, tag: str) -> None:
+        from PySide6.QtWidgets import QMessageBox
         reply = QMessageBox.question(
             self._app, "Blacklist Tag",
             f"Blacklist tag \"{tag}\"?\nPosts with this tag will be hidden.",
@@ -178,6 +177,7 @@ class PostActionsController:
     def blacklist_post_from_popout(self) -> None:
         post, idx = self.get_preview_post()
         if post:
+            from PySide6.QtWidgets import QMessageBox
             reply = QMessageBox.question(
                 self._app, "Blacklist Post",
                 f"Blacklist post #{post.id}?\nThis post will be hidden from results.",

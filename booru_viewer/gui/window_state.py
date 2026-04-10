@@ -8,8 +8,6 @@ import os
 import subprocess
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QTimer
-
 if TYPE_CHECKING:
     from .main_window import BooruApp
 
@@ -252,6 +250,7 @@ class WindowStateController:
             return
         # Slight delay so the window is registered before we try to find
         # its address. The popout uses the same pattern.
+        from PySide6.QtCore import QTimer
         QTimer.singleShot(
             50, lambda: self.hyprctl_apply_main_state(x, y, w, h, was_floating)
         )

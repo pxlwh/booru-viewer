@@ -6,10 +6,6 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QTimer
-from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QApplication
-
 from .search_state import SearchState
 
 if TYPE_CHECKING:
@@ -293,6 +289,7 @@ class SearchController:
         self._app._next_page_btn.setVisible(not at_end)
         thumbs = self._app._grid.set_posts(len(posts))
         self._app._grid.scroll_to_top()
+        from PySide6.QtCore import QTimer
         QTimer.singleShot(100, self.clear_loading)
 
         from ..core.config import saved_dir
@@ -410,6 +407,7 @@ class SearchController:
     def on_scroll_range_changed(self, _min: int, max_val: int) -> None:
         """Scrollbar range changed (resize/splitter) -- check if viewport needs filling."""
         if max_val == 0 and self._infinite_scroll and self._app._posts:
+            from PySide6.QtCore import QTimer
             QTimer.singleShot(100, self.check_viewport_fill)
 
     def check_viewport_fill(self) -> None:
@@ -417,6 +415,7 @@ class SearchController:
         if not self._infinite_scroll or self._loading or self._search.infinite_exhausted:
             return
         self._app._grid.widget().updateGeometry()
+        from PySide6.QtWidgets import QApplication
         QApplication.processEvents()
         sb = self._app._grid.verticalScrollBar()
         if sb.maximum() == 0 and self._app._posts:
@@ -434,6 +433,7 @@ class SearchController:
                 ss.infinite_exhausted = True
                 self._app._status.showMessage(f"{len(self._app._posts)} results (end)")
             else:
+                from PySide6.QtCore import QTimer
                 QTimer.singleShot(100, self.check_viewport_fill)
             return
         if ss.infinite_last_page > self._current_page:
@@ -501,6 +501,7 @@ class SearchController:
         self._app._run_async(_download)
 
     def on_thumb_done(self, index: int, path: str) -> None:
+        from PySide6.QtGui import QPixmap
         thumbs = self._app._grid._thumbs
         if 0 <= index < len(thumbs):
             pix = QPixmap(path)
