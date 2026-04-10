@@ -97,6 +97,7 @@ class PopoutController:
         self._fullscreen_window.set_folders_callback(library_folders)
         self._fullscreen_window.save_to_folder.connect(self._app._post_actions.save_from_preview)
         self._fullscreen_window.unsave_requested.connect(self._app._post_actions.unsave_from_preview)
+        self._fullscreen_window.toggle_save_requested.connect(self._app._post_actions.toggle_save_from_preview)
         if show_actions:
             self._fullscreen_window.bookmark_requested.connect(self._app._post_actions.bookmark_from_preview)
             self._fullscreen_window.set_bookmark_folders_callback(self._app._db.get_folders)

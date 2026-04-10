@@ -159,6 +159,16 @@ class PostActionsController:
             target = folder if folder else None
             self.save_to_library(post, target)
 
+    def toggle_save_from_preview(self) -> None:
+        """Toggle library save: unsave if already saved, save to Unfiled otherwise."""
+        post, _ = self.get_preview_post()
+        if not post:
+            return
+        if self.is_post_saved(post.id):
+            self.unsave_from_preview()
+        else:
+            self.save_from_preview("")
+
     def unsave_from_preview(self) -> None:
         post, idx = self.get_preview_post()
         if not post:

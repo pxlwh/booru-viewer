@@ -33,6 +33,8 @@
 | `,` / `.` | Seek 3s (video) |
 | `Space` | Play / pause (video) |
 | Scroll wheel | Volume up / down (video) |
+| `B` / `F` | Toggle bookmark on selected post |
+| `S` | Toggle save to library (Unfiled) |
 | `F11` | Toggle fullscreen / windowed |
 | `Ctrl+H` | Hide / show UI |
 | `Ctrl+P` | Privacy screen |

@@ -113,6 +113,7 @@ class FullscreenPreview(QMainWindow):
     # Unfiled (root of saved_dir).
     save_to_folder = Signal(str)
     unsave_requested = Signal()
+    toggle_save_requested = Signal()
     blacklist_tag_requested = Signal(str)  # tag name
     blacklist_post_requested = Signal()
     open_in_default = Signal()
@@ -1365,6 +1366,12 @@ class FullscreenPreview(QMainWindow):
                 return True
             elif key in (Qt.Key.Key_Down, Qt.Key.Key_J):
                 self._dispatch_and_apply(NavigateRequested(direction=self._grid_cols))
+                return True
+            elif key in (Qt.Key.Key_B, Qt.Key.Key_F):
+                self.bookmark_requested.emit()
+                return True
+            elif key == Qt.Key.Key_S:
+                self.toggle_save_requested.emit()
                 return True
             elif key == Qt.Key.Key_F11:
                 self._dispatch_and_apply(FullscreenToggled())
