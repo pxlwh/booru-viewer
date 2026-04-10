@@ -145,6 +145,7 @@ class E621Client(BooruClient):
             width=self._get_nested(item, "file", "width") or 0,
             height=self._get_nested(item, "file", "height") or 0,
             created_at=_parse_date(item.get("created_at")),
+            tag_categories=self._extract_tag_categories(item),
         )
 
     async def autocomplete(self, query: str, limit: int = 10) -> list[str]:
