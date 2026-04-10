@@ -118,8 +118,22 @@ def client_for_type(
     base_url: str,
     api_key: str | None = None,
     api_user: str | None = None,
+    db=None,
+    site_id: int | None = None,
 ) -> BooruClient:
-    """Return the appropriate client class for an API type string."""
+    """Return the appropriate client class for an API type string.
+
+    When ``db`` and ``site_id`` are passed, clients that need
+    post-hoc tag categorization (Gelbooru-shape, Moebooru) get a
+    ``CategoryFetcher`` attached. The fetcher handles the per-tag
+    cache, the batch tag API fast path (for Gelbooru proper), and
+    the per-post HTML scrape fallback. Danbooru and e621 categorize
+    inline and don't get a fetcher.
+
+    Leave ``db``/``site_id`` as None for clients outside the main
+    app (Test Connection dialog, scripts) — category population
+    becomes a no-op.
+    """
     clients = {
         "danbooru": DanbooruClient,
         "gelbooru": GelbooruClient,
@@ -129,4 +143,8 @@ def client_for_type(
     cls = clients.get(api_type)
     if cls is None:
         raise ValueError(f"Unknown API type: {api_type}")
-    return cls(base_url, api_key=api_key, api_user=api_user)
+    client = cls(base_url, api_key=api_key, api_user=api_user)
+    if db is not None and site_id is not None and api_type in ("gelbooru", "moebooru"):
+        from .category_fetcher import CategoryFetcher
+        client.category_fetcher = CategoryFetcher(client, db, site_id)
+    return client
