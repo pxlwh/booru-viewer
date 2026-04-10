@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 from ..core.api.base import Post
 
 THUMB_SIZE = 180
-THUMB_SPACING = 8
+THUMB_SPACING = 2
 BORDER_WIDTH = 2
 
 
