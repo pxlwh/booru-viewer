@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtCore import Signal
 from PySide6.QtOpenGLWidgets import QOpenGLWidget as _QOpenGLWidget
 from PySide6.QtWidgets import QWidget, QVBoxLayout
 
 import mpv as mpvlib
+
+log = logging.getLogger(__name__)
 
 
 class _MpvGLWidget(QWidget):
@@ -136,6 +140,7 @@ class _MpvGLWidget(QWidget):
         but mpv needs a render context before loadfile().
         """
         if not self._gl_inited:
+            log.debug("GL render context init (first-time for widget %s)", id(self))
             self._gl.makeCurrent()
             self._init_gl()
 
