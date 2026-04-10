@@ -38,6 +38,8 @@ Tag categories (Artist, Character, Copyright, General, Meta, Species) now work a
 - HTML parser two-pass rewrite: Pass 1 finds tag-type elements by class, Pass 2 extracts tag names from `tags=NAME` URL parameters in search links. Works on Rule34, Safebooru.org, and Moebooru.
 - `save_post_file` ensures categories before template render so `%artist%` / `%character%` tokens resolve on Gelbooru-style sites.
 - On-demand fetch model for Rule34 / Safebooru.org / Moebooru: ~200ms HTML scrape on first click, instant from cache on re-click.
+- Tag cache auto-prunes at 50k rows to prevent unbounded DB growth over months of browsing.
+- Canonical category display order: Artist > Character > Copyright > Species > General > Meta > Lore (matches Danbooru/e621 inline order across all booru types).
 
 ### Improved: popout video streaming
 
@@ -53,10 +55,21 @@ Click-to-first-frame latency on uncached video posts with the popout open is rou
 
 - **Popout close preserves video position.** `closeEvent` now snapshots `position_ms` before dispatching `CloseRequested` (whose `StopMedia` effect destroys mpv's `time_pos`). The embedded preview resumes at the correct position instead of restarting from 0.
 - **Library popout aspect lock for images.** Library items' Post objects were constructed without width/height, so the popout got 0/0 and `_fit_to_content` returned early without setting `keep_aspect_ratio`. Now reads actual pixel dimensions via `QPixmap` before constructing the Post.
+- **Library tag search for templated filenames.** The tag search filter used `f.stem.isdigit()` to extract post_id — templated filenames were invisible to search. Now resolves post_id via `get_library_post_id_by_filename` with digit-stem fallback.
+- **Library thumbnail lookup for templated filenames.** Thumbnails were saved by post_id but looked up by file stem. Templated files showed wrong or missing thumbnails. Now resolves post_id before thumbnail lookup.
+- **Saved-dot indicator in primary search handler.** `_on_search_done` still used the old filesystem walk with `stem.isdigit()` — last surviving digit-stem callsite. Replaced with `get_saved_post_ids()` DB query.
+- **Library delete meta cleanup.** Library tab single-delete and multi-delete called `.unlink()` directly, bypassing `delete_from_library`. Orphan `library_meta` rows leaked. Now resolves post_id and calls `remove_library_meta` after unlinking.
+- **Partial cache compose.** `try_compose_from_cache` now populates `post.tag_categories` with whatever IS cached (for immediate partial display) but returns True only at 100% coverage. Prevents single cached tags from blocking the fetch path.
+
+### UI
+
+- Swapped Score and Media Type filter positions in the top toolbar. Dropdowns (Rating, Media Type) are now adjacent; Score sits between Media Type and Page.
+- Tightened thumbnail spacing in the grid from 8px to 2px.
+- Thumbnail size capped at 200px in Settings.
 
 ### Other
 
-- README updated, unused Windows screenshots dropped from the repo.
-- Tightened thumbnail spacing in the grid from 8px to 2px.
+- README updated for v0.2.4, unused Windows screenshots dropped from the repo.
+- New `docs/SAVE_AND_CATEGORIES.md` architecture reference with diagrams covering the unified save flow, CategoryFetcher dispatch, cache table, and per-booru resolution matrix.
 
 ---
