@@ -18,61 +18,17 @@ Supports custom styling via `custom.qss` — see [Theming](#theming).
 
 booru-viewer has three tabs that map to three commitment levels: **Browse** for live search against booru APIs, **Bookmarks** for posts you've starred for later, **Library** for files you've actually saved to disk.
 
-### Browsing
-- Supports **Danbooru, e621, Gelbooru, and Moebooru**
-- Auto-detect site API type — just paste the URL
-- Tag search with autocomplete, history dropdown, and saved searches
-- Rating and score filtering (server-side `score:>=N`)
-- **Media type filter** — dropdown: All / Animated / Video / GIF / Audio
-- Blacklisted tags and posts (client-side filtering with backfill)
-- Thumbnail grid with keyboard navigation, multi-select (Ctrl/Shift+Click, Ctrl+A), bulk context menus, and drag thumbnails out as files
-- **Infinite scroll** — optional, auto-loads more posts at bottom
-- **Start from page** — jump to any page number on search
-- **Page cache** — prev/next loads from memory, no duplicates
-- **Copy File to Clipboard** — Ctrl+C, works for images and videos
+**Browsing** — Danbooru, e621, Gelbooru, and Moebooru. Tag search with autocomplete, rating/score/media-type filters, blacklist with backfill, infinite scroll, page cache, keyboard grid navigation, multi-select with bulk actions, drag thumbnails out as files.
 
-### Preview
-- Image viewer with zoom (scroll wheel), pan (drag), and reset (middle click)
-- GIF animation, Pixiv ugoira auto-conversion (zip to animated GIF)
-- Animated PNG/WebP auto-conversion to GIF
-- Video playback via mpv (MP4, WebM, MKV) with play/pause, seek, volume, mute, and seamless looping. Uncached videos stream directly from the CDN with single-connection cache population via mpv's stream-record.
-- Info panel with post details, date, clickable tags color-coded by category (Artist, Character, Copyright, General, Meta, Species), and filetype
-- **Preview toolbar** — Bookmark, Save, BL Tag, BL Post, and Popout buttons above the preview panel
+**Preview** — Image zoom/pan, GIF/APNG/WebP animation, video via mpv (stream from CDN, seamless loop, seek, volume), ugoira auto-conversion, color-coded tag categories in info panel.
 
-### Popout Viewer
-- Right-click preview → "Popout" or click the Popout button in the preview toolbar
-- Arrow keys / `h`/`j`/`k`/`l` navigate posts (including during video playback)
-- `,` / `.` seek 3 seconds in videos, `Space` toggles play/pause
-- Floating overlay UI — toolbar and video controls auto-hide after 2 seconds, reappear on mouse move
-- `F11` toggles fullscreen/windowed, `Ctrl+H` hides all UI, `Ctrl+P` privacy screen
-- Window auto-sizes to content aspect ratio; state persisted across sessions
-- Hyprland: `keep_aspect_ratio` prop locks window to content proportions
-- Bidirectional sync — clicking posts in the main grid updates the popout
-- Video position and player state synced between preview and popout
+**Popout** — Dedicated viewer window. Arrow/vim keys navigate posts during video. Auto-hiding overlay UI. F11 fullscreen, Ctrl+H hide UI, Ctrl+P privacy screen. Syncs bidirectionally with main grid.
 
-### Bookmarks
-- **Bookmark** posts you might want later — lightweight pointers in the database, like clicking the star in your browser
-- Group bookmarks into folders, separate from Library's folders
-- Search bookmarks by tag
-- Bulk save, unbookmark, or remove from the multi-select context menu
-- Import/export bookmarks as JSON
-- Unbookmark from grid, preview, or popout
+**Bookmarks** — Star posts for later. Folder organization, tag search, bulk save/remove, JSON import/export.
 
-### Library
-- **Save** posts you want to keep, real files on disk in `saved/`, browsable in any file manager
-- **Filename templates** — customize saved filenames with `%id%`, `%artist%`, `%character%`, `%copyright%`, `%md5%`, `%rating%`, `%score%` tokens. Default is post ID. Set in Settings > Paths.
-- **Tag search across saved metadata** — type to filter by indexed tags, no filename conventions required
-- On-disk folder organization with configurable library directory and folder sidebar — save unsorted or to a named subfolder
-- Sort by date, name, or size
-- Video thumbnail generation (ffmpeg if available, placeholder fallback)
-- Unsave from grid, preview, and popout (only shown when post is saved)
-- Unreachable directory detection
+**Library** — Save to disk with metadata indexing. Customizable filename templates (`%id%`, `%artist%`, `%md5%`, etc). Folder organization, tag search, sort by date/name/size.
 
-### Search
-- Inline history dropdown inside the search bar
-- Saved searches with management dialog
-- Click empty search bar to open history
-- Session cache mode clears history on exit (keeps saved searches)
+**Search** — Inline history dropdown, saved searches, session cache mode.
 
 ## Install
 
@@ -186,50 +142,7 @@ BOORU_VIEWER_NO_HYPR_RULES=1 booru-viewer
 
 ## Keybinds
 
-### Grid
-
-| Key | Action |
-|-----|--------|
-| Arrow keys / `h`/`j`/`k`/`l` | Navigate grid |
-| `Ctrl+A` | Select all |
-| `Ctrl+Click` / `Shift+Click` | Multi-select |
-| `Home` / `End` | Jump to first / last |
-| Scroll tilt left / right | Previous / next thumbnail (one cell) |
-| `Ctrl+C` | Copy file to clipboard |
-| Right click | Context menu |
-
-### Preview
-
-| Key | Action |
-|-----|--------|
-| Scroll wheel | Zoom (image) / volume (video) |
-| Scroll tilt left / right | Previous / next post |
-| Middle click / `0` | Reset view |
-| Arrow keys / `h`/`j`/`k`/`l` | Navigate posts |
-| `,` / `.` | Seek 3s back / forward (video) |
-| `Space` | Play / pause (video, hover to activate) |
-| Right click | Context menu (bookmark, save, popout) |
-
-### Popout
-
-| Key | Action |
-|-----|--------|
-| Arrow keys / `h`/`j`/`k`/`l` | Navigate posts |
-| Scroll tilt left / right | Previous / next post |
-| `,` / `.` | Seek 3s (video) |
-| `Space` | Play / pause (video) |
-| Scroll wheel | Volume up / down (video) |
-| `F11` | Toggle fullscreen / windowed |
-| `Ctrl+H` | Hide / show UI |
-| `Ctrl+P` | Privacy screen |
-| `Escape` / `Q` | Close popout |
-
-### Global
-
-| Key | Action |
-|-----|--------|
-| `Ctrl+P` | Privacy screen |
-| `F11` | Toggle fullscreen |
+See [KEYBINDS.md](KEYBINDS.md) for the full list.
 
 ## Adding Sites
 
@@ -255,15 +168,7 @@ The app uses your OS native theme by default. To customize, copy a `.qss` file f
 
 A template is also available in Settings > Theme > Create from Template.
 
-### Included Themes
-
-Each theme ships in two variants: `*-rounded.qss` (4px corner radius) and `*-square.qss` (no corner radius except radio buttons). Same colors, different geometry.
-
-<picture><img src="screenshots/themes/nord.png" alt="Nord" width="400"></picture> <picture><img src="screenshots/themes/catppuccin-mocha.png" alt="Catppuccin Mocha" width="400"></picture>
-
-<picture><img src="screenshots/themes/gruvbox.png" alt="Gruvbox" width="400"></picture> <picture><img src="screenshots/themes/solarized-dark.png" alt="Solarized Dark" width="400"></picture>
-
-<picture><img src="screenshots/themes/tokyo-night.png" alt="Tokyo Night" width="400"></picture> <picture><img src="screenshots/themes/everforest.png" alt="Everforest" width="400"></picture>
+Six themes included, each in rounded and square variants. See [`themes/`](themes/) for screenshots and the full QSS reference.
 
 ## Settings
 
@@ -285,11 +190,7 @@ Each theme ships in two variants: `*-rounded.qss` (4px corner radius) and `*-squ
 
 To back up everything: copy `saved/` for the files themselves and `booru.db` for bookmarks, folders, and tag metadata. The two are independent — restoring one without the other still works. The `saved/` folder is browsable on its own in any file manager, and the database can be re-populated from the booru sites for any post IDs you still have on disk.
 
-## Privacy
-
-booru-viewer makes **no connections** except to the booru sites you configure. There is no telemetry, analytics, update checking, or phoning home. All data stays local on your machine.
-
-Every outgoing request is logged in Settings > Network so you can verify this yourself — you will only see requests to the booru API endpoints and CDNs you chose to connect to.
+**Privacy:** No telemetry, analytics, or update checks. Only connects to booru sites you configure. Verify in Settings > Network.
 
 ## Support
 
