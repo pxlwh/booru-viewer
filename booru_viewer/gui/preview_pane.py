@@ -310,7 +310,24 @@ class ImagePreview(QWidget):
 
     def _on_context_menu(self, pos) -> None:
         menu = QMenu(self)
-        fav_action = menu.addAction("Bookmark")
+
+        # Bookmark: unbookmark if already bookmarked, folder submenu if not
+        fav_action = None
+        bm_folder_actions = {}
+        bm_new_action = None
+        bm_unfiled = None
+        if self._is_bookmarked:
+            fav_action = menu.addAction("Unbookmark")
+        else:
+            bm_menu = menu.addMenu("Bookmark as")
+            bm_unfiled = bm_menu.addAction("Unfiled")
+            bm_menu.addSeparator()
+            if self._bookmark_folders_callback:
+                for folder in self._bookmark_folders_callback():
+                    a = bm_menu.addAction(folder)
+                    bm_folder_actions[id(a)] = folder
+            bm_menu.addSeparator()
+            bm_new_action = bm_menu.addAction("+ New Folder...")
 
         save_menu = menu.addMenu("Save to Library")
         save_unsorted = save_menu.addAction("Unfiled")
@@ -347,6 +364,14 @@ class ImagePreview(QWidget):
             return
         if action == fav_action:
             self.bookmark_requested.emit()
+        elif action == bm_unfiled:
+            self.bookmark_to_folder.emit("")
+        elif action == bm_new_action:
+            name, ok = QInputDialog.getText(self, "New Bookmark Folder", "Folder name:")
+            if ok and name.strip():
+                self.bookmark_to_folder.emit(name.strip())
+        elif id(action) in bm_folder_actions:
+            self.bookmark_to_folder.emit(bm_folder_actions[id(action)])
         elif action == save_unsorted:
             self.save_to_folder.emit("")
         elif action == save_new:
