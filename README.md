@@ -33,8 +33,8 @@ booru-viewer has three tabs that map to three commitment levels: **Browse** for 
 - Image viewer with zoom (scroll wheel), pan (drag), and reset (middle click)
 - GIF animation, Pixiv ugoira auto-conversion (zip to animated GIF)
 - Animated PNG/WebP auto-conversion to GIF
-- Video playback via mpv (MP4, WebM, MKV) with play/pause, seek, volume, mute, and seamless looping
-- Info panel with post details, date, clickable tags, and filetype
+- Video playback via mpv (MP4, WebM, MKV) with play/pause, seek, volume, mute, and seamless looping. Uncached videos stream directly from the CDN with single-connection cache population via mpv's stream-record.
+- Info panel with post details, date, clickable tags color-coded by category (Artist, Character, Copyright, General, Meta, Species), and filetype
 - **Preview toolbar** — Bookmark, Save, BL Tag, BL Post, and Popout buttons above the preview panel
 
 ### Popout Viewer
@@ -57,7 +57,8 @@ booru-viewer has three tabs that map to three commitment levels: **Browse** for 
 - Unbookmark from grid, preview, or popout
 
 ### Library
-- **Save** posts you want to keep — real files on disk in `saved/`, named by post ID, browsable in any file manager
+- **Save** posts you want to keep — real files on disk in `saved/`, browsable in any file manager
+- **Filename templates** — customize saved filenames with `%id%`, `%artist%`, `%character%`, `%copyright%`, `%md5%`, `%rating%`, `%score%` tokens. Default is post ID. Set in Settings > Paths.
 - One-click promotion from bookmark to library when you decide to commit
 - **Tag search across saved metadata** — type to filter by indexed tags, no filename conventions required
 - On-disk folder organization with configurable library directory and folder sidebar — save unsorted or to a named subfolder
@@ -261,10 +262,10 @@ Each theme ships in two variants: `*-rounded.qss` (4px corner radius) and `*-squ
 
 ## Settings
 
-- **General** — page size, thumbnail size, default site, default rating/score, prefetch mode (Off / Nearby / Aggressive), infinite scroll, popout monitor, file dialog platform
+- **General** — page size, thumbnail size (100-200px), default site, default rating/score, prefetch mode (Off / Nearby / Aggressive), infinite scroll, popout monitor, file dialog platform
 - **Cache** — max cache size, max thumbnail cache, auto-evict, clear cache on exit (session-only mode)
 - **Blacklist** — tag blacklist with toggle, post URL blacklist
-- **Paths** — data directory, cache, database, configurable library directory
+- **Paths** — data directory, cache, database, configurable library directory, library filename template
 - **Theme** — custom.qss editor, template generator, CSS guide
 - **Network** — connection log showing all hosts contacted this session
 
