@@ -59,6 +59,7 @@ from .log_handler import LogHandler
 from .async_signals import AsyncSignals
 from .info_panel import InfoPanel
 from .window_state import WindowStateController
+from .privacy import PrivacyController
 
 log = logging.getLogger("booru")
 
@@ -130,6 +131,7 @@ class BooruApp(QMainWindow):
         # (and from the splitter timer's flush on close). Uses the same
         # 300ms debounce pattern as the splitter saver.
         self._window_state = WindowStateController(self)
+        self._privacy = PrivacyController(self)
         self._main_window_save_timer = QTimer(self)
         self._main_window_save_timer.setSingleShot(True)
         self._main_window_save_timer.setInterval(300)
@@ -556,7 +558,7 @@ class BooruApp(QMainWindow):
 
         privacy_action = QAction("&Privacy Screen", self)
         privacy_action.setShortcut(QKeySequence("Ctrl+P"))
-        privacy_action.triggered.connect(self._toggle_privacy)
+        privacy_action.triggered.connect(self._privacy.toggle)
         view_menu.addAction(privacy_action)
 
     def _load_sites(self) -> None:
@@ -2053,7 +2055,7 @@ class BooruApp(QMainWindow):
         self._fullscreen_window.open_in_default.connect(self._open_preview_in_default)
         self._fullscreen_window.open_in_browser.connect(self._open_preview_in_browser)
         self._fullscreen_window.closed.connect(self._on_fullscreen_closed)
-        self._fullscreen_window.privacy_requested.connect(self._toggle_privacy)
+        self._fullscreen_window.privacy_requested.connect(self._privacy.toggle)
         # Set post tags for BL Tag menu
         post = self._preview._current_post
         if post:
@@ -2847,54 +2849,9 @@ class BooruApp(QMainWindow):
         else:
             self.showFullScreen()
 
-    # -- Privacy screen --
-
-    def _toggle_privacy(self) -> None:
-        if not hasattr(self, '_privacy_on'):
-            self._privacy_on = False
-            self._privacy_overlay = QWidget(self)
-            self._privacy_overlay.setStyleSheet("background: black;")
-            self._privacy_overlay.hide()
-            # Tracks whether the popout was visible at privacy-on time
-            # so privacy-off only restores it if it was actually up
-            # before. Without the gate, privacy-off would re-show a
-            # popout that the user closed before triggering privacy.
-            self._popout_was_visible = False
-
-        self._privacy_on = not self._privacy_on
-        if self._privacy_on:
-            self._privacy_overlay.setGeometry(self.rect())
-            self._privacy_overlay.raise_()
-            self._privacy_overlay.show()
-            self.setWindowTitle("booru-viewer")
-            # Pause preview video
-            if self._preview._stack.currentIndex() == 1:
-                self._preview._video_player.pause()
-            # Delegate popout hide-and-pause to FullscreenPreview so it
-            # can capture its own geometry for restore.
-            self._popout_was_visible = bool(
-                self._fullscreen_window and self._fullscreen_window.isVisible()
-            )
-            if self._popout_was_visible:
-                self._fullscreen_window.privacy_hide()
-        else:
-            self._privacy_overlay.hide()
-            # Resume embedded preview video — unconditional resume, the
-            # common case (privacy hides → user comes back → video should
-            # be playing again) wins over the manually-paused edge case.
-            if self._preview._stack.currentIndex() == 1:
-                self._preview._video_player.resume()
-            # Restore the popout via its own privacy_show method, which
-            # also re-dispatches the captured geometry to Hyprland (Qt
-            # show() alone doesn't preserve position on Wayland) and
-            # resumes its video.
-            if self._popout_was_visible and self._fullscreen_window:
-                self._fullscreen_window.privacy_show()
-
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        if hasattr(self, '_privacy_overlay') and self._privacy_on:
-            self._privacy_overlay.setGeometry(self.rect())
+        self._privacy.resize_overlay()
         # Capture window state proactively so the saved value is always
         # fresh — closeEvent's hyprctl query can fail if the compositor has
         # already started unmapping. Debounced via the 300ms timer.
@@ -2915,10 +2872,10 @@ class BooruApp(QMainWindow):
         key = event.key()
         # Privacy screen always works
         if key == Qt.Key.Key_P and event.modifiers() == Qt.KeyboardModifier.ControlModifier:
-            self._toggle_privacy()
+            self._privacy.toggle()
             return
         # If privacy is on, only allow toggling it off
-        if hasattr(self, '_privacy_on') and self._privacy_on:
+        if self._privacy.is_active:
             return
         if key == Qt.Key.Key_F and self._posts:
             idx = self._grid.selected_index
