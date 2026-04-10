@@ -102,6 +102,16 @@ class BooruApp(QMainWindow):
         import booru_viewer.core.cache as _cache_mod
         _cache_mod._shared_client = None
 
+        # Controllers must be constructed before _setup_signals and
+        # _setup_ui, which wire signals to controller methods.
+        self._window_state = WindowStateController(self)
+        self._privacy = PrivacyController(self)
+        self._search_ctrl = SearchController(self)
+        self._media_ctrl = MediaController(self)
+        self._popout_ctrl = PopoutController(self)
+        self._post_actions = PostActionsController(self)
+        self._context = ContextMenuHandler(self)
+
         self._setup_signals()
         self._setup_ui()
         self._setup_menu()
@@ -114,13 +124,6 @@ class BooruApp(QMainWindow):
         # Debounced save for the main window state — fires from resizeEvent
         # (and from the splitter timer's flush on close). Uses the same
         # 300ms debounce pattern as the splitter saver.
-        self._window_state = WindowStateController(self)
-        self._privacy = PrivacyController(self)
-        self._search_ctrl = SearchController(self)
-        self._media_ctrl = MediaController(self)
-        self._popout_ctrl = PopoutController(self)
-        self._post_actions = PostActionsController(self)
-        self._context = ContextMenuHandler(self)
         self._main_window_save_timer = QTimer(self)
         self._main_window_save_timer.setSingleShot(True)
         self._main_window_save_timer.setInterval(300)
@@ -651,6 +654,39 @@ class BooruApp(QMainWindow):
                 self._info_panel.set_post(post)
             self._media_ctrl.on_post_activated(index)
 
+
+    def _post_id_from_library_path(self, path: Path) -> int | None:
+        """Resolve a library file path back to its post_id."""
+        pid = self._db.get_library_post_id_by_filename(path.name)
+        if pid is not None:
+            return pid
+        if path.stem.isdigit():
+            return int(path.stem)
+        return None
+
+    def _set_library_info(self, path: str) -> None:
+        """Update info panel with library metadata for the given file."""
+        post_id = self._post_id_from_library_path(Path(path))
+        if post_id is None:
+            return
+        meta = self._db.get_library_meta(post_id)
+        if meta:
+            from ..core.api.base import Post
+            p = Post(
+                id=post_id, file_url=meta.get("file_url", ""),
+                preview_url=None, tags=meta.get("tags", ""),
+                score=meta.get("score", 0), rating=meta.get("rating"),
+                source=meta.get("source"), tag_categories=meta.get("tag_categories", {}),
+            )
+            self._info_panel.set_post(p)
+            info = f"#{p.id}  score:{p.score}  [{p.rating}]  {Path(path).suffix.lstrip('.').upper()}" + (f"  {p.created_at}" if p.created_at else "")
+            self._status.showMessage(info)
+
+    def _on_library_selected(self, path: str) -> None:
+        self._show_library_post(path)
+
+    def _on_library_activated(self, path: str) -> None:
+        self._show_library_post(path)
 
     def _show_library_post(self, path: str) -> None:
         # Read actual image dimensions so the popout can pre-fit and
