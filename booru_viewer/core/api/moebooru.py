@@ -57,7 +57,8 @@ class MoebooruClient(BooruClient):
                 )
             )
         if self.category_fetcher is not None:
-            await self.category_fetcher.prefetch_batch(posts)
+            import asyncio
+            asyncio.create_task(self.category_fetcher.prefetch_batch(posts))
         return posts
 
     async def get_post(self, post_id: int) -> Post | None:

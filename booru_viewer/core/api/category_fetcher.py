@@ -38,15 +38,30 @@ log = logging.getLogger("booru")
 # HTML parser for the universal `class="tag-type-X"` convention
 # ---------------------------------------------------------------------------
 
-# Matches both `class="tag-type-artist"` and combined-class forms like
-# `class="tag-link tag-type-artist"` (Konachan).  Captures the type
-# label and the tag name from the first <a> inside the element.
-_TAG_TYPE_RE = re.compile(
+# Two-pass approach:
+#   1. Find each tag-type element and its full inner content.
+#   2. Within the content, extract the tag name from the `tags=NAME`
+#      URL parameter in the search link.
+#
+# This handles the cross-site variation cleanly:
+#   - Gelbooru proper: only has `?` wiki links (no `tags=` param) →
+#     returns 0 results, which is fine because Gelbooru uses the
+#     batch tag API instead of HTML scraping.
+#   - Rule34 / Safebooru.org: two <a> links per tag — `?` wiki link
+#     + `<a href="...tags=TAGNAME">display name</a>`. We extract from
+#     the URL, not the display text.
+#   - yande.re / Konachan (Moebooru): same two-link pattern, but the
+#     URL is `/post?tags=TAGNAME` instead of `page=post&s=list&tags=`.
+#
+# The `tags=` extraction gives us the canonical underscore form
+# directly from the URL, no display-text normalization needed.
+_TAG_ELEMENT_RE = re.compile(
     r'class="[^"]*tag-type-([a-z]+)[^"]*"[^>]*>'  # class containing tag-type-NAME
-    r'(?:[^<]*<[^>]*>)*?'                           # consume nested tags lazily
-    r'<a[^>]*>([^<]+)</a>',                          # tag name in the link
+    r'(.*?)'                                        # inner content (lazy)
+    r'</(?:li|span|td|div)>',                       # closing tag
     re.DOTALL,
 )
+_TAG_NAME_RE = re.compile(r'tags=([^&"<>\s]+)')
 
 # HTML class name -> Capitalized label (matches danbooru.py / e621.py)
 _LABEL_MAP: dict[str, str] = {
@@ -478,19 +493,33 @@ def _parse_post_html(html: str) -> tuple[dict[str, list[str]], dict[str, str]]:
         ``post.tag_categories``.
       - ``labels_dict`` is ``{tag_name: label}`` ready for
         ``db.set_tag_labels``.
+
+    Uses a two-pass approach: find each ``tag-type-X`` element, then
+    extract the tag name from the ``tags=NAME`` URL parameter inside
+    the element's links. This avoids the `?` wiki-link ambiguity
+    (Gelbooru-forks have a ``?`` link before the actual tag link).
+    Returns empty on Gelbooru proper (whose post page only has ``?``
+    links with no ``tags=`` parameter); that's fine because Gelbooru
+    uses the batch tag API instead.
     """
+    from urllib.parse import unquote
+
     cats: dict[str, list[str]] = {}
     labels: dict[str, str] = {}
-    for m in _TAG_TYPE_RE.finditer(html):
+    for m in _TAG_ELEMENT_RE.finditer(html):
         type_class = m.group(1).lower()
-        raw_name = m.group(2).strip()
-        if not raw_name or raw_name == "?":
-            continue
-        tag_name = raw_name.replace(" ", "_").lower()
+        content = m.group(2)
         label = _LABEL_MAP.get(type_class)
-        if label:
-            cats.setdefault(label, []).append(tag_name)
-            labels[tag_name] = label
+        if not label:
+            continue
+        tag_match = _TAG_NAME_RE.search(content)
+        if not tag_match:
+            continue
+        tag_name = unquote(tag_match.group(1)).strip().lower()
+        if not tag_name:
+            continue
+        cats.setdefault(label, []).append(tag_name)
+        labels[tag_name] = label
     return cats, labels
 
 
