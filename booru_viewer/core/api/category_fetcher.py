@@ -127,24 +127,36 @@ class CategoryFetcher:
         self._sem = asyncio.Semaphore(self._PREFETCH_CONCURRENCY)
         self._inflight: dict[int, asyncio.Task] = {}
 
-        self._batch_api_works: bool | None = None
-        # Probe state for the batch tag API:
+        # Probe state for the batch tag API. Persisted to DB so
+        # the probe runs at most ONCE per site, ever. Rule34's
+        # broken batch API is detected on the first session; every
+        # subsequent session skips the probe and goes straight to
+        # HTML prefetch (saving ~0.6s of wasted probe time).
         #
         #   None  — not yet probed, OR last probe hit a transient
-        #           error (HTTP error, timeout, parse exception).
-        #           Next prefetch_batch will retry the probe.
-        #   True  — probe succeeded (response contained >=1 of the
-        #           requested names). Batch API used for all future
-        #           calls on this instance.
-        #   False — probe got a clean HTTP 200 with zero matching
-        #           names for ANY of the requested tags.  The API
-        #           is structurally broken on this site (Rule34's
-        #           ``names=`` filter returns unrelated tags).
-        #           Per-post HTML used for all future calls.
-        #
-        # Transition to False is permanent for the instance lifetime.
-        # Transition to True is permanent for the instance lifetime.
-        # None -> None on transient error preserves retry ability.
+        #           error. Next prefetch_batch retries the probe.
+        #   True  — probe succeeded (Gelbooru proper). Permanent.
+        #   False — clean 200 + zero matching names (Rule34).
+        #           Permanent. Per-post HTML from now on.
+        self._batch_api_works = self._load_probe_result()
+
+    # ----- probe result persistence -----
+
+    _PROBE_KEY = "__batch_api_probe__"  # sentinel name in tag_types
+
+    def _load_probe_result(self) -> bool | None:
+        """Read the persisted probe result from the DB, or None."""
+        row = self._db.get_tag_labels(self._site_id, [self._PROBE_KEY])
+        val = row.get(self._PROBE_KEY)
+        if val == "true":
+            return True
+        elif val == "false":
+            return False
+        return None
+
+    def _save_probe_result(self, result: bool) -> None:
+        """Persist the probe result so future sessions skip the probe."""
+        self._db.set_tag_labels(self._site_id, {self._PROBE_KEY: "true" if result else "false"})
 
     # ----- cache compose (instant, no HTTP) -----
 
@@ -421,8 +433,10 @@ class CategoryFetcher:
         cached = self._db.get_tag_labels(self._site_id, list(all_tags))
         missing = [t for t in all_tags if t not in cached]
         if not missing:
-            # Everything's cached — can't probe, assume batch works
-            self._batch_api_works = True
+            # Everything's cached — can't probe, skip
+            if self._batch_api_works is None:
+                self._batch_api_works = True
+                self._save_probe_result(True)
             for p in posts:
                 self.try_compose_from_cache(p)
             return True
@@ -477,6 +491,7 @@ class CategoryFetcher:
 
         if got_any:
             self._batch_api_works = True
+            self._save_probe_result(True)
             if matched:
                 self._db.set_tag_labels(self._site_id, matched)
             # Fetch any remaining missing tags via the batch path
@@ -485,6 +500,7 @@ class CategoryFetcher:
         else:
             # Clean 200 but zero matching names → structurally broken
             self._batch_api_works = False
+            self._save_probe_result(False)
             return False
 
 
