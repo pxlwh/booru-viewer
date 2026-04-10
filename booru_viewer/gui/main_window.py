@@ -1545,13 +1545,33 @@ class BooruApp(QMainWindow):
     def _on_library_activated(self, path: str) -> None:
         self._show_library_post(path)
 
+    @staticmethod
+    def _image_dimensions(path: str) -> tuple[int, int]:
+        """Read image width/height from a local file. Returns (0, 0)
+        on failure or for video files (mpv reports those itself)."""
+        from .media.constants import _is_video
+        if _is_video(path):
+            return 0, 0
+        try:
+            pix = QPixmap(path)
+            if not pix.isNull():
+                return pix.width(), pix.height()
+        except Exception:
+            pass
+        return 0, 0
+
     def _show_library_post(self, path: str) -> None:
+        # Read actual image dimensions so the popout can pre-fit and
+        # set keep_aspect_ratio. library_meta doesn't store w/h, so
+        # without this the popout gets 0/0 and skips the aspect lock.
+        img_w, img_h = self._image_dimensions(path)
         self._set_preview_media(path, Path(path).name)
-        self._update_fullscreen(path, Path(path).name)
         self._set_library_info(path)
         # Build a Post from library metadata so toolbar actions work.
         # Templated filenames go through library_meta.filename;
         # legacy digit-stem files use int(stem).
+        # width/height come from the file itself (library_meta doesn't
+        # store them) so the popout can pre-fit and set keep_aspect_ratio.
         post_id = self._post_id_from_library_path(Path(path))
         if post_id is not None:
             from ..core.api.base import Post
@@ -1562,6 +1582,7 @@ class BooruApp(QMainWindow):
                 score=meta.get("score", 0), rating=meta.get("rating"),
                 source=meta.get("source"),
                 tag_categories=meta.get("tag_categories", {}),
+                width=img_w, height=img_h,
             )
             self._preview._current_post = post
             self._preview._current_site_id = self._site_combo.currentData()
@@ -1570,6 +1591,9 @@ class BooruApp(QMainWindow):
         else:
             self._preview._current_post = None
             self._preview.update_save_state(True)
+        # _update_fullscreen reads cp.width/cp.height from _current_post,
+        # so it runs AFTER the Post is constructed with real dimensions.
+        self._update_fullscreen(path, Path(path).name)
 
     def _on_bookmark_selected(self, fav) -> None:
         self._status.showMessage(f"Bookmark #{fav.post_id}")
