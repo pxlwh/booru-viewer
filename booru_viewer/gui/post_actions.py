@@ -39,6 +39,36 @@ class PostActionsController:
     def is_post_saved(self, post_id: int) -> bool:
         return self._app._db.is_post_in_library(post_id)
 
+    def _maybe_unbookmark(self, post) -> None:
+        """Remove the bookmark for *post* if the unbookmark-on-save setting is on.
+
+        Handles DB removal, grid thumbnail dot, preview state, bookmarks
+        tab refresh, and popout sync in one place so every save path
+        (single, bulk, Save As, batch download) can call it.
+        """
+        if not self._app._db.get_setting_bool("unbookmark_on_save"):
+            return
+        site_id = (
+            self._app._preview._current_site_id
+            or self._app._site_combo.currentData()
+        )
+        if not site_id or not self._app._db.is_bookmarked(site_id, post.id):
+            return
+        self._app._db.remove_bookmark(site_id, post.id)
+        # Update grid thumbnail bookmark dot
+        for i, p in enumerate(self._app._posts):
+            if p.id == post.id and i < len(self._app._grid._thumbs):
+                self._app._grid._thumbs[i].set_bookmarked(False)
+                break
+        # Update preview and popout
+        if (self._app._preview._current_post
+                and self._app._preview._current_post.id == post.id):
+            self._app._preview.update_bookmark_state(False)
+        self._app._popout_ctrl.update_state()
+        # Refresh bookmarks tab if visible
+        if self._app._stack.currentIndex() == 1:
+            self._app._bookmarks_view.refresh()
+
     def get_preview_post(self):
         idx = self._app._grid.selected_index
         if 0 <= idx < len(self._app._posts):
@@ -289,6 +319,7 @@ class PostActionsController:
                     await save_post_file(src, post, dest_dir, self._app._db, in_flight, category_fetcher=fetcher)
                     self.copy_library_thumb(post)
                     self._app._signals.bookmark_done.emit(idx, f"Saved {i+1}/{len(posts)} to {where}")
+                    self._maybe_unbookmark(post)
                 except Exception as e:
                     log.warning(f"Bulk save #{post.id} failed: {e}")
             self._app._signals.batch_done.emit(f"Saved {len(posts)} to {where}")
@@ -374,6 +405,7 @@ class PostActionsController:
                     src = Path(await download_image(post.file_url))
                     await save_post_file(src, post, dest_dir, self._app._db, in_flight, category_fetcher=fetcher)
                     self._app._signals.batch_progress.emit(i + 1, len(posts), post.id)
+                    self._maybe_unbookmark(post)
                 except Exception as e:
                     log.warning(f"Batch #{post.id} failed: {e}")
             self._app._signals.batch_done.emit(f"Downloaded {len(posts)} images to {dest_dir}")
@@ -444,6 +476,7 @@ class PostActionsController:
                     self._app._grid.selected_index,
                     f"Saved #{post.id} to {where}",
                 )
+                self._maybe_unbookmark(post)
             except Exception as e:
                 self._app._signals.bookmark_error.emit(str(e))
 
@@ -487,6 +520,7 @@ class PostActionsController:
                     self._app._grid.selected_index,
                     f"Saved to {actual}",
                 )
+                self._maybe_unbookmark(post)
             except Exception as e:
                 self._app._signals.bookmark_error.emit(f"Save failed: {e}")
 
