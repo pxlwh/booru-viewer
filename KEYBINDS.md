@@ -42,5 +42,7 @@
 
 | Key | Action |
 |-----|--------|
+| `B` / `F` | Toggle bookmark on selected post |
+| `S` | Toggle save to library (Unfiled) |
 | `Ctrl+P` | Privacy screen |
 | `F11` | Toggle fullscreen |
