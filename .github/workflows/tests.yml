@@ -9,8 +9,6 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install test deps
-        run: |
-          pip install httpx[http2] Pillow pytest
-          pip install -e . --no-deps
+        run: pip install httpx[http2] Pillow pytest
       - name: Run tests
-        run: pytest tests/ -v
+        run: PYTHONPATH=. pytest tests/ -v
