@@ -46,11 +46,11 @@ class PrivacyController:
             # Delegate popout hide-and-pause to FullscreenPreview so it
             # can capture its own geometry for restore.
             self._popout_was_visible = bool(
-                self._app._fullscreen_window
-                and self._app._fullscreen_window.isVisible()
+                self._app._popout_ctrl.window
+                and self._app._popout_ctrl.window.isVisible()
             )
             if self._popout_was_visible:
-                self._app._fullscreen_window.privacy_hide()
+                self._app._popout_ctrl.window.privacy_hide()
         else:
             self._overlay.hide()
             # Resume embedded preview video — unconditional resume, the
@@ -62,5 +62,5 @@ class PrivacyController:
             # also re-dispatches the captured geometry to Hyprland (Qt
             # show() alone doesn't preserve position on Wayland) and
             # resumes its video.
-            if self._popout_was_visible and self._app._fullscreen_window:
-                self._app._fullscreen_window.privacy_show()
+            if self._popout_was_visible and self._app._popout_ctrl.window:
+                self._app._popout_ctrl.window.privacy_show()

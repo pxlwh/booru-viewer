@@ -62,6 +62,7 @@ from .window_state import WindowStateController
 from .privacy import PrivacyController
 from .search_controller import SearchController
 from .media_controller import MediaController
+from .popout_controller import PopoutController
 
 log = logging.getLogger("booru")
 
@@ -127,6 +128,7 @@ class BooruApp(QMainWindow):
         self._privacy = PrivacyController(self)
         self._search_ctrl = SearchController(self)
         self._media_ctrl = MediaController(self)
+        self._popout_ctrl = PopoutController(self)
         self._main_window_save_timer = QTimer(self)
         self._main_window_save_timer.setSingleShot(True)
         self._main_window_save_timer.setInterval(300)
@@ -353,7 +355,7 @@ class BooruApp(QMainWindow):
         self._preview.blacklist_post_requested.connect(self._blacklist_post_from_popout)
         self._preview.navigate.connect(self._navigate_preview)
         self._preview.play_next_requested.connect(self._on_video_end_next)
-        self._preview.fullscreen_requested.connect(self._open_fullscreen_preview)
+        self._preview.fullscreen_requested.connect(self._popout_ctrl.open)
         # Library folders come from the filesystem (subdirs of saved_dir),
         # not the bookmark folders DB table — those are separate concepts.
         from ..core.config import library_folders
@@ -361,7 +363,6 @@ class BooruApp(QMainWindow):
         # Bookmark folders feed the toolbar Bookmark-as submenu, sourced
         # from the DB so it stays in sync with the bookmarks tab combo.
         self._preview.set_bookmark_folders_callback(self._db.get_folders)
-        self._fullscreen_window = None
         # Wide enough that the preview toolbar (Bookmark, Save, BL Tag,
         # BL Post, [stretch], Popout) has room to lay out all five buttons
         # at their fixed widths plus spacing without clipping the rightmost
@@ -400,11 +401,6 @@ class BooruApp(QMainWindow):
         # Restore info panel visibility from the persisted state.
         if self._db.get_setting_bool("info_panel_visible"):
             self._info_panel.show()
-
-        # Flag set during popout open/close so the splitter saver below
-        # doesn't persist the temporary [0, 0, 1000] state the popout
-        # uses to give the info panel the full right column.
-        self._popout_active = False
 
         # Debounced saver for the right splitter (same pattern as main).
         self._right_splitter_save_timer = QTimer(self)
@@ -667,37 +663,6 @@ class BooruApp(QMainWindow):
             self._media_ctrl.on_post_activated(index)
 
 
-    def _update_fullscreen(self, path: str, info: str) -> None:
-        """Sync the fullscreen window with the current preview media."""
-        if self._fullscreen_window and self._fullscreen_window.isVisible():
-            self._preview._video_player.stop()
-            cp = self._preview._current_post
-            w = cp.width if cp else 0
-            h = cp.height if cp else 0
-            self._fullscreen_window.set_media(path, info, width=w, height=h)
-            show_full = self._stack.currentIndex() != 2
-            self._fullscreen_window.set_toolbar_visibility(
-                bookmark=show_full,
-                save=True,
-                bl_tag=show_full,
-                bl_post=show_full,
-            )
-            self._update_fullscreen_state()
-
-    def _update_fullscreen_state(self) -> None:
-        """Update popout button states by mirroring the embedded preview."""
-        if not self._fullscreen_window:
-            return
-        self._fullscreen_window.update_state(
-            self._preview._is_bookmarked,
-            self._preview._is_saved,
-        )
-        post = self._preview._current_post
-        if post is not None:
-            self._fullscreen_window.set_post_tags(
-                post.tag_categories or {}, post.tag_list
-            )
-
     def _show_library_post(self, path: str) -> None:
         # Read actual image dimensions so the popout can pre-fit and
         # set keep_aspect_ratio. library_meta doesn't store w/h, so
@@ -731,7 +696,7 @@ class BooruApp(QMainWindow):
             self._preview.update_save_state(True)
         # _update_fullscreen reads cp.width/cp.height from _current_post,
         # so it runs AFTER the Post is constructed with real dimensions.
-        self._update_fullscreen(path, Path(path).name)
+        self._popout_ctrl.update_media(path, Path(path).name)
 
     def _on_bookmark_selected(self, fav) -> None:
         self._status.showMessage(f"Bookmark #{fav.post_id}")
@@ -771,7 +736,7 @@ class BooruApp(QMainWindow):
         # Try local cache first
         if fav.cached_path and Path(fav.cached_path).exists():
             self._media_ctrl.set_preview_media(fav.cached_path, info)
-            self._update_fullscreen(fav.cached_path, info)
+            self._popout_ctrl.update_media(fav.cached_path, info)
             return
 
         # Try saved library — walk by post id; the file may live in any
@@ -781,7 +746,7 @@ class BooruApp(QMainWindow):
         from ..core.config import find_library_files
         for path in find_library_files(fav.post_id, db=self._db):
             self._media_ctrl.set_preview_media(str(path), info)
-            self._update_fullscreen(str(path), info)
+            self._popout_ctrl.update_media(str(path), info)
             return
 
         # Download it
@@ -824,8 +789,8 @@ class BooruApp(QMainWindow):
                         path = derived
                 if path is not None:
                     self._preview._video_player.pause()
-                    if self._fullscreen_window and self._fullscreen_window.isVisible():
-                        self._fullscreen_window.pause_media()
+                    if self._popout_ctrl.window and self._popout_ctrl.window.isVisible():
+                        self._popout_ctrl.window.pause_media()
                     QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
                 else:
                     self._status.showMessage("Bookmark not cached — open it first to download")
@@ -837,8 +802,8 @@ class BooruApp(QMainWindow):
             current = self._preview._current_path
             if current and Path(current).exists():
                 self._preview._video_player.pause()
-                if self._fullscreen_window and self._fullscreen_window.isVisible():
-                    self._fullscreen_window.pause_media()
+                if self._popout_ctrl.window and self._popout_ctrl.window.isVisible():
+                    self._popout_ctrl.window.pause_media()
                 QDesktopServices.openUrl(QUrl.fromLocalFile(current))
             return
         # Browse: original path. Removed the "open random cache file"
@@ -988,7 +953,7 @@ class BooruApp(QMainWindow):
                 )
         bookmarked = bool(self._db.is_bookmarked(site_id, post.id))
         self._preview.update_bookmark_state(bookmarked)
-        self._update_fullscreen_state()
+        self._popout_ctrl.update_state()
         # Refresh bookmarks tab if visible
         if self._stack.currentIndex() == 1:
             self._bookmarks_view.refresh()
@@ -1036,7 +1001,7 @@ class BooruApp(QMainWindow):
             where = target or "Unfiled"
             self._status.showMessage(f"Bookmarked #{post.id} to {where}")
         self._preview.update_bookmark_state(True)
-        self._update_fullscreen_state()
+        self._popout_ctrl.update_state()
         # Refresh bookmarks tab if visible so the new entry appears.
         if self._stack.currentIndex() == 1:
             self._bookmarks_view.refresh()
@@ -1080,7 +1045,7 @@ class BooruApp(QMainWindow):
                 self._library_view.refresh()
         else:
             self._status.showMessage(f"#{post.id} not in library")
-        self._update_fullscreen_state()
+        self._popout_ctrl.update_state()
 
     def _blacklist_tag_from_popout(self, tag: str) -> None:
         reply = QMessageBox.question(
@@ -1108,181 +1073,6 @@ class BooruApp(QMainWindow):
             self._db.add_blacklisted_post(post.file_url)
             self._status.showMessage(f"Post #{post.id} blacklisted")
             self._search_ctrl.remove_blacklisted_from_grid(post_url=post.file_url)
-
-    def _open_fullscreen_preview(self) -> None:
-        path = self._preview._current_path
-        if not path:
-            return
-        info = self._preview._info_label.text()
-        # Grab video position before clearing
-        video_pos = 0
-        if self._preview._stack.currentIndex() == 1:
-            video_pos = self._preview._video_player.get_position_ms()
-        # Clear the main preview — popout takes over
-        # Hide preview, expand info panel into the freed space.
-        # Mark popout as active so the right splitter saver doesn't persist
-        # this transient layout (which would lose the user's real preferred
-        # sizes between sessions).
-        self._popout_active = True
-        self._info_was_visible = self._info_panel.isVisible()
-        self._right_splitter_sizes = self._right_splitter.sizes()
-        self._preview.clear()
-        self._preview.hide()
-        self._info_panel.show()
-        self._right_splitter.setSizes([0, 0, 1000])
-        self._preview._current_path = path
-        # Populate info panel for the current post
-        idx = self._grid.selected_index
-        if 0 <= idx < len(self._posts):
-            self._info_panel.set_post(self._posts[idx])
-        from .popout.window import FullscreenPreview
-        # Restore persisted window state
-        saved_geo = self._db.get_setting("slideshow_geometry")
-        saved_fs = self._db.get_setting_bool("slideshow_fullscreen")
-        if saved_geo:
-            parts = saved_geo.split(",")
-            if len(parts) == 4:
-                from PySide6.QtCore import QRect
-                FullscreenPreview._saved_geometry = QRect(*[int(p) for p in parts])
-                FullscreenPreview._saved_fullscreen = saved_fs
-            else:
-                FullscreenPreview._saved_geometry = None
-                FullscreenPreview._saved_fullscreen = True
-        else:
-            FullscreenPreview._saved_fullscreen = True
-        cols = self._grid._flow.columns
-        show_actions = self._stack.currentIndex() != 2
-        monitor = self._db.get_setting("slideshow_monitor")
-        self._fullscreen_window = FullscreenPreview(grid_cols=cols, show_actions=show_actions, monitor=monitor, parent=self)
-        self._fullscreen_window.navigate.connect(self._navigate_fullscreen)
-        self._fullscreen_window.play_next_requested.connect(self._on_video_end_next)
-        # Save signals are always wired — even in library mode, the
-        # popout's Save button is the only toolbar action visible (acting
-        # as Unsave for the file being viewed), and it has its own
-        # Save-to-Library submenu shape that matches the embedded preview.
-        from ..core.config import library_folders
-        self._fullscreen_window.set_folders_callback(library_folders)
-        self._fullscreen_window.save_to_folder.connect(self._save_from_preview)
-        self._fullscreen_window.unsave_requested.connect(self._unsave_from_preview)
-        if show_actions:
-            self._fullscreen_window.bookmark_requested.connect(self._bookmark_from_preview)
-            # Same Bookmark-as flow as the embedded preview — popout reuses
-            # the existing handler since both signals carry just a folder
-            # name and read the post from self._preview._current_post.
-            self._fullscreen_window.set_bookmark_folders_callback(self._db.get_folders)
-            self._fullscreen_window.bookmark_to_folder.connect(self._bookmark_to_folder_from_preview)
-            self._fullscreen_window.blacklist_tag_requested.connect(self._blacklist_tag_from_popout)
-            self._fullscreen_window.blacklist_post_requested.connect(self._blacklist_post_from_popout)
-        self._fullscreen_window.open_in_default.connect(self._open_preview_in_default)
-        self._fullscreen_window.open_in_browser.connect(self._open_preview_in_browser)
-        self._fullscreen_window.closed.connect(self._on_fullscreen_closed)
-        self._fullscreen_window.privacy_requested.connect(self._privacy.toggle)
-        # Set post tags for BL Tag menu
-        post = self._preview._current_post
-        if post:
-            self._fullscreen_window.set_post_tags(post.tag_categories, post.tag_list)
-        # Sync video player state from preview to popout via the
-        # popout's public sync_video_state method (replaces direct
-        # popout._video.* attribute writes).
-        pv = self._preview._video_player
-        self._fullscreen_window.sync_video_state(
-            volume=pv.volume,
-            mute=pv.is_muted,
-            autoplay=pv.autoplay,
-            loop_state=pv.loop_state,
-        )
-        # Connect seek-after-load BEFORE set_media so we don't miss media_ready
-        if video_pos > 0:
-            self._fullscreen_window.connect_media_ready_once(
-                lambda: self._fullscreen_window.seek_video_to(video_pos)
-            )
-        # Pre-fit dimensions for the popout video pre-fit optimization
-        # — `post` is the same `self._preview._current_post` referenced
-        # at line 2164 (set above), so reuse it without an extra read.
-        pre_w = post.width if post else 0
-        pre_h = post.height if post else 0
-        self._fullscreen_window.set_media(path, info, width=pre_w, height=pre_h)
-        # Always sync state — the save button is visible in both modes
-        # (library mode = only Save shown, browse/bookmarks = full toolbar)
-        # so its Unsave label needs to land before the user sees it.
-        self._update_fullscreen_state()
-
-    def _on_fullscreen_closed(self) -> None:
-        # Persist popout window state to DB
-        if self._fullscreen_window:
-            from .popout.window import FullscreenPreview
-            fs = FullscreenPreview._saved_fullscreen
-            geo = FullscreenPreview._saved_geometry
-            self._db.set_setting("slideshow_fullscreen", "1" if fs else "0")
-            if geo:
-                self._db.set_setting("slideshow_geometry", f"{geo.x()},{geo.y()},{geo.width()},{geo.height()}")
-        # Restore preview and info panel visibility
-        self._preview.show()
-        if not getattr(self, '_info_was_visible', False):
-            self._info_panel.hide()
-        if hasattr(self, '_right_splitter_sizes'):
-            self._right_splitter.setSizes(self._right_splitter_sizes)
-        # Clear the popout-active flag now that the right splitter is back
-        # in its real shape — future splitterMoved events should persist.
-        self._popout_active = False
-        # Sync video player state from popout back to preview via
-        # the popout's public get_video_state method (replaces direct
-        # popout._video.* attribute reads + popout._stack.currentIndex
-        # check). The dict carries volume / mute / autoplay / loop_state
-        # / position_ms in one read.
-        video_pos = 0
-        if self._fullscreen_window:
-            vstate = self._fullscreen_window.get_video_state()
-            pv = self._preview._video_player
-            pv.volume = vstate["volume"]
-            pv.is_muted = vstate["mute"]
-            pv.autoplay = vstate["autoplay"]
-            pv.loop_state = vstate["loop_state"]
-            video_pos = vstate["position_ms"]
-        # Restore preview with current media
-        path = self._preview._current_path
-        info = self._preview._info_label.text()
-        self._fullscreen_window = None
-        if path:
-            # Connect seek-after-load BEFORE set_media so we don't miss media_ready
-            if video_pos > 0:
-                def _seek_preview():
-                    self._preview._video_player.seek_to_ms(video_pos)
-                    try:
-                        self._preview._video_player.media_ready.disconnect(_seek_preview)
-                    except RuntimeError:
-                        pass
-                self._preview._video_player.media_ready.connect(_seek_preview)
-            self._preview.set_media(path, info)
-
-    def _navigate_fullscreen(self, direction: int) -> None:
-        # Just navigate. Do NOT call _update_fullscreen here with the
-        # current_path even though earlier code did — for browse view,
-        # _current_path still holds the PREVIOUS post's path at this
-        # moment (the new post's path doesn't land until the async
-        # _load completes and _on_image_done fires). Calling
-        # _update_fullscreen with the stale path would re-load the
-        # OLD video in the popout, which then races mpv's eof-reached
-        # observer (mpv emits eof on the redundant `command('stop')`
-        # the reload performs). If the observer fires after play_file's
-        # _eof_pending=False reset, _handle_eof picks it up on the next
-        # poll tick and emits play_next in Loop=Next mode — auto-
-        # advancing past the ACTUAL next post the user wanted. Bug
-        # observed empirically: keyboard nav in popout sometimes
-        # skipped a post.
-        #
-        # The correct sync paths are already in place:
-        #   - Browse: _navigate_preview → _on_post_activated → async
-        #     _load → _on_image_done → _update_fullscreen(NEW_path)
-        #   - Bookmarks: _navigate_preview → _on_bookmark_activated →
-        #     _update_fullscreen(fav.cached_path) (sync, line 1683/1691)
-        #   - Library: _navigate_preview → file_activated →
-        #     _on_library_activated → _show_library_post →
-        #     _update_fullscreen(path) (sync, line 1622)
-        # Each downstream path uses the *correct* new path. The
-        # additional call here was both redundant (bookmark/library)
-        # and racy/buggy (browse).
-        self._navigate_preview(direction)
 
     def _close_preview(self) -> None:
         self._preview.clear()
@@ -1423,8 +1213,8 @@ class BooruApp(QMainWindow):
                 cp = str(cached_path_for(post.file_url))
                 if cp == self._preview._current_path:
                     self._preview.clear()
-                    if self._fullscreen_window and self._fullscreen_window.isVisible():
-                        self._fullscreen_window.stop_media()
+                    if self._popout_ctrl.window and self._popout_ctrl.window.isVisible():
+                        self._popout_ctrl.window.stop_media()
             self._status.showMessage(f"Blacklisted: {tag}")
             self._search_ctrl.remove_blacklisted_from_grid(tag=tag)
         elif action == bl_post_action:
@@ -1631,7 +1421,7 @@ class BooruApp(QMainWindow):
         self._status.showMessage(f"Removed {len(posts)} from library")
         if self._stack.currentIndex() == 2:
             self._library_view.refresh()
-        self._update_fullscreen_state()
+        self._popout_ctrl.update_state()
 
     def _ensure_bookmarked(self, post: Post) -> None:
         """Bookmark a post if not already bookmarked."""
@@ -1704,8 +1494,8 @@ class BooruApp(QMainWindow):
         if path.exists():
             # Pause any playing video before opening externally
             self._preview._video_player.pause()
-            if self._fullscreen_window and self._fullscreen_window.isVisible():
-                self._fullscreen_window.pause_media()
+            if self._popout_ctrl.window and self._popout_ctrl.window.isVisible():
+                self._popout_ctrl.window.pause_media()
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
         else:
             self._status.showMessage("Image not cached yet — double-click to download first")
@@ -2072,7 +1862,7 @@ class BooruApp(QMainWindow):
                         bm_grid._thumbs[bm_idx].set_saved_locally(True)
                 if self._stack.currentIndex() == 2:
                     self._library_view.refresh()
-            self._update_fullscreen_state()
+            self._popout_ctrl.update_state()
 
     def _on_library_files_deleted(self, post_ids: list) -> None:
         """Library deleted files — clear saved dots on browse grid."""
@@ -2092,7 +1882,7 @@ class BooruApp(QMainWindow):
 
     def _on_batch_done(self, msg: str) -> None:
         self._status.showMessage(msg)
-        self._update_fullscreen_state()
+        self._popout_ctrl.update_state()
         if self._stack.currentIndex() == 1:
             self._bookmarks_view.refresh()
         if self._stack.currentIndex() == 2:

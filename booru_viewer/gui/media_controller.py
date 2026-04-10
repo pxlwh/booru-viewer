@@ -82,8 +82,8 @@ class MediaController:
             post = self._app._posts[index]
             log.info(f"Preview: #{post.id} -> {post.file_url}")
             try:
-                if self._app._fullscreen_window:
-                    self._app._fullscreen_window.force_mpv_pause()
+                if self._app._popout_ctrl.window:
+                    self._app._popout_ctrl.window.force_mpv_pause()
                 pmpv = self._app._preview._video_player._mpv
                 if pmpv is not None:
                     pmpv.pause = True
@@ -154,7 +154,7 @@ class MediaController:
 
     def on_image_done(self, path: str, info: str) -> None:
         self._app._dl_progress.hide()
-        if self._app._fullscreen_window and self._app._fullscreen_window.isVisible():
+        if self._app._popout_ctrl.window and self._app._popout_ctrl.window.isVisible():
             self._app._preview._info_label.setText(info)
             self._app._preview._current_path = path
         else:
@@ -163,22 +163,22 @@ class MediaController:
         idx = self._app._grid.selected_index
         if 0 <= idx < len(self._app._grid._thumbs):
             self._app._grid._thumbs[idx]._cached_path = path
-        self._app._update_fullscreen(path, info)
+        self._app._popout_ctrl.update_media(path, info)
         self.auto_evict_cache()
 
     def on_video_stream(self, url: str, info: str, width: int, height: int) -> None:
-        if self._app._fullscreen_window and self._app._fullscreen_window.isVisible():
+        if self._app._popout_ctrl.window and self._app._popout_ctrl.window.isVisible():
             self._app._preview._info_label.setText(info)
             self._app._preview._current_path = url
-            self._app._fullscreen_window.set_media(url, info, width=width, height=height)
-            self._app._update_fullscreen_state()
+            self._app._popout_ctrl.window.set_media(url, info, width=width, height=height)
+            self._app._popout_ctrl.update_state()
         else:
             self._app._preview._video_player.stop()
             self._app._preview.set_media(url, info)
         self._app._status.showMessage(f"Streaming #{Path(url.split('?')[0]).name}...")
 
     def on_download_progress(self, downloaded: int, total: int) -> None:
-        popout_open = bool(self._app._fullscreen_window and self._app._fullscreen_window.isVisible())
+        popout_open = bool(self._app._popout_ctrl.window and self._app._popout_ctrl.window.isVisible())
         if total > 0:
             if not popout_open:
                 self._app._dl_progress.setRange(0, total)
@@ -195,7 +195,7 @@ class MediaController:
 
     def set_preview_media(self, path: str, info: str) -> None:
         """Set media on preview or just info if popout is open."""
-        if self._app._fullscreen_window and self._app._fullscreen_window.isVisible():
+        if self._app._popout_ctrl.window and self._app._popout_ctrl.window.isVisible():
             self._app._preview._info_label.setText(info)
             self._app._preview._current_path = path
         else:

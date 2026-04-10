@@ -128,7 +128,7 @@ class WindowStateController:
         and we don't want that transient layout persisted as the user's
         preferred state.
         """
-        if getattr(self._app, '_popout_active', False):
+        if self._app._popout_ctrl.is_active:
             return
         sizes = self._app._right_splitter.sizes()
         if len(sizes) == 3 and sum(sizes) > 0:

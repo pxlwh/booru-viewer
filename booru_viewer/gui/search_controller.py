@@ -547,8 +547,8 @@ class SearchController:
             cp = str(cached_path_for(self._app._posts[i].file_url))
             if cp == self._app._preview._current_path:
                 self._app._preview.clear()
-                if self._app._fullscreen_window and self._app._fullscreen_window.isVisible():
-                    self._app._fullscreen_window.stop_media()
+                if self._app._popout_ctrl.window and self._app._popout_ctrl.window.isVisible():
+                    self._app._popout_ctrl.window.stop_media()
                 break
 
         for i in reversed(to_remove):
