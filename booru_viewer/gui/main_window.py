@@ -936,20 +936,9 @@ class BooruApp(QMainWindow):
         from ..core.cache import cached_path_for, cache_dir
         site_id = self._site_combo.currentData()
 
-        # Pre-scan the library once into a flat post-id set so the per-post
-        # check below is O(1). Folders are filesystem-truth — walk every
-        # subdir of saved_dir() rather than consulting the bookmark folder
-        # list (which used to leak DB state into library detection).
-        _sd = saved_dir()
-        _saved_ids: set[int] = set()
-        if _sd.is_dir():
-            for entry in _sd.iterdir():
-                if entry.is_file() and entry.stem.isdigit():
-                    _saved_ids.add(int(entry.stem))
-                elif entry.is_dir():
-                    for sub in entry.iterdir():
-                        if sub.is_file() and sub.stem.isdigit():
-                            _saved_ids.add(int(sub.stem))
+        # library_meta-driven saved-id set: format-agnostic, covers both
+        # digit-stem v0.2.3 files and templated post-refactor saves.
+        _saved_ids = self._db.get_saved_post_ids()
 
         # Pre-fetch bookmarks for the site once and project to a post-id set
         # so the per-post check below is an O(1) membership test instead of
