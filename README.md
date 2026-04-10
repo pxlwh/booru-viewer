@@ -77,7 +77,11 @@ booru-viewer has three tabs that map to three commitment levels: **Browse** for 
 
 ### Windows
 
-Download `booru-viewer-setup.exe` from [Releases](https://git.pax.moe/pax/booru-viewer/releases)(hosted on gitea) and run the installer. It installs to AppData with Start Menu and optional desktop shortcuts. To update, just run the new installer over the old one — your data in `%APPDATA%\booru-viewer\` is preserved.
+Download `booru-viewer-setup.exe` from Releases and run the installer. It installs to AppData with Start Menu and optional desktop shortcuts. To update, just run the new installer over the old one — your data in `%APPDATA%\booru-viewer\` is preserved.
+
+Github: [/pxlwh/booru-viewer/releases](https://github.com/pxlwh/booru-viewer/releases)
+
+Gitea: [/pax/booru-viewer/releases](https://git.pax.moe)
 
 Windows 10 dark mode is automatically detected and applied.
 
