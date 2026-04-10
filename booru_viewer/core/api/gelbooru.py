@@ -81,6 +81,18 @@ class GelbooruClient(BooruClient):
                     created_at=_parse_date(item.get("created_at")),
                 )
             )
+        # Background prefetch ONLY when the batch tag API is known to
+        # work (persisted probe result = True, i.e. Gelbooru proper
+        # with auth). One request covers all tags for the page, so the
+        # cache is warm before the user clicks. Rule34/Safebooru.org
+        # skip this (batch_api_works is False or None) — their only
+        # path is per-post HTML which runs on click.
+        if (
+            self.category_fetcher is not None
+            and self.category_fetcher._batch_api_works is True
+        ):
+            import asyncio
+            asyncio.create_task(self.category_fetcher.prefetch_batch(posts))
         return posts
 
     @staticmethod
