@@ -8,7 +8,7 @@ Library filename templates, tag category fetching for all backends, and a popout
 
 ### New: library filename templates
 
-Save files with custom names instead of bare post IDs. Templates use `%id%`, `%artist%`, `%character%`, `%copyright%`, `%general%`, `%meta%`, `%species%`, `%md5%`, `%rating%`, `%score%`, `%ext%` tokens. Set in Settings > Library.
+Save files with custom names instead of bare post IDs. Templates use `%id%`, `%artist%`, `%character%`, `%copyright%`, `%general%`, `%meta%`, `%species%`, `%md5%`, `%rating%`, `%score%`, `%ext%` tokens. Set in Settings > Paths.
 
 - New `core/library_save.py` module with a single `save_post_file` entry point. All eight save sites (Save to Library, Save As, Bulk Save, Batch Download, and their bookmarks-tab equivalents) route through it.
 - DB-backed `library_meta.filename` column tracks the rendered name per post. Non-breaking migration for existing databases.
