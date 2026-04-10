@@ -57,5 +57,6 @@ Click-to-first-frame latency on uncached video posts with the popout open is rou
 ### Other
 
 - README updated, unused Windows screenshots dropped from the repo.
+- Tightened thumbnail spacing in the grid from 8px to 2px.
 
 ---
