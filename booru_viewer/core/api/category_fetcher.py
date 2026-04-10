@@ -289,18 +289,20 @@ class CategoryFetcher:
     # ----- dispatch: ensure (single post) -----
 
     async def ensure_categories(self, post: "Post") -> None:
-        """Idempotent.  Guarantee ``post.tag_categories`` is populated.
+        """Guarantee ``post.tag_categories`` is fully populated.
 
         Dispatch:
-          1. Already populated → return.
-          2. Cache compose → return if complete.
-          3. Batch tag API (if available + probe passed) → return.
-          4. Per-post HTML scrape → return.
+          1. Cache compose with 100% coverage → return.
+          2. Batch tag API (if available + probe passed) → return.
+          3. Per-post HTML scrape → return.
+
+        Does NOT short-circuit on non-empty ``post.tag_categories``
+        because partial cache composes can leave the post at e.g.
+        5/40 coverage. Only the 100%-coverage return from
+        ``try_compose_from_cache`` is trusted as "done."
 
         Coalesces concurrent calls for the same ``post.id``.
         """
-        if post.tag_categories:
-            return
         if self.try_compose_from_cache(post):
             return
 

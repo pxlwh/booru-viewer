@@ -161,13 +161,16 @@ class BooruApp(QMainWindow):
         return client.category_fetcher if client else None
 
     def _ensure_post_categories_async(self, post) -> None:
-        """Schedule an async ensure_categories if the post needs it.
+        """Schedule an async ensure_categories for the post.
 
-        No-op if the post already has categories, or if the active
-        client doesn't have a CategoryFetcher attached.
+        No-op if the active client doesn't have a CategoryFetcher
+        (Danbooru/e621 categorize inline, no fetcher needed).
+
+        Does NOT check post.tag_categories — partial cache composes
+        from the background prefetch can leave the post at e.g.
+        5/40 coverage. ensure_categories checks 100% cache coverage
+        internally and fetches the remainder if needed.
         """
-        if post.tag_categories:
-            return
         client = self._make_client()
         if client is None or client.category_fetcher is None:
             return
