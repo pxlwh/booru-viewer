@@ -583,6 +583,15 @@ class BooruApp(QMainWindow):
             return
         self._current_site = site
         self._status.showMessage(f"Connected to {site.name}")
+        # Reset browse state for the new site — stale page numbers
+        # and results from the previous site shouldn't carry over.
+        self._page_spin.setValue(1)
+        self._posts.clear()
+        self._grid.set_posts(0)
+        self._preview.clear()
+        if hasattr(self, '_search') and self._search:
+            self._search.shown_post_ids.clear()
+            self._search.page_cache.clear()
 
     def _on_rating_changed(self, text: str) -> None:
         self._current_rating = text.lower()
