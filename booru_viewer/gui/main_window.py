@@ -1248,24 +1248,18 @@ class BooruApp(QMainWindow):
             async def _load():
                 self._prefetch_pause.clear()  # pause prefetch
                 try:
+                    if streaming:
+                        # mpv is streaming the URL directly and its
+                        # stream-record option populates the cache as it
+                        # plays. No parallel httpx download needed — that
+                        # would open a second TCP+TLS connection to the
+                        # same CDN URL, contending with mpv for bandwidth.
+                        return
                     path = await download_image(post.file_url, progress_callback=_progress)
-                    if not streaming:
-                        # Normal path: download finished, hand the local
-                        # file to the preview/popout. For streaming, mpv
-                        # is already playing the URL — calling set_media
-                        # again with the local path would interrupt
-                        # playback and reset position to 0, so we
-                        # suppress image_done in that case and just let
-                        # the cache write complete silently.
-                        self._signals.image_done.emit(str(path), info)
+                    self._signals.image_done.emit(str(path), info)
                 except Exception as e:
                     log.error(f"Image download failed: {e}")
-                    if not streaming:
-                        # If we're streaming, mpv has the URL — don't
-                        # surface a "download failed" error since the
-                        # user is likely watching the video right now.
-                        # The cache just won't get populated for next time.
-                        self._signals.image_error.emit(str(e))
+                    self._signals.image_error.emit(str(e))
                 finally:
                     self._prefetch_pause.set()  # resume prefetch
                     if preview_hidden:
