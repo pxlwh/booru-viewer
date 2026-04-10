@@ -328,12 +328,12 @@ class SearchController:
             else:
                 idx = len(posts) - 1
             self._app._grid._select(idx)
-            self._app._on_post_activated(idx)
+            self._app._media_ctrl.on_post_activated(idx)
 
         self._app._grid.setFocus()
 
         if self._app._db.get_setting("prefetch_mode") in ("Nearby", "Aggressive") and posts:
-            self._app._prefetch_adjacent(0)
+            self._app._media_ctrl.prefetch_adjacent(0)
 
         if self._infinite_scroll and posts:
             QTimer.singleShot(200, self.check_viewport_fill)
@@ -480,7 +480,7 @@ class SearchController:
         self._app._status.showMessage(f"{len(self._app._posts)} results")
 
         self._loading = False
-        self._app._auto_evict_cache()
+        self._app._media_ctrl.auto_evict_cache()
         sb = self._app._grid.verticalScrollBar()
         from .grid import THUMB_SIZE, THUMB_SPACING
         threshold = THUMB_SIZE + THUMB_SPACING * 2

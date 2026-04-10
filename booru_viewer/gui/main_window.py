@@ -61,6 +61,7 @@ from .info_panel import InfoPanel
 from .window_state import WindowStateController
 from .privacy import PrivacyController
 from .search_controller import SearchController
+from .media_controller import MediaController
 
 log = logging.getLogger("booru")
 
@@ -87,8 +88,6 @@ class BooruApp(QMainWindow):
             grid_mod.THUMB_SIZE = saved_thumb
         self._current_site: Site | None = None
         self._posts: list[Post] = []
-        self._prefetch_pause = asyncio.Event()
-        self._prefetch_pause.set()  # not paused
         self._signals = AsyncSignals()
 
         self._async_loop = asyncio.new_event_loop()
@@ -127,6 +126,7 @@ class BooruApp(QMainWindow):
         self._window_state = WindowStateController(self)
         self._privacy = PrivacyController(self)
         self._search_ctrl = SearchController(self)
+        self._media_ctrl = MediaController(self)
         self._main_window_save_timer = QTimer(self)
         self._main_window_save_timer.setSingleShot(True)
         self._main_window_save_timer.setInterval(300)
@@ -143,21 +143,17 @@ class BooruApp(QMainWindow):
         s.search_append.connect(self._search_ctrl.on_search_append, Q)
         s.search_error.connect(self._search_ctrl.on_search_error, Q)
         s.thumb_done.connect(self._search_ctrl.on_thumb_done, Q)
-        s.image_done.connect(self._on_image_done, Q)
+        s.image_done.connect(self._media_ctrl.on_image_done, Q)
         s.image_error.connect(self._on_image_error, Q)
-        s.video_stream.connect(self._on_video_stream, Q)
+        s.video_stream.connect(self._media_ctrl.on_video_stream, Q)
         s.bookmark_done.connect(self._on_bookmark_done, Q)
         s.bookmark_error.connect(self._on_bookmark_error, Q)
         s.autocomplete_done.connect(self._search_ctrl.on_autocomplete_done, Q)
         s.batch_progress.connect(self._on_batch_progress, Q)
         s.batch_done.connect(self._on_batch_done, Q)
-        s.download_progress.connect(self._on_download_progress, Q)
-        s.prefetch_progress.connect(self._on_prefetch_progress, Q)
+        s.download_progress.connect(self._media_ctrl.on_download_progress, Q)
+        s.prefetch_progress.connect(self._media_ctrl.on_prefetch_progress, Q)
         s.categories_updated.connect(self._on_categories_updated, Q)
-
-    def _on_prefetch_progress(self, index: int, progress: float) -> None:
-        if 0 <= index < len(self._grid._thumbs):
-            self._grid._thumbs[index].set_prefetch_progress(progress)
 
     def _get_category_fetcher(self):
         """Return the CategoryFetcher for the active site, or None."""
@@ -318,7 +314,7 @@ class BooruApp(QMainWindow):
 
         self._grid = ThumbnailGrid()
         self._grid.post_selected.connect(self._on_post_selected)
-        self._grid.post_activated.connect(self._on_post_activated)
+        self._grid.post_activated.connect(self._media_ctrl.on_post_activated)
         self._grid.context_requested.connect(self._on_context_menu)
         self._grid.multi_context_requested.connect(self._on_multi_context_menu)
         self._grid.nav_past_end.connect(self._search_ctrl.on_nav_past_end)
@@ -668,422 +664,15 @@ class BooruApp(QMainWindow):
                 else:
                     self._info_panel._categories_pending = False
                 self._info_panel.set_post(post)
-            self._on_post_activated(index)
+            self._media_ctrl.on_post_activated(index)
 
-    def _on_post_activated(self, index: int) -> None:
-        if 0 <= index < len(self._posts):
-            post = self._posts[index]
-            log.info(f"Preview: #{post.id} -> {post.file_url}")
-            # Pause whichever video player is currently active before
-            # we kick off the new post's load. The async download can
-            # take seconds (uncached) or minutes (slow CDN, multi-MB
-            # webm). If we leave the previous video playing during
-            # that wait, it can reach EOF naturally, which fires
-            # Loop=Next mode and auto-advances PAST the post the
-            # user actually wanted — they see "I clicked next, it
-            # skipped the next video and went to the one after."
-            #
-            # `pause = True` is a mpv property change (no eof-reached
-            # side effect, unlike `command('stop')`), so we don't
-            # re-trigger the navigation race the previous fix closed.
-            # When `play_file` eventually runs for the new post it
-            # will unpause based on `_autoplay`. Pausing both players
-            # is safe because the inactive one's mpv is either None
-            # or already stopped — pause is a no-op there.
-            try:
-                if self._fullscreen_window:
-                    self._fullscreen_window.force_mpv_pause()
-                pmpv = self._preview._video_player._mpv
-                if pmpv is not None:
-                    pmpv.pause = True
-            except Exception:
-                pass
-            self._preview._current_post = post
-            self._preview._current_site_id = self._site_combo.currentData()
-            self._preview.set_post_tags(post.tag_categories, post.tag_list)
-            # Kick off async category fill if the post has none yet.
-            # The background prefetch from search() may not have
-            # reached this post; ensure_categories is the safety net.
-            # When it completes, the categories_updated signal fires
-            # and the slot re-renders both panels.
-            self._ensure_post_categories_async(post)
-            site_id = self._preview._current_site_id
-            self._preview.update_bookmark_state(
-                bool(site_id and self._db.is_bookmarked(site_id, post.id))
-            )
-            self._preview.update_save_state(self._is_post_saved(post.id))
-            self._status.showMessage(f"Loading #{post.id}...")
-            # Decide where the user can actually see download progress.
-            # If the embedded preview is visible (normal layout), use the
-            # dl_progress widget at the bottom of the right splitter. If
-            # the preview is hidden — popout open, splitter collapsed,
-            # whatever — fall back to drawing the progress bar directly
-            # on the active thumbnail in the main grid via the existing
-            # prefetch-progress paint path. This avoids the dl_progress
-            # show/hide flash on the right splitter (the previous fix)
-            # and gives the user some visible feedback even when the
-            # preview area can't show the bar.
-            preview_hidden = not (
-                self._preview.isVisible() and self._preview.width() > 0
-            )
-            if preview_hidden:
-                self._signals.prefetch_progress.emit(index, 0.0)
-            else:
-                self._dl_progress.show()
-                self._dl_progress.setRange(0, 0)
-
-            def _progress(downloaded, total):
-                self._signals.download_progress.emit(downloaded, total)
-                if preview_hidden and total > 0:
-                    self._signals.prefetch_progress.emit(
-                        index, downloaded / total
-                    )
-
-            # Pre-build the info string so the streaming fast-path can
-            # use it before download_image even starts (it's all post
-            # metadata, no need to wait for the file to land on disk).
-            info = (f"#{post.id}  {post.width}x{post.height}  score:{post.score}  [{post.rating}]  {Path(post.file_url.split('?')[0]).suffix.lstrip('.').upper() if post.file_url else ''}"
-                    + (f"  {post.created_at}" if post.created_at else ""))
-
-            # Detect video posts that AREN'T cached yet and route them
-            # through the mpv streaming fast-path. mpv plays the URL
-            # directly while download_image populates the cache below
-            # in parallel — first frame in 1-2s instead of waiting for
-            # the entire multi-MB file to land. Cached videos go through
-            # the normal flow because the local path is already there.
-            from ..core.cache import is_cached
-            from .media.constants import VIDEO_EXTENSIONS
-            is_video = bool(
-                post.file_url
-                and Path(post.file_url.split('?')[0]).suffix.lower() in VIDEO_EXTENSIONS
-            )
-            streaming = is_video and post.file_url and not is_cached(post.file_url)
-            if streaming:
-                # Fire mpv at the URL immediately. The download_image
-                # below will populate the cache in parallel for next time.
-                self._signals.video_stream.emit(
-                    post.file_url, info, post.width, post.height
-                )
-
-            async def _load():
-                self._prefetch_pause.clear()  # pause prefetch
-                try:
-                    if streaming:
-                        # mpv is streaming the URL directly and its
-                        # stream-record option populates the cache as it
-                        # plays. No parallel httpx download needed — that
-                        # would open a second TCP+TLS connection to the
-                        # same CDN URL, contending with mpv for bandwidth.
-                        return
-                    path = await download_image(post.file_url, progress_callback=_progress)
-                    self._signals.image_done.emit(str(path), info)
-                except Exception as e:
-                    log.error(f"Image download failed: {e}")
-                    self._signals.image_error.emit(str(e))
-                finally:
-                    self._prefetch_pause.set()  # resume prefetch
-                    if preview_hidden:
-                        # Clear the thumbnail progress bar that was
-                        # standing in for the dl_progress widget.
-                        self._signals.prefetch_progress.emit(index, -1)
-
-            self._run_async(_load)
-
-            # Prefetch adjacent posts
-            if self._db.get_setting("prefetch_mode") in ("Nearby", "Aggressive"):
-                self._prefetch_adjacent(index)
-
-    def _prefetch_adjacent(self, index: int) -> None:
-        """Prefetch posts around the given index."""
-        total = len(self._posts)
-        if total == 0:
-            return
-        cols = self._grid._flow.columns
-        mode = self._db.get_setting("prefetch_mode")
-
-        if mode == "Nearby":
-            # Just 4 cardinals: left, right, up, down
-            order = []
-            for offset in [1, -1, cols, -cols]:
-                adj = index + offset
-                if 0 <= adj < total:
-                    order.append(adj)
-        else:
-            # Aggressive: ring expansion, capped to ~3 rows radius
-            max_radius = 3
-            max_posts = cols * max_radius * 2 + cols  # ~3 rows above and below
-            seen = {index}
-            order = []
-            for dist in range(1, max_radius + 1):
-                ring = set()
-                for dy in (-dist, 0, dist):
-                    for dx in (-dist, 0, dist):
-                        if dy == 0 and dx == 0:
-                            continue
-                        adj = index + dy * cols + dx
-                        if 0 <= adj < total and adj not in seen:
-                            ring.add(adj)
-                for adj in (index + dist, index - dist):
-                    if 0 <= adj < total and adj not in seen:
-                        ring.add(adj)
-                for adj in sorted(ring):
-                    seen.add(adj)
-                    order.append(adj)
-                if len(order) >= max_posts:
-                    break
-
-        async def _prefetch_spiral():
-            for adj in order:
-                await self._prefetch_pause.wait()  # yield to active downloads
-                if 0 <= adj < len(self._posts) and self._posts[adj].file_url:
-                    self._signals.prefetch_progress.emit(adj, 0.0)
-                    try:
-                        def _progress(dl, total_bytes, idx=adj):
-                            if total_bytes > 0:
-                                self._signals.prefetch_progress.emit(idx, dl / total_bytes)
-                        await download_image(self._posts[adj].file_url, progress_callback=_progress)
-                    except Exception as e:
-                        log.warning(f"Operation failed: {e}")
-                    self._signals.prefetch_progress.emit(adj, -1)
-                    await asyncio.sleep(0.2)  # gentle pacing
-        self._run_async(_prefetch_spiral)
-
-    def _on_download_progress(self, downloaded: int, total: int) -> None:
-        # Same suppression as _on_post_activated: when the popout is open,
-        # don't manipulate the dl_progress widget at all. Status bar still
-        # gets the byte counts so the user has feedback in the main window.
-        popout_open = bool(self._fullscreen_window and self._fullscreen_window.isVisible())
-        if total > 0:
-            if not popout_open:
-                self._dl_progress.setRange(0, total)
-                self._dl_progress.setValue(downloaded)
-                self._dl_progress.show()
-            mb = downloaded / (1024 * 1024)
-            total_mb = total / (1024 * 1024)
-            self._status.showMessage(f"Downloading... {mb:.1f}/{total_mb:.1f} MB")
-            # Auto-hide on completion. The streaming fast path
-            # (`video_stream`) suppresses `image_done`'s hide call, so
-            # without this the bar would stay visible forever after a
-            # streaming video's parallel cache download finished. The
-            # non-streaming path also gets here, where it's harmlessly
-            # redundant with the existing `_on_image_done` hide.
-            if downloaded >= total and not popout_open:
-                self._dl_progress.hide()
-        elif not popout_open:
-            self._dl_progress.setRange(0, 0)  # indeterminate
-            self._dl_progress.show()
-
-    def _set_preview_media(self, path: str, info: str) -> None:
-        """Set media on preview or just info if slideshow is open."""
-        if self._fullscreen_window and self._fullscreen_window.isVisible():
-            self._preview._info_label.setText(info)
-            self._preview._current_path = path
-        else:
-            self._preview.set_media(path, info)
-
-    def _update_fullscreen(self, path: str, info: str) -> None:
-        """Sync the fullscreen window with the current preview media.
-
-        Pulls the current post's API-reported dimensions out of
-        `self._preview._current_post` (always set before this is
-        called) and passes them to `set_media` so the popout can
-        pre-fit videos before mpv has loaded the file. Falls back to
-        0/0 (no pre-fit) for library/bookmark paths whose Post
-        objects don't carry dimensions, or if a fast-click race has
-        moved `_current_post` ahead of a still-resolving download —
-        in the race case mpv's `video_size` callback will catch up
-        and fit correctly anyway, so the worst outcome is a brief
-        wrong-aspect frame that self-corrects.
-        """
-        if self._fullscreen_window and self._fullscreen_window.isVisible():
-            self._preview._video_player.stop()
-            cp = self._preview._current_post
-            w = cp.width if cp else 0
-            h = cp.height if cp else 0
-            self._fullscreen_window.set_media(path, info, width=w, height=h)
-            # Bookmark / BL Tag / BL Post hidden on the library tab (no
-            # site/post id to act on for local-only files). Save stays
-            # visible — it acts as Unsave for the library file currently
-            # being viewed, matching the embedded preview's library mode.
-            show_full = self._stack.currentIndex() != 2
-            self._fullscreen_window.set_toolbar_visibility(
-                bookmark=show_full,
-                save=True,
-                bl_tag=show_full,
-                bl_post=show_full,
-            )
-            self._update_fullscreen_state()
-
-    def _update_fullscreen_state(self) -> None:
-        """Update popout button states by mirroring the embedded preview.
-
-        The embedded preview is the canonical owner of bookmark/save
-        state — every code path that bookmarks, unsaves, navigates, or
-        loads a post calls update_bookmark_state / update_save_state on
-        it. Re-querying the DB and filesystem here used to drift out of
-        sync with the embedded preview during async bookmark adds and
-        immediately after tab switches; mirroring eliminates the gap and
-        is one source of truth instead of two.
-        """
-        if not self._fullscreen_window:
-            return
-        self._fullscreen_window.update_state(
-            self._preview._is_bookmarked,
-            self._preview._is_saved,
-        )
-        post = self._preview._current_post
-        if post is not None:
-            self._fullscreen_window.set_post_tags(
-                post.tag_categories or {}, post.tag_list
-            )
-
-    def _on_image_done(self, path: str, info: str) -> None:
-        self._dl_progress.hide()
-        if self._fullscreen_window and self._fullscreen_window.isVisible():
-            # Popout is open — only show there, keep preview clear
-            self._preview._info_label.setText(info)
-            self._preview._current_path = path
-        else:
-            self._set_preview_media(path, info)
-        self._status.showMessage(f"{len(self._posts)} results — Loaded")
-        # Update drag path on the selected thumbnail
-        idx = self._grid.selected_index
-        if 0 <= idx < len(self._grid._thumbs):
-            self._grid._thumbs[idx]._cached_path = path
-        self._update_fullscreen(path, info)
-        # Auto-evict if over cache limit
-        self._auto_evict_cache()
-
-    def _on_video_stream(self, url: str, info: str, width: int, height: int) -> None:
-        """Fast-path slot for uncached video posts.
-
-        Mirrors `_on_image_done` but hands the *remote URL* to mpv
-        instead of waiting for the local cache file to land. mpv's
-        `play_file` detects the http(s) prefix and routes through the
-        per-file referrer-set loadfile branch (preview.py:play_file),
-        so the request gets the right Referer for booru CDNs that
-        gate hotlinking.
-
-        Width/height come from `post.width / post.height` and feed
-        the popout's pre-fit optimization (set_media's `width`/
-        `height` params) — same trick as the cached path, just
-        applied earlier in the chain.
-
-        download_image continues running in parallel inside the
-        original `_load` task and populates the cache for next time
-        — its `image_done` emit is suppressed by the `streaming`
-        flag in that closure so it doesn't re-call set_media with
-        the local path mid-playback (which would interrupt mpv and
-        reset position to 0).
-
-        When the popout is open, the embedded preview's mpv is not
-        stopped — it's hidden and idle, and the synchronous stop()
-        call would waste critical-path time for no visible benefit.
-        """
-        if self._fullscreen_window and self._fullscreen_window.isVisible():
-            # Popout is the visible target — leave the embedded preview's
-            # mpv alone. It's hidden and idle; stopping it here wastes
-            # synchronous time on the critical path (command('stop') is a
-            # round-trip into mpv's command queue). loadfile("replace") in
-            # the popout's play_file handles the media swap atomically.
-            self._preview._info_label.setText(info)
-            self._preview._current_path = url
-            self._fullscreen_window.set_media(url, info, width=width, height=height)
-            self._update_fullscreen_state()
-        else:
-            # Embedded preview is the visible target — stop any active
-            # playback before handing it the new URL.
-            self._preview._video_player.stop()
-            self._preview.set_media(url, info)
-        self._status.showMessage(f"Streaming #{Path(url.split('?')[0]).name}...")
-        # Note: no `_update_fullscreen_state()` call when popout is
-        # closed — the embedded preview's button states are already
-        # owned by `_on_post_activated`'s upstream calls.
-
-    def _auto_evict_cache(self) -> None:
-        if not self._db.get_setting_bool("auto_evict"):
-            return
-        max_mb = self._db.get_setting_int("max_cache_mb")
-        if max_mb <= 0:
-            return
-        max_bytes = max_mb * 1024 * 1024
-        current = cache_size_bytes(include_thumbnails=False)
-        if current > max_bytes:
-            protected = set()
-            for fav in self._db.get_bookmarks(limit=999999):
-                if fav.cached_path:
-                    protected.add(fav.cached_path)
-            evicted = evict_oldest(max_bytes, protected)
-            if evicted:
-                log.info(f"Auto-evicted {evicted} cached files")
-        # Thumbnail eviction
-        max_thumb_mb = self._db.get_setting_int("max_thumb_cache_mb") or 500
-        max_thumb_bytes = max_thumb_mb * 1024 * 1024
-        evicted_thumbs = evict_oldest_thumbnails(max_thumb_bytes)
-        if evicted_thumbs:
-            log.info(f"Auto-evicted {evicted_thumbs} thumbnails")
-
-    def _post_id_from_library_path(self, path: Path) -> int | None:
-        """Resolve a library file path back to its post_id.
-
-        Templated filenames look up library_meta.filename (post-refactor
-        saves like 12345_hatsune_miku.jpg). Legacy v0.2.3 digit-stem
-        files (12345.jpg) use int(stem) directly. Returns None if
-        neither resolves — e.g. an unrelated file dropped into the
-        library directory.
-        """
-        pid = self._db.get_library_post_id_by_filename(path.name)
-        if pid is not None:
-            return pid
-        if path.stem.isdigit():
-            return int(path.stem)
-        return None
-
-    def _set_library_info(self, path: str) -> None:
-        """Update info panel with library metadata for the given file."""
-        post_id = self._post_id_from_library_path(Path(path))
-        if post_id is None:
-            return
-        meta = self._db.get_library_meta(post_id)
-        if meta:
-            from ..core.api.base import Post
-            p = Post(
-                id=post_id, file_url=meta.get("file_url", ""),
-                preview_url=None, tags=meta.get("tags", ""),
-                score=meta.get("score", 0), rating=meta.get("rating"),
-                source=meta.get("source"), tag_categories=meta.get("tag_categories", {}),
-            )
-            self._info_panel.set_post(p)
-            info = f"#{p.id}  score:{p.score}  [{p.rating}]  {Path(path).suffix.lstrip('.').upper()}" + (f"  {p.created_at}" if p.created_at else "")
-            self._status.showMessage(info)
-
-    def _on_library_selected(self, path: str) -> None:
-        self._show_library_post(path)
-
-    def _on_library_activated(self, path: str) -> None:
-        self._show_library_post(path)
-
-    @staticmethod
-    def _image_dimensions(path: str) -> tuple[int, int]:
-        """Read image width/height from a local file. Returns (0, 0)
-        on failure or for video files (mpv reports those itself)."""
-        from .media.constants import _is_video
-        if _is_video(path):
-            return 0, 0
-        try:
-            pix = QPixmap(path)
-            if not pix.isNull():
-                return pix.width(), pix.height()
-        except Exception:
-            pass
-        return 0, 0
 
     def _show_library_post(self, path: str) -> None:
         # Read actual image dimensions so the popout can pre-fit and
         # set keep_aspect_ratio. library_meta doesn't store w/h, so
         # without this the popout gets 0/0 and skips the aspect lock.
-        img_w, img_h = self._image_dimensions(path)
-        self._set_preview_media(path, Path(path).name)
+        img_w, img_h = MediaController.image_dimensions(path)
+        self._media_ctrl.set_preview_media(path, Path(path).name)
         self._set_library_info(path)
         # Build a Post from library metadata so toolbar actions work.
         # Templated filenames go through library_meta.filename;
@@ -1150,7 +739,7 @@ class BooruApp(QMainWindow):
 
         # Try local cache first
         if fav.cached_path and Path(fav.cached_path).exists():
-            self._set_preview_media(fav.cached_path, info)
+            self._media_ctrl.set_preview_media(fav.cached_path, info)
             self._update_fullscreen(fav.cached_path, info)
             return
 
@@ -1160,7 +749,7 @@ class BooruApp(QMainWindow):
         # legacy digit-stem files would be found).
         from ..core.config import find_library_files
         for path in find_library_files(fav.post_id, db=self._db):
-            self._set_preview_media(str(path), info)
+            self._media_ctrl.set_preview_media(str(path), info)
             self._update_fullscreen(str(path), info)
             return
 
