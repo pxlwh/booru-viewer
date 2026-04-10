@@ -1069,11 +1069,18 @@ class BooruApp(QMainWindow):
         # If privacy is on, only allow toggling it off
         if self._privacy.is_active:
             return
-        if key == Qt.Key.Key_F and self._posts:
+        if key in (Qt.Key.Key_F, Qt.Key.Key_B) and self._posts:
             idx = self._grid.selected_index
             if 0 <= idx < len(self._posts):
                 self._post_actions.toggle_bookmark(idx)
                 return
+        if key == Qt.Key.Key_S and self._preview._current_post:
+            post = self._preview._current_post
+            if self._post_actions.is_post_saved(post.id):
+                self._post_actions.unsave_from_preview()
+            else:
+                self._post_actions.save_from_preview("")
+            return
         elif key == Qt.Key.Key_I:
             self._toggle_info()
             return
