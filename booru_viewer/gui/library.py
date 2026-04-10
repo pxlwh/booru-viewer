@@ -497,10 +497,14 @@ class LibraryView(QWidget):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply == QMessageBox.StandardButton.Yes:
-                post_id = int(filepath.stem) if filepath.stem.isdigit() else None
+                post_id = self._db.get_library_post_id_by_filename(filepath.name)
+                if post_id is None and filepath.stem.isdigit():
+                    post_id = int(filepath.stem)
                 filepath.unlink(missing_ok=True)
                 lib_thumb = thumbnails_dir() / "library" / f"{filepath.stem}.jpg"
                 lib_thumb.unlink(missing_ok=True)
+                if post_id is not None:
+                    self._db.remove_library_meta(post_id)
                 self.refresh()
                 if post_id is not None:
                     self.files_deleted.emit([post_id])
@@ -548,11 +552,15 @@ class LibraryView(QWidget):
             if reply == QMessageBox.StandardButton.Yes:
                 deleted_ids = []
                 for f in files:
-                    if f.stem.isdigit():
-                        deleted_ids.append(int(f.stem))
+                    post_id = self._db.get_library_post_id_by_filename(f.name)
+                    if post_id is None and f.stem.isdigit():
+                        post_id = int(f.stem)
                     f.unlink(missing_ok=True)
                     lib_thumb = thumbnails_dir() / "library" / f"{f.stem}.jpg"
                     lib_thumb.unlink(missing_ok=True)
+                    if post_id is not None:
+                        self._db.remove_library_meta(post_id)
+                        deleted_ids.append(post_id)
                 self.refresh()
                 if deleted_ids:
                     self.files_deleted.emit(deleted_ids)
