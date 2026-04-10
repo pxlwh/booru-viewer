@@ -61,7 +61,6 @@ booru-viewer has three tabs that map to three commitment levels: **Browse** for 
 ### Library
 - **Save** posts you want to keep — real files on disk in `saved/`, browsable in any file manager
 - **Filename templates** — customize saved filenames with `%id%`, `%artist%`, `%character%`, `%copyright%`, `%md5%`, `%rating%`, `%score%` tokens. Default is post ID. Set in Settings > Paths.
-- One-click promotion from bookmark to library when you decide to commit
 - **Tag search across saved metadata** — type to filter by indexed tags, no filename conventions required
 - On-disk folder organization with configurable library directory and folder sidebar — save unsorted or to a named subfolder
 - Sort by date, name, or size
@@ -79,7 +78,7 @@ booru-viewer has three tabs that map to three commitment levels: **Browse** for 
 
 ### Windows
 
-Download `booru-viewer-setup.exe` from Releases and run the installer. It installs to AppData with Start Menu and optional desktop shortcuts. To update, just run the new installer over the old one — your data in `%APPDATA%\booru-viewer\` is preserved.
+Download `booru-viewer-setup.exe` from Releases and run the installer. It installs to AppData with Start Menu and optional desktop shortcuts. To update, just run the new installer over the old one. Your data in `%APPDATA%\booru-viewer\` is preserved.
 
 Github: [/pxlwh/booru-viewer/releases](https://github.com/pxlwh/booru-viewer/releases)
 
