@@ -63,6 +63,7 @@ from .privacy import PrivacyController
 from .search_controller import SearchController
 from .media_controller import MediaController
 from .popout_controller import PopoutController
+from .post_actions import PostActionsController
 
 log = logging.getLogger("booru")
 
@@ -129,6 +130,7 @@ class BooruApp(QMainWindow):
         self._search_ctrl = SearchController(self)
         self._media_ctrl = MediaController(self)
         self._popout_ctrl = PopoutController(self)
+        self._post_actions = PostActionsController(self)
         self._main_window_save_timer = QTimer(self)
         self._main_window_save_timer.setSingleShot(True)
         self._main_window_save_timer.setInterval(300)
@@ -148,11 +150,11 @@ class BooruApp(QMainWindow):
         s.image_done.connect(self._media_ctrl.on_image_done, Q)
         s.image_error.connect(self._on_image_error, Q)
         s.video_stream.connect(self._media_ctrl.on_video_stream, Q)
-        s.bookmark_done.connect(self._on_bookmark_done, Q)
-        s.bookmark_error.connect(self._on_bookmark_error, Q)
+        s.bookmark_done.connect(self._post_actions.on_bookmark_done, Q)
+        s.bookmark_error.connect(self._post_actions.on_bookmark_error, Q)
         s.autocomplete_done.connect(self._search_ctrl.on_autocomplete_done, Q)
-        s.batch_progress.connect(self._on_batch_progress, Q)
-        s.batch_done.connect(self._on_batch_done, Q)
+        s.batch_progress.connect(self._post_actions.on_batch_progress, Q)
+        s.batch_done.connect(self._post_actions.on_batch_done, Q)
         s.download_progress.connect(self._media_ctrl.on_download_progress, Q)
         s.prefetch_progress.connect(self._media_ctrl.on_prefetch_progress, Q)
         s.categories_updated.connect(self._on_categories_updated, Q)
@@ -208,9 +210,6 @@ class BooruApp(QMainWindow):
 
     def _on_image_error(self, e: str) -> None:
         self._dl_progress.hide()
-        self._status.showMessage(f"Error: {e}")
-
-    def _on_bookmark_error(self, e: str) -> None:
         self._status.showMessage(f"Error: {e}")
 
     def _run_async(self, coro_func, *args):
@@ -326,7 +325,7 @@ class BooruApp(QMainWindow):
         self._bookmarks_view = BookmarksView(self._db)
         self._bookmarks_view.bookmark_selected.connect(self._on_bookmark_selected)
         self._bookmarks_view.bookmark_activated.connect(self._on_bookmark_activated)
-        self._bookmarks_view.bookmarks_changed.connect(self._refresh_browse_saved_dots)
+        self._bookmarks_view.bookmarks_changed.connect(self._post_actions.refresh_browse_saved_dots)
         self._bookmarks_view.open_in_browser_requested.connect(
             lambda site_id, post_id: self._open_post_id_in_browser(post_id, site_id=site_id)
         )
@@ -335,7 +334,7 @@ class BooruApp(QMainWindow):
         self._library_view = LibraryView(db=self._db)
         self._library_view.file_selected.connect(self._on_library_selected)
         self._library_view.file_activated.connect(self._on_library_activated)
-        self._library_view.files_deleted.connect(self._on_library_files_deleted)
+        self._library_view.files_deleted.connect(self._post_actions.on_library_files_deleted)
         self._stack.addWidget(self._library_view)
 
         self._splitter.addWidget(self._stack)
@@ -347,12 +346,12 @@ class BooruApp(QMainWindow):
         self._preview.close_requested.connect(self._close_preview)
         self._preview.open_in_default.connect(self._open_preview_in_default)
         self._preview.open_in_browser.connect(self._open_preview_in_browser)
-        self._preview.bookmark_requested.connect(self._bookmark_from_preview)
-        self._preview.bookmark_to_folder.connect(self._bookmark_to_folder_from_preview)
-        self._preview.save_to_folder.connect(self._save_from_preview)
-        self._preview.unsave_requested.connect(self._unsave_from_preview)
-        self._preview.blacklist_tag_requested.connect(self._blacklist_tag_from_popout)
-        self._preview.blacklist_post_requested.connect(self._blacklist_post_from_popout)
+        self._preview.bookmark_requested.connect(self._post_actions.bookmark_from_preview)
+        self._preview.bookmark_to_folder.connect(self._post_actions.bookmark_to_folder_from_preview)
+        self._preview.save_to_folder.connect(self._post_actions.save_from_preview)
+        self._preview.unsave_requested.connect(self._post_actions.unsave_from_preview)
+        self._preview.blacklist_tag_requested.connect(self._post_actions.blacklist_tag_from_popout)
+        self._preview.blacklist_post_requested.connect(self._post_actions.blacklist_post_from_popout)
         self._preview.navigate.connect(self._navigate_preview)
         self._preview.play_next_requested.connect(self._on_video_end_next)
         self._preview.fullscreen_requested.connect(self._popout_ctrl.open)
@@ -506,7 +505,7 @@ class BooruApp(QMainWindow):
 
         self._batch_action = QAction("Batch &Download Page...", self)
         self._batch_action.setShortcut(QKeySequence("Ctrl+D"))
-        self._batch_action.triggered.connect(self._batch_download)
+        self._batch_action.triggered.connect(self._post_actions.batch_download)
         file_menu.addAction(self._batch_action)
 
         file_menu.addSeparator()
@@ -730,7 +729,7 @@ class BooruApp(QMainWindow):
         self._preview.update_bookmark_state(
             bool(self._db.is_bookmarked(fav.site_id, post.id))
         )
-        self._preview.update_save_state(self._is_post_saved(post.id))
+        self._preview.update_save_state(self._post_actions.is_post_saved(post.id))
         info = f"Bookmark #{fav.post_id}"
 
         # Try local cache first
@@ -911,169 +910,6 @@ class BooruApp(QMainWindow):
         """
         self._navigate_preview(1, wrap=True)
 
-    def _is_post_saved(self, post_id: int) -> bool:
-        """Check if a post is saved in the library (any folder).
-
-        Goes through library_meta — format-agnostic, sees both
-        digit-stem v0.2.3 files and templated post-refactor saves.
-        Single indexed SELECT, no filesystem walk.
-        """
-        return self._db.is_post_in_library(post_id)
-
-    def _get_preview_post(self):
-        """Get the post currently shown in the preview, from grid or stored ref."""
-        idx = self._grid.selected_index
-        if 0 <= idx < len(self._posts):
-            return self._posts[idx], idx
-        if self._preview._current_post:
-            return self._preview._current_post, -1
-        return None, -1
-
-    def _bookmark_from_preview(self) -> None:
-        post, idx = self._get_preview_post()
-        if not post:
-            return
-        site_id = self._preview._current_site_id or self._site_combo.currentData()
-        if not site_id:
-            return
-        if idx >= 0:
-            self._toggle_bookmark(idx)
-        else:
-            if self._db.is_bookmarked(site_id, post.id):
-                self._db.remove_bookmark(site_id, post.id)
-            else:
-                from ..core.cache import cached_path_for
-                cached = cached_path_for(post.file_url)
-                self._db.add_bookmark(
-                    site_id=site_id, post_id=post.id,
-                    file_url=post.file_url, preview_url=post.preview_url or "",
-                    tags=post.tags, rating=post.rating, score=post.score,
-                    source=post.source, cached_path=str(cached) if cached.exists() else None,
-                    tag_categories=post.tag_categories,
-                )
-        bookmarked = bool(self._db.is_bookmarked(site_id, post.id))
-        self._preview.update_bookmark_state(bookmarked)
-        self._popout_ctrl.update_state()
-        # Refresh bookmarks tab if visible
-        if self._stack.currentIndex() == 1:
-            self._bookmarks_view.refresh()
-
-    def _bookmark_to_folder_from_preview(self, folder: str) -> None:
-        """Bookmark the current preview post into a specific bookmark folder.
-
-        Triggered by the toolbar Bookmark-as submenu, which only shows
-        when the post is not yet bookmarked — so this method only handles
-        the create path, never the move/remove paths. Empty string means
-        Unfiled. Brand-new folder names get added to the DB folder list
-        first so the bookmarks tab combo immediately shows them.
-        """
-        post, idx = self._get_preview_post()
-        if not post:
-            return
-        site_id = self._preview._current_site_id or self._site_combo.currentData()
-        if not site_id:
-            return
-        target = folder if folder else None
-        if target and target not in self._db.get_folders():
-            try:
-                self._db.add_folder(target)
-            except ValueError as e:
-                self._status.showMessage(f"Invalid folder name: {e}")
-                return
-        if idx >= 0:
-            # In the grid — go through _toggle_bookmark so the grid
-            # thumbnail's bookmark badge updates via _on_bookmark_done.
-            self._toggle_bookmark(idx, target)
-        else:
-            # Preview-only post (e.g. opened from the bookmarks tab while
-            # browse is empty). Inline the add — no grid index to update.
-            from ..core.cache import cached_path_for
-            cached = cached_path_for(post.file_url)
-            self._db.add_bookmark(
-                site_id=site_id, post_id=post.id,
-                file_url=post.file_url, preview_url=post.preview_url or "",
-                tags=post.tags, rating=post.rating, score=post.score,
-                source=post.source,
-                cached_path=str(cached) if cached.exists() else None,
-                folder=target,
-                tag_categories=post.tag_categories,
-            )
-            where = target or "Unfiled"
-            self._status.showMessage(f"Bookmarked #{post.id} to {where}")
-        self._preview.update_bookmark_state(True)
-        self._popout_ctrl.update_state()
-        # Refresh bookmarks tab if visible so the new entry appears.
-        if self._stack.currentIndex() == 1:
-            self._bookmarks_view.refresh()
-
-    def _save_from_preview(self, folder: str) -> None:
-        post, idx = self._get_preview_post()
-        if post:
-            target = folder if folder else None
-            # _save_to_library calls saved_folder_dir() which mkdir's the
-            # target directory itself — no need to register it in the
-            # bookmark folders DB table (those are unrelated now).
-            self._save_to_library(post, target)
-            # State updates happen in _on_bookmark_done after async save completes
-
-    def _unsave_from_preview(self) -> None:
-        post, idx = self._get_preview_post()
-        if not post:
-            return
-        # delete_from_library walks every library folder by post id and
-        # deletes every match in one call — no folder hint needed. Pass
-        # db so templated filenames also get unlinked AND the meta row
-        # gets cleaned up.
-        from ..core.cache import delete_from_library
-        deleted = delete_from_library(post.id, db=self._db)
-        if deleted:
-            self._status.showMessage(f"Removed #{post.id} from library")
-            self._preview.update_save_state(False)
-            # Update browse grid thumbnail saved dot
-            for i, p in enumerate(self._posts):
-                if p.id == post.id and i < len(self._grid._thumbs):
-                    self._grid._thumbs[i].set_saved_locally(False)
-                    break
-            # Update bookmarks grid thumbnail
-            bm_grid = self._bookmarks_view._grid
-            for i, fav in enumerate(self._bookmarks_view._bookmarks):
-                if fav.post_id == post.id and i < len(bm_grid._thumbs):
-                    bm_grid._thumbs[i].set_saved_locally(False)
-                    break
-            # Refresh library tab if visible
-            if self._stack.currentIndex() == 2:
-                self._library_view.refresh()
-        else:
-            self._status.showMessage(f"#{post.id} not in library")
-        self._popout_ctrl.update_state()
-
-    def _blacklist_tag_from_popout(self, tag: str) -> None:
-        reply = QMessageBox.question(
-            self, "Blacklist Tag",
-            f"Blacklist tag \"{tag}\"?\nPosts with this tag will be hidden.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
-            return
-        self._db.add_blacklisted_tag(tag)
-        self._db.set_setting("blacklist_enabled", "1")
-        self._status.showMessage(f"Blacklisted: {tag}")
-        self._search_ctrl.remove_blacklisted_from_grid(tag=tag)
-
-    def _blacklist_post_from_popout(self) -> None:
-        post, idx = self._get_preview_post()
-        if post:
-            reply = QMessageBox.question(
-                self, "Blacklist Post",
-                f"Blacklist post #{post.id}?\nThis post will be hidden from results.",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            if reply != QMessageBox.StandardButton.Yes:
-                return
-            self._db.add_blacklisted_post(post.file_url)
-            self._status.showMessage(f"Post #{post.id} blacklisted")
-            self._search_ctrl.remove_blacklisted_from_grid(post_url=post.file_url)
-
     def _close_preview(self) -> None:
         self._preview.clear()
 
@@ -1104,7 +940,7 @@ class BooruApp(QMainWindow):
         save_lib_new = save_lib_menu.addAction("+ New Folder...")
 
         unsave_lib = None
-        if self._is_post_saved(post.id):
+        if self._post_actions.is_post_saved(post.id):
             unsave_lib = menu.addAction("Unsave from Library")
         copy_clipboard = menu.addAction("Copy File to Clipboard")
         copy_url = menu.addAction("Copy Image URL")
@@ -1122,7 +958,7 @@ class BooruApp(QMainWindow):
         bm_folder_actions: dict[int, str] = {}
         bm_unfiled = None
         bm_new = None
-        if self._is_current_bookmarked(index):
+        if self._post_actions.is_current_bookmarked(index):
             fav_action = menu.addAction("Remove Bookmark")
         else:
             fav_menu = menu.addMenu("Bookmark as")
@@ -1154,9 +990,9 @@ class BooruApp(QMainWindow):
         elif action == open_default:
             self._open_in_default(post)
         elif action == save_as:
-            self._save_as(post)
+            self._post_actions.save_as(post)
         elif action == save_lib_unsorted:
-            self._save_to_library(post, None)
+            self._post_actions.save_to_library(post, None)
         elif action == save_lib_new:
             from PySide6.QtWidgets import QInputDialog, QMessageBox
             name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
@@ -1170,12 +1006,12 @@ class BooruApp(QMainWindow):
                 except ValueError as e:
                     QMessageBox.warning(self, "Invalid Folder Name", str(e))
                     return
-                self._save_to_library(post, name.strip())
+                self._post_actions.save_to_library(post, name.strip())
         elif id(action) in save_lib_folders:
-            self._save_to_library(post, save_lib_folders[id(action)])
+            self._post_actions.save_to_library(post, save_lib_folders[id(action)])
         elif action == unsave_lib:
             self._preview._current_post = post
-            self._unsave_from_preview()
+            self._post_actions.unsave_from_preview()
         elif action == copy_clipboard:
             self._copy_file_to_clipboard()
         elif action == copy_url:
@@ -1186,9 +1022,9 @@ class BooruApp(QMainWindow):
             self._status.showMessage("Tags copied")
         elif fav_action is not None and action == fav_action:
             # Currently bookmarked → flat "Remove Bookmark" path.
-            self._toggle_bookmark(index)
+            self._post_actions.toggle_bookmark(index)
         elif bm_unfiled is not None and action == bm_unfiled:
-            self._toggle_bookmark(index, None)
+            self._post_actions.toggle_bookmark(index, None)
         elif bm_new is not None and action == bm_new:
             from PySide6.QtWidgets import QInputDialog, QMessageBox
             name, ok = QInputDialog.getText(self, "New Bookmark Folder", "Folder name:")
@@ -1200,9 +1036,9 @@ class BooruApp(QMainWindow):
                 except ValueError as e:
                     QMessageBox.warning(self, "Invalid Folder Name", str(e))
                     return
-                self._toggle_bookmark(index, name.strip())
+                self._post_actions.toggle_bookmark(index, name.strip())
         elif id(action) in bm_folder_actions:
-            self._toggle_bookmark(index, bm_folder_actions[id(action)])
+            self._post_actions.toggle_bookmark(index, bm_folder_actions[id(action)])
         elif self._is_child_of_menu(action, bl_menu):
             tag = action.text()
             self._db.add_blacklisted_tag(tag)
@@ -1253,8 +1089,8 @@ class BooruApp(QMainWindow):
         site_id = self._site_combo.currentData()
         any_bookmarked = bool(site_id) and any(self._db.is_bookmarked(site_id, p.id) for p in posts)
         any_unbookmarked = bool(site_id) and any(not self._db.is_bookmarked(site_id, p.id) for p in posts)
-        any_saved = any(self._is_post_saved(p.id) for p in posts)
-        any_unsaved = any(not self._is_post_saved(p.id) for p in posts)
+        any_saved = any(self._post_actions.is_post_saved(p.id) for p in posts)
+        any_unsaved = any(not self._post_actions.is_post_saved(p.id) for p in posts)
 
         menu = QMenu(self)
 
@@ -1300,9 +1136,9 @@ class BooruApp(QMainWindow):
             return
 
         if fav_all is not None and action == fav_all:
-            self._bulk_bookmark(indices, posts)
+            self._post_actions.bulk_bookmark(indices, posts)
         elif save_unsorted is not None and action == save_unsorted:
-            self._bulk_save(indices, posts, None)
+            self._post_actions.bulk_save(indices, posts, None)
         elif save_new is not None and action == save_new:
             from PySide6.QtWidgets import QInputDialog, QMessageBox
             name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
@@ -1313,16 +1149,16 @@ class BooruApp(QMainWindow):
                 except ValueError as e:
                     QMessageBox.warning(self, "Invalid Folder Name", str(e))
                     return
-                self._bulk_save(indices, posts, name.strip())
+                self._post_actions.bulk_save(indices, posts, name.strip())
         elif id(action) in save_folder_actions:
-            self._bulk_save(indices, posts, save_folder_actions[id(action)])
+            self._post_actions.bulk_save(indices, posts, save_folder_actions[id(action)])
         elif unsave_lib_all is not None and action == unsave_lib_all:
-            self._bulk_unsave(indices, posts)
+            self._post_actions.bulk_unsave(indices, posts)
         elif action == batch_dl:
             from .dialogs import select_directory
             dest = select_directory(self, "Download to folder")
             if dest:
-                self._batch_download_posts(posts, dest)
+                self._post_actions.batch_download_posts(posts, dest)
         elif unfav_all is not None and action == unfav_all:
             if site_id:
                 for post in posts:
@@ -1338,127 +1174,6 @@ class BooruApp(QMainWindow):
             urls = "\n".join(p.file_url for p in posts)
             QApplication.clipboard().setText(urls)
             self._status.showMessage(f"Copied {count} URLs")
-
-    def _bulk_bookmark(self, indices: list[int], posts: list[Post]) -> None:
-        site_id = self._site_combo.currentData()
-        if not site_id:
-            return
-        self._status.showMessage(f"Bookmarking {len(posts)}...")
-
-        async def _do():
-            for i, (idx, post) in enumerate(zip(indices, posts)):
-                if self._db.is_bookmarked(site_id, post.id):
-                    continue
-                try:
-                    path = await download_image(post.file_url)
-                    self._db.add_bookmark(
-                        site_id=site_id, post_id=post.id,
-                        file_url=post.file_url, preview_url=post.preview_url,
-                        tags=post.tags, rating=post.rating, score=post.score,
-                        source=post.source, cached_path=str(path),
-                        tag_categories=post.tag_categories,
-                    )
-                    self._signals.bookmark_done.emit(idx, f"Bookmarked {i+1}/{len(posts)}")
-                except Exception as e:
-                    log.warning(f"Operation failed: {e}")
-            self._signals.batch_done.emit(f"Bookmarked {len(posts)} posts")
-
-        self._run_async(_do)
-
-    def _bulk_save(self, indices: list[int], posts: list[Post], folder: str | None) -> None:
-        """Bulk-save the selected posts into the library, optionally inside a subfolder.
-
-        Each iteration routes through save_post_file with a shared
-        in_flight set so template-collision-prone batches (e.g.
-        %artist% on a page that has many posts by the same artist) get
-        sequential _1, _2, _3 suffixes instead of clobbering each other.
-        """
-        from ..core.config import saved_dir, saved_folder_dir
-        from ..core.library_save import save_post_file
-
-        where = folder or "Unfiled"
-        self._status.showMessage(f"Saving {len(posts)} to {where}...")
-        try:
-            dest_dir = saved_folder_dir(folder) if folder else saved_dir()
-        except ValueError as e:
-            self._status.showMessage(f"Invalid folder name: {e}")
-            return
-
-        in_flight: set[str] = set()
-
-        async def _do():
-            fetcher = self._get_category_fetcher()
-            for i, (idx, post) in enumerate(zip(indices, posts)):
-                try:
-                    src = Path(await download_image(post.file_url))
-                    await save_post_file(src, post, dest_dir, self._db, in_flight, category_fetcher=fetcher)
-                    self._copy_library_thumb(post)
-                    self._signals.bookmark_done.emit(idx, f"Saved {i+1}/{len(posts)} to {where}")
-                except Exception as e:
-                    log.warning(f"Bulk save #{post.id} failed: {e}")
-            self._signals.batch_done.emit(f"Saved {len(posts)} to {where}")
-
-        self._run_async(_do)
-
-    def _bulk_unsave(self, indices: list[int], posts: list[Post]) -> None:
-        """Bulk-remove selected posts from the library.
-
-        Mirrors `_bulk_save` shape but synchronously — `delete_from_library`
-        is a filesystem op, no httpx round-trip needed. Touches only the
-        library (filesystem); bookmarks are a separate DB-backed concept
-        and stay untouched. The grid's saved-locally dot clears for every
-        selection slot regardless of whether the file was actually present
-        — the user's intent is "make these not-saved", and a missing file
-        is already not-saved.
-        """
-        from ..core.cache import delete_from_library
-        for post in posts:
-            delete_from_library(post.id, db=self._db)
-        for idx in indices:
-            if 0 <= idx < len(self._grid._thumbs):
-                self._grid._thumbs[idx].set_saved_locally(False)
-        self._grid._clear_multi()
-        self._status.showMessage(f"Removed {len(posts)} from library")
-        if self._stack.currentIndex() == 2:
-            self._library_view.refresh()
-        self._popout_ctrl.update_state()
-
-    def _ensure_bookmarked(self, post: Post) -> None:
-        """Bookmark a post if not already bookmarked."""
-        site_id = self._site_combo.currentData()
-        if not site_id or self._db.is_bookmarked(site_id, post.id):
-            return
-
-        async def _fav():
-            try:
-                path = await download_image(post.file_url)
-                self._db.add_bookmark(
-                    site_id=site_id,
-                    post_id=post.id,
-                    file_url=post.file_url,
-                    preview_url=post.preview_url,
-                    tags=post.tags,
-                    rating=post.rating,
-                    score=post.score,
-                    source=post.source,
-                    cached_path=str(path),
-                )
-            except Exception as e:
-                log.warning(f"Operation failed: {e}")
-
-        self._run_async(_fav)
-
-    def _batch_download_posts(self, posts: list, dest: str) -> None:
-        """Multi-select Download All entry point. Delegates to
-        _batch_download_to so the in_flight set, library_meta write,
-        and saved-dots refresh share one implementation."""
-        self._batch_download_to(posts, Path(dest))
-
-    def _is_current_bookmarked(self, index: int) -> bool:
-        site_id = self._site_combo.currentData()
-        if not site_id or index < 0 or index >= len(self._posts):
-            return False
-        return self._db.is_bookmarked(site_id, self._posts[index].id)
 
     def _open_post_id_in_browser(self, post_id: int, site_id: int | None = None) -> None:
         """Open the post page in the system browser. site_id selects which
@@ -1500,161 +1215,7 @@ class BooruApp(QMainWindow):
         else:
             self._status.showMessage("Image not cached yet — double-click to download first")
 
-    def _copy_library_thumb(self, post: Post) -> None:
-        """Copy a post's browse thumbnail into the library thumbnail
-        cache so the Library tab can paint it without re-downloading.
-        No-op if there's no preview_url or the source thumb isn't cached."""
-        if not post.preview_url:
-            return
-        from ..core.config import thumbnails_dir
-        from ..core.cache import cached_path_for
-        thumb_src = cached_path_for(post.preview_url, thumbnails_dir())
-        if not thumb_src.exists():
-            return
-        lib_thumb_dir = thumbnails_dir() / "library"
-        lib_thumb_dir.mkdir(parents=True, exist_ok=True)
-        lib_thumb = lib_thumb_dir / f"{post.id}.jpg"
-        if not lib_thumb.exists():
-            import shutil
-            shutil.copy2(thumb_src, lib_thumb)
-
-    def _save_to_library(self, post: Post, folder: str | None) -> None:
-        """Save a post into the library, optionally inside a subfolder.
-
-        Routes through the unified save_post_file flow so the filename
-        template, sequential collision suffixes, same-post idempotency,
-        and library_meta write are all handled in one place. Re-saving
-        the same post into the same folder is a no-op (idempotent);
-        saving into a different folder produces a second copy without
-        touching the first.
-        """
-        from ..core.config import saved_dir, saved_folder_dir
-        from ..core.library_save import save_post_file
-
-        self._status.showMessage(f"Saving #{post.id} to library...")
-        try:
-            dest_dir = saved_folder_dir(folder) if folder else saved_dir()
-        except ValueError as e:
-            self._status.showMessage(f"Invalid folder name: {e}")
-            return
-
-        async def _save():
-            try:
-                src = Path(await download_image(post.file_url))
-                await save_post_file(src, post, dest_dir, self._db, category_fetcher=self._get_category_fetcher())
-                self._copy_library_thumb(post)
-                where = folder or "Unfiled"
-                self._signals.bookmark_done.emit(
-                    self._grid.selected_index,
-                    f"Saved #{post.id} to {where}",
-                )
-            except Exception as e:
-                self._signals.bookmark_error.emit(str(e))
-
-        self._run_async(_save)
-
-    def _save_as(self, post: Post) -> None:
-        """Open a Save As dialog for a single post and write the file
-        through the unified save_post_file flow.
-
-        The default name in the dialog comes from rendering the user's
-        library_filename_template against the post; the user can edit
-        before confirming. If the chosen destination ends up inside
-        saved_dir(), save_post_file registers a library_meta row —
-        a behavior change from v0.2.3 (where Save As never wrote meta
-        regardless of destination)."""
-        from ..core.cache import cached_path_for
-        from ..core.config import render_filename_template
-        from ..core.library_save import save_post_file
-        from .dialogs import save_file
-
-        src = cached_path_for(post.file_url)
-        if not src.exists():
-            self._status.showMessage("Image not cached — double-click to download first")
-            return
-        ext = src.suffix
-        template = self._db.get_setting("library_filename_template")
-        default_name = render_filename_template(template, post, ext)
-        dest = save_file(self, "Save Image", default_name, f"Images (*{ext})")
-        if not dest:
-            return
-        dest_path = Path(dest)
-
-        async def _do_save():
-            try:
-                actual = await save_post_file(
-                    src, post, dest_path.parent, self._db,
-                    explicit_name=dest_path.name,
-                    category_fetcher=self._get_category_fetcher(),
-                )
-                self._signals.bookmark_done.emit(
-                    self._grid.selected_index,
-                    f"Saved to {actual}",
-                )
-            except Exception as e:
-                self._signals.bookmark_error.emit(f"Save failed: {e}")
-
-        self._run_async(_do_save)
-
     # -- Batch download --
-
-    def _batch_download_to(self, posts: list[Post], dest_dir: Path) -> None:
-        """Download `posts` into `dest_dir`, routing each save through
-        save_post_file with a shared in_flight set so collision-prone
-        templates produce sequential _1, _2 suffixes within the batch.
-
-        Stashes `dest_dir` on `self._batch_dest` so _on_batch_progress
-        and _on_batch_done can decide whether the destination is inside
-        the library and the saved-dots need refreshing. The library_meta
-        write happens automatically inside save_post_file when dest_dir
-        is inside saved_dir() — fixes the v0.2.3 latent bug where batch
-        downloads into a library folder left files unregistered.
-        """
-        from ..core.library_save import save_post_file
-
-        self._batch_dest = dest_dir
-        self._status.showMessage(f"Downloading {len(posts)} images...")
-        in_flight: set[str] = set()
-
-        async def _batch():
-            fetcher = self._get_category_fetcher()
-            for i, post in enumerate(posts):
-                try:
-                    src = Path(await download_image(post.file_url))
-                    await save_post_file(src, post, dest_dir, self._db, in_flight, category_fetcher=fetcher)
-                    self._signals.batch_progress.emit(i + 1, len(posts), post.id)
-                except Exception as e:
-                    log.warning(f"Batch #{post.id} failed: {e}")
-            self._signals.batch_done.emit(f"Downloaded {len(posts)} images to {dest_dir}")
-
-        self._run_async(_batch)
-
-    def _batch_download(self) -> None:
-        if not self._posts:
-            self._status.showMessage("No posts to download")
-            return
-        from .dialogs import select_directory
-        dest = select_directory(self, "Download to folder")
-        if not dest:
-            return
-        self._batch_download_to(list(self._posts), Path(dest))
-
-    def _on_batch_progress(self, current: int, total: int, post_id: int) -> None:
-        self._status.showMessage(f"Downloading {current}/{total}...")
-        # Light the browse saved-dot for the just-finished post if the
-        # batch destination is inside the library. Runs per-post on the
-        # main thread (this is a Qt slot), so the dot appears as the
-        # files land instead of all at once when the batch completes.
-        dest = getattr(self, "_batch_dest", None)
-        if dest is None:
-            return
-        from ..core.config import saved_dir
-        if not dest.is_relative_to(saved_dir()):
-            return
-        for i, p in enumerate(self._posts):
-            if p.id == post_id and i < len(self._grid._thumbs):
-                self._grid._thumbs[i].set_saved_locally(True)
-                break
 
     # -- Toggles --
 
@@ -1747,7 +1308,7 @@ class BooruApp(QMainWindow):
         if key == Qt.Key.Key_F and self._posts:
             idx = self._grid.selected_index
             if 0 <= idx < len(self._posts):
-                self._toggle_bookmark(idx)
+                self._post_actions.toggle_bookmark(idx)
                 return
         elif key == Qt.Key.Key_I:
             self._toggle_info()
@@ -1794,102 +1355,6 @@ class BooruApp(QMainWindow):
         self._status.showMessage(f"Copied to clipboard: {Path(path).name}")
 
     # -- Bookmarks --
-
-    def _toggle_bookmark(self, index: int, folder: str | None = None) -> None:
-        """Toggle the bookmark state of post at `index`.
-
-        When `folder` is given and the post is not yet bookmarked, the
-        new bookmark is filed under that bookmark folder. The folder
-        arg is ignored when removing — bookmark folder membership is
-        moot if the bookmark itself is going away.
-        """
-        post = self._posts[index]
-        site_id = self._site_combo.currentData()
-        if not site_id:
-            return
-
-        if self._db.is_bookmarked(site_id, post.id):
-            self._db.remove_bookmark(site_id, post.id)
-            self._status.showMessage(f"Unbookmarked #{post.id}")
-            thumbs = self._grid._thumbs
-            if 0 <= index < len(thumbs):
-                thumbs[index].set_bookmarked(False)
-        else:
-            self._status.showMessage(f"Bookmarking #{post.id}...")
-
-            async def _fav():
-                try:
-                    path = await download_image(post.file_url)
-                    self._db.add_bookmark(
-                        site_id=site_id,
-                        post_id=post.id,
-                        file_url=post.file_url,
-                        preview_url=post.preview_url,
-                        tags=post.tags,
-                        rating=post.rating,
-                        score=post.score,
-                        source=post.source,
-                        cached_path=str(path),
-                        folder=folder,
-                        tag_categories=post.tag_categories,
-                    )
-                    where = folder or "Unfiled"
-                    self._signals.bookmark_done.emit(index, f"Bookmarked #{post.id} to {where}")
-                except Exception as e:
-                    self._signals.bookmark_error.emit(str(e))
-
-            self._run_async(_fav)
-
-    def _on_bookmark_done(self, index: int, msg: str) -> None:
-        self._status.showMessage(f"{len(self._posts)} results — {msg}")
-        # Detect batch operations (e.g. "Saved 3/10 to Unfiled") — skip heavy updates
-        is_batch = "/" in msg and any(c.isdigit() for c in msg.split("/")[0][-2:])
-        thumbs = self._grid._thumbs
-        if 0 <= index < len(thumbs):
-            if "Saved" in msg:
-                thumbs[index].set_saved_locally(True)
-            if "Bookmarked" in msg:
-                thumbs[index].set_bookmarked(True)
-        if not is_batch:
-            if "Bookmarked" in msg:
-                self._preview.update_bookmark_state(True)
-            if "Saved" in msg:
-                self._preview.update_save_state(True)
-                if self._stack.currentIndex() == 1:
-                    bm_grid = self._bookmarks_view._grid
-                    bm_idx = bm_grid.selected_index
-                    if 0 <= bm_idx < len(bm_grid._thumbs):
-                        bm_grid._thumbs[bm_idx].set_saved_locally(True)
-                if self._stack.currentIndex() == 2:
-                    self._library_view.refresh()
-            self._popout_ctrl.update_state()
-
-    def _on_library_files_deleted(self, post_ids: list) -> None:
-        """Library deleted files — clear saved dots on browse grid."""
-        for i, p in enumerate(self._posts):
-            if p.id in post_ids and i < len(self._grid._thumbs):
-                self._grid._thumbs[i].set_saved_locally(False)
-
-    def _refresh_browse_saved_dots(self) -> None:
-        """Bookmarks changed — rescan saved state for all visible browse grid posts."""
-        for i, p in enumerate(self._posts):
-            if i < len(self._grid._thumbs):
-                self._grid._thumbs[i].set_saved_locally(self._is_post_saved(p.id))
-                site_id = self._site_combo.currentData()
-                self._grid._thumbs[i].set_bookmarked(
-                    bool(site_id and self._db.is_bookmarked(site_id, p.id))
-                )
-
-    def _on_batch_done(self, msg: str) -> None:
-        self._status.showMessage(msg)
-        self._popout_ctrl.update_state()
-        if self._stack.currentIndex() == 1:
-            self._bookmarks_view.refresh()
-        if self._stack.currentIndex() == 2:
-            self._library_view.refresh()
-        # Saved-dot updates happen incrementally in _on_batch_progress as
-        # each file lands; this slot just clears the destination stash.
-        self._batch_dest = None
 
     def closeEvent(self, event) -> None:
         # Flush any pending splitter / window-state saves (debounce timers

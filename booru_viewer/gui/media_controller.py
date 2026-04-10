@@ -97,7 +97,7 @@ class MediaController:
             self._app._preview.update_bookmark_state(
                 bool(site_id and self._app._db.is_bookmarked(site_id, post.id))
             )
-            self._app._preview.update_save_state(self._app._is_post_saved(post.id))
+            self._app._preview.update_save_state(self._app._post_actions.is_post_saved(post.id))
             self._app._status.showMessage(f"Loading #{post.id}...")
             preview_hidden = not (
                 self._app._preview.isVisible() and self._app._preview.width() > 0
