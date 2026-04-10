@@ -85,6 +85,11 @@ class BooruClient(ABC):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.api_user = api_user
+        # Set externally by client_for_type when db + site_id are
+        # available. Gelbooru-shape and Moebooru clients use it to
+        # populate post.tag_categories via HTML scrape / batch API.
+        # Danbooru and e621 leave it None (inline categorization).
+        self.category_fetcher = None  # CategoryFetcher | None
 
     @property
     def client(self) -> httpx.AsyncClient:
@@ -175,6 +180,28 @@ class BooruClient(ABC):
     async def autocomplete(self, query: str, limit: int = 10) -> list[str]:
         """Tag autocomplete. Override in subclasses that support it."""
         return []
+
+    def _post_view_url(self, post: Post) -> str | None:
+        """Return the URL for a post's HTML detail page, or None.
+
+        Override in subclasses whose booru exposes tag categories in
+        the post-view HTML via ``class="tag-type-X"`` markup.
+        CategoryFetcher.fetch_post uses this to scrape categories.
+        Returning None means "no HTML scrape path" — the default for
+        Danbooru and e621 which categorize inline via JSON.
+        """
+        return None
+
+    def _tag_api_url(self) -> str | None:
+        """Return the base URL for the batch tag DAPI, or None.
+
+        Override in Gelbooru-shaped subclasses to enable the fast
+        path in CategoryFetcher.fetch_via_tag_api. The fetcher
+        appends ``?page=dapi&s=tag&q=index&...`` query params.
+        Returning None disables the fast path; the fetcher falls
+        back to per-post HTML scrape.
+        """
+        return None
 
     async def test_connection(self) -> tuple[bool, str]:
         """Test connection. Returns (success, detail_message).
