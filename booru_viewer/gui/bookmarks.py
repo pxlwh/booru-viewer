@@ -286,10 +286,14 @@ class BookmarksView(QWidget):
             return
         src = Path(fav.cached_path)
         post = self._bookmark_to_post(fav)
-        try:
-            save_post_file(src, post, dest_dir, self._db)
-        except Exception as e:
-            log.warning(f"Bookmark→library save #{fav.post_id} failed: {e}")
+
+        async def _do():
+            try:
+                await save_post_file(src, post, dest_dir, self._db)
+            except Exception as e:
+                log.warning(f"Bookmark→library save #{fav.post_id} failed: {e}")
+
+        run_on_app_loop(_do())
 
     def _copy_to_library_unsorted(self, fav: Bookmark) -> None:
         """Copy a bookmarked image to the unsorted library folder."""
@@ -404,13 +408,17 @@ class BookmarksView(QWidget):
                 dest = save_file(self, "Save Image", default_name, f"Images (*{src.suffix})")
                 if dest:
                     dest_path = Path(dest)
-                    try:
-                        save_post_file(
-                            src, post, dest_path.parent, self._db,
-                            explicit_name=dest_path.name,
-                        )
-                    except Exception as e:
-                        log.warning(f"Bookmark Save As #{fav.post_id} failed: {e}")
+
+                    async def _do_save_as():
+                        try:
+                            await save_post_file(
+                                src, post, dest_path.parent, self._db,
+                                explicit_name=dest_path.name,
+                            )
+                        except Exception as e:
+                            log.warning(f"Bookmark Save As #{fav.post_id} failed: {e}")
+
+                    run_on_app_loop(_do_save_as())
         elif action == unsave_lib:
             from ..core.cache import delete_from_library
             # Pass db so templated filenames are matched and the meta
