@@ -158,7 +158,16 @@ class LibraryView(QWidget):
         if query and self._db:
             matching_ids = self._db.search_library_meta(query)
             if matching_ids:
-                self._files = [f for f in self._files if f.stem.isdigit() and int(f.stem) in matching_ids]
+                def _file_matches(f: Path) -> bool:
+                    # Templated filenames: look up post_id via library_meta.filename
+                    pid = self._db.get_library_post_id_by_filename(f.name)
+                    if pid is not None:
+                        return pid in matching_ids
+                    # Legacy digit-stem fallback
+                    if f.stem.isdigit():
+                        return int(f.stem) in matching_ids
+                    return False
+                self._files = [f for f in self._files if _file_matches(f)]
             else:
                 self._files = []
 
