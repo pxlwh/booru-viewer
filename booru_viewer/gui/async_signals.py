@@ -27,3 +27,4 @@ class AsyncSignals(QObject):
     batch_done = Signal(str)
     download_progress = Signal(int, int)  # bytes_downloaded, total_bytes
     prefetch_progress = Signal(int, float)  # index, progress (0-1 or -1 to hide)
+    categories_updated = Signal(object)  # Post whose tag_categories just got populated
