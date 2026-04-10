@@ -251,6 +251,13 @@ class BooruApp(QMainWindow):
         self._rating_combo.currentTextChanged.connect(self._on_rating_changed)
         top.addWidget(self._rating_combo)
 
+        # Media type filter
+        self._media_filter = QComboBox()
+        self._media_filter.addItems(["All", "Animated", "Video", "GIF", "Audio"])
+        self._media_filter.setToolTip("Filter by media type")
+        self._media_filter.setFixedWidth(90)
+        top.addWidget(self._media_filter)
+
         # Score filter — type the value directly. Spinbox arrows hidden
         # since the field is small enough to type into and the +/- buttons
         # were just visual noise. setFixedHeight(23) overrides Qt's
@@ -267,12 +274,6 @@ class BooruApp(QMainWindow):
         self._score_spin.setFixedHeight(23)
         self._score_spin.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
         top.addWidget(self._score_spin)
-
-        self._media_filter = QComboBox()
-        self._media_filter.addItems(["All", "Animated", "Video", "GIF", "Audio"])
-        self._media_filter.setToolTip("Filter by media type")
-        self._media_filter.setFixedWidth(90)
-        top.addWidget(self._media_filter)
 
         page_label = QLabel("Page")
         top.addWidget(page_label)
@@ -2242,6 +2243,8 @@ class BooruApp(QMainWindow):
             self._fullscreen_window.bookmark_to_folder.connect(self._bookmark_to_folder_from_preview)
             self._fullscreen_window.blacklist_tag_requested.connect(self._blacklist_tag_from_popout)
             self._fullscreen_window.blacklist_post_requested.connect(self._blacklist_post_from_popout)
+        self._fullscreen_window.open_in_default.connect(self._open_preview_in_default)
+        self._fullscreen_window.open_in_browser.connect(self._open_preview_in_browser)
         self._fullscreen_window.closed.connect(self._on_fullscreen_closed)
         self._fullscreen_window.privacy_requested.connect(self._toggle_privacy)
         # Set post tags for BL Tag menu
