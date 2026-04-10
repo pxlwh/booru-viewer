@@ -59,7 +59,7 @@ booru-viewer has three tabs that map to three commitment levels: **Browse** for 
 - Unbookmark from grid, preview, or popout
 
 ### Library
-- **Save** posts you want to keep — real files on disk in `saved/`, browsable in any file manager
+- **Save** posts you want to keep, real files on disk in `saved/`, browsable in any file manager
 - **Filename templates** — customize saved filenames with `%id%`, `%artist%`, `%character%`, `%copyright%`, `%md5%`, `%rating%`, `%score%` tokens. Default is post ID. Set in Settings > Paths.
 - **Tag search across saved metadata** — type to filter by indexed tags, no filename conventions required
 - On-disk folder organization with configurable library directory and folder sidebar — save unsorted or to a named subfolder
