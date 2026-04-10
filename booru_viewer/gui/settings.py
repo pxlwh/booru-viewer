@@ -136,7 +136,7 @@ class SettingsDialog(QDialog):
 
         # Thumbnail size
         self._thumb_size = QSpinBox()
-        self._thumb_size.setRange(100, 400)
+        self._thumb_size.setRange(100, 200)
         self._thumb_size.setSingleStep(20)
         self._thumb_size.setValue(self._db.get_setting_int("thumbnail_size"))
         form.addRow("Thumbnail size (px):", self._spinbox_row(self._thumb_size))
