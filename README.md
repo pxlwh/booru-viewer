@@ -1,5 +1,7 @@
 # booru-viewer
 
+[![tests](https://github.com/pxlwh/booru-viewer/actions/workflows/tests.yml/badge.svg)](https://github.com/pxlwh/booru-viewer/actions/workflows/tests.yml)
+
 A booru client for people who keep what they save and rice what they run.
 
 Qt6 desktop app for Linux and Windows. Browse, search, and archive Danbooru, e621, Gelbooru, and Moebooru. Fully themeable.
