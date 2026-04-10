@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal, QSize, QRect, QRectF, QMimeData, QUrl, QPoint, Property
+from PySide6.QtCore import Qt, Signal, QSize, QRect, QRectF, QMimeData, QUrl, QPoint, Property, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QPixmap, QPainter, QPainterPath, QColor, QPen, QKeyEvent, QWheelEvent, QDrag, QMouseEvent
 from PySide6.QtWidgets import (
     QWidget,
@@ -65,6 +65,13 @@ class ThumbnailWidget(QWidget):
     def _set_idle_color(self, c): self._idle_color = QColor(c) if isinstance(c, str) else c
     idleColor = Property(QColor, _get_idle_color, _set_idle_color)
 
+    # Thumbnail fade-in opacity (0.0 → 1.0 on pixmap arrival)
+    def _get_thumb_opacity(self): return self._thumb_opacity
+    def _set_thumb_opacity(self, v):
+        self._thumb_opacity = v
+        self.update()
+    thumbOpacity = Property(float, _get_thumb_opacity, _set_thumb_opacity)
+
     def __init__(self, index: int, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.index = index
@@ -77,6 +84,7 @@ class ThumbnailWidget(QWidget):
         self._drag_start: QPoint | None = None
         self._cached_path: str | None = None
         self._prefetch_progress: float = -1  # -1 = not prefetching, 0-1 = progress
+        self._thumb_opacity: float = 0.0
         # Seed selection colors from the palette so non-themed environments
         # (no custom.qss) automatically use the system highlight color.
         # The qproperty setters above override these later when the QSS is
@@ -97,7 +105,13 @@ class ThumbnailWidget(QWidget):
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
-        self.update()
+        self._thumb_opacity = 0.0
+        self._fade_anim = QPropertyAnimation(self, b"thumbOpacity")
+        self._fade_anim.setDuration(200)
+        self._fade_anim.setStartValue(0.0)
+        self._fade_anim.setEndValue(1.0)
+        self._fade_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._fade_anim.start()
 
     def set_selected(self, selected: bool) -> None:
         self._selected = selected
@@ -182,7 +196,11 @@ class ThumbnailWidget(QWidget):
         if self._pixmap:
             x = (self.width() - self._pixmap.width()) // 2
             y = (self.height() - self._pixmap.height()) // 2
+            if self._thumb_opacity < 1.0:
+                p.setOpacity(self._thumb_opacity)
             p.drawPixmap(x, y, self._pixmap)
+            if self._thumb_opacity < 1.0:
+                p.setOpacity(1.0)
 
         # Border drawn AFTER the pixmap. Plain rectangle (no rounding) so
         # it lines up exactly with the pixmap's square edges — no corner
