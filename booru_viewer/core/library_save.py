@@ -26,13 +26,17 @@ if TYPE_CHECKING:
     from .api.base import Post
 
 
-def save_post_file(
+_CATEGORY_TOKENS = {"%artist%", "%character%", "%copyright%", "%general%", "%meta%", "%species%"}
+
+
+async def save_post_file(
     src: Path,
     post: "Post",
     dest_dir: Path,
     db: Database,
     in_flight: set[str] | None = None,
     explicit_name: str | None = None,
+    category_fetcher=None,
 ) -> Path:
     """Copy a Post's already-cached media file into `dest_dir`.
 
@@ -95,6 +99,18 @@ def save_post_file(
         basename = explicit_name
     else:
         template = db.get_setting("library_filename_template")
+        # If the template uses category tokens and the post has no
+        # categories yet, fetch them synchronously before rendering.
+        # This guarantees the filename is correct even when saving
+        # a post the user hasn't clicked (no prior ensure from the
+        # info panel path).
+        if (
+            category_fetcher is not None
+            and not post.tag_categories
+            and template
+            and any(tok in template for tok in _CATEGORY_TOKENS)
+        ):
+            await category_fetcher.ensure_categories(post)
         basename = render_filename_template(template, post, src.suffix)
 
     in_flight_set: set[str] = in_flight if in_flight is not None else set()
