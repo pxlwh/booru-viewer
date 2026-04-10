@@ -514,6 +514,18 @@ class PostActionsController:
                         bm_grid._thumbs[bm_idx].set_saved_locally(True)
                 if self._app._stack.currentIndex() == 2:
                     self._app._library_view.refresh()
+                # Auto-remove bookmark on save if the setting is on
+                if self._app._db.get_setting_bool("unbookmark_on_save"):
+                    site_id = self._app._site_combo.currentData()
+                    if site_id and 0 <= index < len(self._app._posts):
+                        post = self._app._posts[index]
+                        if self._app._db.is_bookmarked(site_id, post.id):
+                            self._app._db.remove_bookmark(site_id, post.id)
+                            if 0 <= index < len(thumbs):
+                                thumbs[index].set_bookmarked(False)
+                            self._app._preview.update_bookmark_state(False)
+                            if self._app._stack.currentIndex() == 1:
+                                self._app._bookmarks_view.refresh()
             self._app._popout_ctrl.update_state()
 
     def on_batch_progress(self, current: int, total: int, post_id: int) -> None:
@@ -536,6 +548,15 @@ class PostActionsController:
     def on_batch_done(self, msg: str) -> None:
         self._app._status.showMessage(msg)
         self._app._popout_ctrl.update_state()
+        # Auto-remove bookmarks for bulk saves if the setting is on
+        if "Saved" in msg and self._app._db.get_setting_bool("unbookmark_on_save"):
+            site_id = self._app._site_combo.currentData()
+            if site_id:
+                for i, p in enumerate(self._app._posts):
+                    if self._app._db.is_bookmarked(site_id, p.id) and self.is_post_saved(p.id):
+                        self._app._db.remove_bookmark(site_id, p.id)
+                        if i < len(self._app._grid._thumbs):
+                            self._app._grid._thumbs[i].set_bookmarked(False)
         if self._app._stack.currentIndex() == 1:
             self._app._bookmarks_view.refresh()
         if self._app._stack.currentIndex() == 2:

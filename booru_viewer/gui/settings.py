@@ -187,6 +187,11 @@ class SettingsDialog(QDialog):
         self._infinite_scroll.setChecked(self._db.get_setting_bool("infinite_scroll"))
         form.addRow("", self._infinite_scroll)
 
+        # Unbookmark on save
+        self._unbookmark_on_save = QCheckBox("Remove bookmark when saved to library")
+        self._unbookmark_on_save.setChecked(self._db.get_setting_bool("unbookmark_on_save"))
+        form.addRow("", self._unbookmark_on_save)
+
         # Slideshow monitor
         from PySide6.QtWidgets import QApplication
         self._monitor_combo = QComboBox()
@@ -779,6 +784,7 @@ class SettingsDialog(QDialog):
         self._db.set_setting("preload_thumbnails", "1" if self._preload.isChecked() else "0")
         self._db.set_setting("prefetch_mode", self._prefetch_combo.currentText())
         self._db.set_setting("infinite_scroll", "1" if self._infinite_scroll.isChecked() else "0")
+        self._db.set_setting("unbookmark_on_save", "1" if self._unbookmark_on_save.isChecked() else "0")
         self._db.set_setting("slideshow_monitor", self._monitor_combo.currentText())
         self._db.set_setting("library_dir", self._library_dir.text().strip())
         self._db.set_setting("library_filename_template", self._library_filename_template.text().strip())

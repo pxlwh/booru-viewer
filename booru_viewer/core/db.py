@@ -152,6 +152,7 @@ _DEFAULTS = {
     "library_dir": "",
     "infinite_scroll": "0",
     "library_filename_template": "",
+    "unbookmark_on_save": "0",
 }
 
 
