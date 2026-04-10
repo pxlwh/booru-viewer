@@ -81,7 +81,7 @@ Download `booru-viewer-setup.exe` from Releases and run the installer. It instal
 
 Github: [/pxlwh/booru-viewer/releases](https://github.com/pxlwh/booru-viewer/releases)
 
-Gitea: [/pax/booru-viewer/releases](https://git.pax.moe)
+Gitea: [/pax/booru-viewer/releases](https://git.pax.moe/releases)
 
 Windows 10 dark mode is automatically detected and applied.
 
