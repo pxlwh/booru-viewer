@@ -13,6 +13,12 @@ log = logging.getLogger("booru")
 class GelbooruClient(BooruClient):
     api_type = "gelbooru"
 
+    def _post_view_url(self, post: Post) -> str:
+        return f"{self.base_url}/index.php?page=post&s=view&id={post.id}"
+
+    def _tag_api_url(self) -> str:
+        return f"{self.base_url}/index.php"
+
     async def search(
         self, tags: str = "", page: int = 1, limit: int = DEFAULT_PAGE_SIZE
     ) -> list[Post]:
@@ -75,6 +81,8 @@ class GelbooruClient(BooruClient):
                     created_at=_parse_date(item.get("created_at")),
                 )
             )
+        if self.category_fetcher is not None:
+            await self.category_fetcher.prefetch_batch(posts)
         return posts
 
     @staticmethod
@@ -107,7 +115,7 @@ class GelbooruClient(BooruClient):
         file_url = item.get("file_url", "")
         if not file_url:
             return None
-        return Post(
+        post = Post(
             id=item["id"],
             file_url=file_url,
             preview_url=item.get("preview_url"),
@@ -119,6 +127,9 @@ class GelbooruClient(BooruClient):
             height=item.get("height", 0),
             created_at=_parse_date(item.get("created_at")),
         )
+        if self.category_fetcher is not None:
+            await self.category_fetcher.prefetch_batch([post])
+        return post
 
     async def autocomplete(self, query: str, limit: int = 10) -> list[str]:
         try:
