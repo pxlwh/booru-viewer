@@ -13,6 +13,9 @@ log = logging.getLogger("booru")
 class MoebooruClient(BooruClient):
     api_type = "moebooru"
 
+    def _post_view_url(self, post: Post) -> str:
+        return f"{self.base_url}/post/show/{post.id}"
+
     async def search(
         self, tags: str = "", page: int = 1, limit: int = DEFAULT_PAGE_SIZE
     ) -> list[Post]:
@@ -53,6 +56,8 @@ class MoebooruClient(BooruClient):
                     created_at=_parse_date(item.get("created_at")),
                 )
             )
+        if self.category_fetcher is not None:
+            await self.category_fetcher.prefetch_batch(posts)
         return posts
 
     async def get_post(self, post_id: int) -> Post | None:
@@ -74,7 +79,7 @@ class MoebooruClient(BooruClient):
         file_url = item.get("file_url") or item.get("jpeg_url") or ""
         if not file_url:
             return None
-        return Post(
+        post = Post(
             id=item["id"],
             file_url=file_url,
             preview_url=item.get("preview_url") or item.get("actual_preview_url"),
@@ -86,6 +91,9 @@ class MoebooruClient(BooruClient):
             height=item.get("height", 0),
             created_at=_parse_date(item.get("created_at")),
         )
+        if self.category_fetcher is not None:
+            await self.category_fetcher.prefetch_batch([post])
+        return post
 
     async def autocomplete(self, query: str, limit: int = 10) -> list[str]:
         try:
