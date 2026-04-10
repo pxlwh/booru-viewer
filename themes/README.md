@@ -66,14 +66,6 @@ slots that the body actually uses need to be defined.
 
 ## Included Themes
 
-Each theme ships in two corner-radius variants. Screenshots use the rounded variant:
-
-<picture><img src="../screenshots/themes/nord.png" alt="Nord" width="400"></picture> <picture><img src="../screenshots/themes/catppuccin-mocha.png" alt="Catppuccin Mocha" width="400"></picture>
-
-<picture><img src="../screenshots/themes/gruvbox.png" alt="Gruvbox" width="400"></picture> <picture><img src="../screenshots/themes/solarized-dark.png" alt="Solarized Dark" width="400"></picture>
-
-<picture><img src="../screenshots/themes/tokyo-night.png" alt="Tokyo Night" width="400"></picture> <picture><img src="../screenshots/themes/everforest.png" alt="Everforest" width="400"></picture>
-
 Each theme ships in two corner-radius variants:
 
 - **`*-rounded.qss`** — 4px radius on buttons, inputs, dropdowns, scrollbar handles, group boxes, tabs etc. The "default" Fusion-style look.
@@ -90,18 +82,24 @@ Pick whichever matches your overall desktop aesthetic. Both variants share the s
 | Tokyo Night | [tokyo-night-rounded.qss](tokyo-night-rounded.qss) | [tokyo-night-square.qss](tokyo-night-square.qss) |
 | Everforest | [everforest-rounded.qss](everforest-rounded.qss) | [everforest-square.qss](everforest-square.qss) |
 
+<picture><img src="../screenshots/themes/nord.png" alt="Nord" width="400"></picture> <picture><img src="../screenshots/themes/catppuccin-mocha.png" alt="Catppuccin Mocha" width="400"></picture>
+
+<picture><img src="../screenshots/themes/gruvbox.png" alt="Gruvbox" width="400"></picture> <picture><img src="../screenshots/themes/solarized-dark.png" alt="Solarized Dark" width="400"></picture>
+
+<picture><img src="../screenshots/themes/tokyo-night.png" alt="Tokyo Night" width="400"></picture> <picture><img src="../screenshots/themes/everforest.png" alt="Everforest" width="400"></picture>
+
 ## Widget Targets
 
 ### Global
 
 ```css
 QWidget {
-    background-color: #282828;
-    color: #ebdbb2;
+    background-color: ${bg};
+    color: ${text};
     font-size: 13px;
     font-family: monospace;
-    selection-background-color: #fe8019;  /* grid selection border + hover highlight */
-    selection-color: #282828;
+    selection-background-color: ${accent};  /* grid selection border + hover highlight */
+    selection-color: ${accent_text};
 }
 ```
 
@@ -109,15 +107,15 @@ QWidget {
 
 ```css
 QPushButton {
-    background-color: #333;
-    color: #fff;
-    border: 1px solid #555;
+    background-color: ${bg_subtle};
+    color: ${text};
+    border: 1px solid ${border};
     border-radius: 4px;
     padding: 5px 14px;
 }
-QPushButton:hover { background-color: #444; }
-QPushButton:pressed { background-color: #555; }
-QPushButton:checked { background-color: #0078d7; }  /* Active tab (Browse/Bookmarks/Library), Autoplay, Loop toggles */
+QPushButton:hover { background-color: ${bg_hover}; }
+QPushButton:pressed { background-color: ${bg_active}; }
+QPushButton:checked { background-color: ${accent}; }  /* Active tab (Browse/Bookmarks/Library), Autoplay, Loop toggles */
 ```
 
 **Note:** Qt's QSS does not support the CSS `content` property, so you cannot replace button text (e.g. "Play" → "") via stylesheet alone. However, you can use a Nerd Font to change how unicode characters render:
@@ -134,14 +132,14 @@ To use icon buttons, you would need to modify the Python source code directly �
 
 ```css
 QLineEdit, QTextEdit {
-    background-color: #1a1a1a;
-    color: #fff;
-    border: 1px solid #555;
+    background-color: ${bg};
+    color: ${text};
+    border: 1px solid ${border};
     border-radius: 4px;
     padding: 4px 8px;
 }
 QLineEdit:focus, QTextEdit:focus {
-    border-color: #0078d7;
+    border-color: ${accent};
 }
 ```
 
@@ -149,9 +147,9 @@ QLineEdit:focus, QTextEdit:focus {
 
 ```css
 QComboBox {
-    background-color: #333;
-    color: #fff;
-    border: 1px solid #555;
+    background-color: ${bg_subtle};
+    color: ${text};
+    border: 1px solid ${border};
     border-radius: 4px;
     padding: 3px 6px;
 }
@@ -160,10 +158,10 @@ QComboBox::drop-down {
     width: 20px;
 }
 QComboBox QAbstractItemView {
-    background-color: #333;
-    color: #fff;
-    border: 1px solid #555;
-    selection-background-color: #444;
+    background-color: ${bg_subtle};
+    color: ${text};
+    border: 1px solid ${border};
+    selection-background-color: ${bg_hover};
 }
 ```
 
@@ -171,9 +169,9 @@ QComboBox QAbstractItemView {
 
 ```css
 QSpinBox {
-    background-color: #333;
-    color: #fff;
-    border: 1px solid #555;
+    background-color: ${bg_subtle};
+    color: ${text};
+    border: 1px solid ${border};
     border-radius: 2px;
 }
 ```
@@ -182,24 +180,24 @@ QSpinBox {
 
 ```css
 QScrollBar:vertical {
-    background: #1a1a1a;
+    background: ${bg};
     width: 10px;
     border: none;
 }
 QScrollBar::handle:vertical {
-    background: #555;
+    background: ${bg_hover};
     border-radius: 4px;
     min-height: 20px;
 }
-QScrollBar::handle:vertical:hover { background: #0078d7; }
+QScrollBar::handle:vertical:hover { background: ${bg_active}; }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 
 QScrollBar:horizontal {
-    background: #1a1a1a;
+    background: ${bg};
     height: 10px;
 }
 QScrollBar::handle:horizontal {
-    background: #555;
+    background: ${bg_hover};
     border-radius: 4px;
 }
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
@@ -209,25 +207,25 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
 
 ```css
 QMenuBar {
-    background-color: #1a1a1a;
-    color: #fff;
+    background-color: ${bg};
+    color: ${text};
 }
-QMenuBar::item:selected { background-color: #333; }
+QMenuBar::item:selected { background-color: ${bg_subtle}; }
 
 QMenu {
-    background-color: #1a1a1a;
-    color: #fff;
-    border: 1px solid #333;
+    background-color: ${bg};
+    color: ${text};
+    border: 1px solid ${border};
 }
-QMenu::item:selected { background-color: #333; }
+QMenu::item:selected { background-color: ${bg_subtle}; }
 ```
 
 ### Status Bar
 
 ```css
 QStatusBar {
-    background-color: #1a1a1a;
-    color: #888;
+    background-color: ${bg};
+    color: ${text_dim};
 }
 ```
 
@@ -235,7 +233,7 @@ QStatusBar {
 
 ```css
 QSplitter::handle {
-    background: #555;
+    background: ${border};
     width: 2px;
 }
 ```
@@ -244,14 +242,14 @@ QSplitter::handle {
 
 ```css
 QTabBar::tab {
-    background: #333;
-    color: #fff;
-    border: 1px solid #555;
+    background: ${bg_subtle};
+    color: ${text};
+    border: 1px solid ${border};
     padding: 6px 16px;
 }
 QTabBar::tab:selected {
-    background: #444;
-    color: #0078d7;
+    background: ${bg_hover};
+    color: ${accent};
 }
 ```
 
@@ -263,7 +261,7 @@ To override the preview controls bar background in QSS:
 
 ```css
 QWidget#_preview_controls {
-    background: rgba(40, 40, 40, 200);  /* your custom translucent bg */
+    background: ${overlay_bg};
 }
 ```
 
@@ -271,12 +269,12 @@ Standard slider styling still applies outside the controls bar:
 
 ```css
 QSlider::groove:horizontal {
-    background: #333;
+    background: ${bg_subtle};
     height: 4px;
     border-radius: 2px;
 }
 QSlider::handle:horizontal {
-    background: #0078d7;
+    background: ${accent};
     width: 12px;
     margin: -4px 0;
     border-radius: 6px;
@@ -292,12 +290,12 @@ These overlays use internal styling that overrides QSS. To customize:
 ```css
 /* Popout top toolbar */
 QWidget#_slideshow_toolbar {
-    background: rgba(40, 40, 40, 200);
+    background: ${overlay_bg};
 }
 
 /* Popout bottom video controls */
 QWidget#_slideshow_controls {
-    background: rgba(40, 40, 40, 200);
+    background: ${overlay_bg};
 }
 ```
 
@@ -305,12 +303,12 @@ Buttons and labels inside both overlays inherit a white-on-transparent style. To
 
 ```css
 QWidget#_slideshow_toolbar QPushButton {
-    border: 1px solid rgba(255, 255, 255, 120);
-    color: #ccc;
+    border: 1px solid ${border};
+    color: ${text_dim};
 }
 QWidget#_slideshow_controls QPushButton {
-    border: 1px solid rgba(255, 255, 255, 120);
-    color: #ccc;
+    border: 1px solid ${border};
+    color: ${text_dim};
 }
 ```
 
@@ -324,11 +322,11 @@ The toolbar does not have a named object ID — it inherits the app's `QPushButt
 
 ```css
 QProgressBar {
-    background-color: #333;
+    background-color: ${bg_subtle};
     border: none;
 }
 QProgressBar::chunk {
-    background-color: #0078d7;
+    background-color: ${accent};
 }
 ```
 
@@ -336,9 +334,9 @@ QProgressBar::chunk {
 
 ```css
 QToolTip {
-    background-color: #333;
-    color: #fff;
-    border: 1px solid #555;
+    background-color: ${bg_subtle};
+    color: ${text};
+    border: 1px solid ${border};
     padding: 4px;
 }
 ```
@@ -357,8 +355,8 @@ Click and drag on empty grid space to select multiple thumbnails. The rubber ban
 
 ```css
 QRubberBand {
-    background: rgba(0, 120, 215, 40);
-    border: 1px solid #0078d7;
+    background: ${accent};  /* use rgba(...) variant for translucency */
+    border: 1px solid ${accent};
 }
 ```
 
@@ -368,10 +366,10 @@ The library tab's count label switches between three visual states depending on 
 
 ```css
 QLabel[libraryCountState="empty"] {
-    color: #a6adc8;            /* dim text — search miss or empty folder */
+    color: ${text_dim};        /* dim text — search miss or empty folder */
 }
 QLabel[libraryCountState="error"] {
-    color: #f38ba8;            /* danger color — directory unreachable */
+    color: ${danger};          /* danger color — directory unreachable */
     font-weight: bold;
 }
 ```
