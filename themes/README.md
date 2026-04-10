@@ -66,6 +66,14 @@ slots that the body actually uses need to be defined.
 
 ## Included Themes
 
+Each theme ships in two corner-radius variants. Screenshots use the rounded variant:
+
+<picture><img src="../screenshots/themes/nord.png" alt="Nord" width="400"></picture> <picture><img src="../screenshots/themes/catppuccin-mocha.png" alt="Catppuccin Mocha" width="400"></picture>
+
+<picture><img src="../screenshots/themes/gruvbox.png" alt="Gruvbox" width="400"></picture> <picture><img src="../screenshots/themes/solarized-dark.png" alt="Solarized Dark" width="400"></picture>
+
+<picture><img src="../screenshots/themes/tokyo-night.png" alt="Tokyo Night" width="400"></picture> <picture><img src="../screenshots/themes/everforest.png" alt="Everforest" width="400"></picture>
+
 Each theme ships in two corner-radius variants:
 
 - **`*-rounded.qss`** — 4px radius on buttons, inputs, dropdowns, scrollbar handles, group boxes, tabs etc. The "default" Fusion-style look.
