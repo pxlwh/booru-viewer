@@ -81,9 +81,6 @@ class GelbooruClient(BooruClient):
                     created_at=_parse_date(item.get("created_at")),
                 )
             )
-        if self.category_fetcher is not None:
-            import asyncio
-            asyncio.create_task(self.category_fetcher.prefetch_batch(posts))
         return posts
 
     @staticmethod

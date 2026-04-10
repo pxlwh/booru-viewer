@@ -56,9 +56,6 @@ class MoebooruClient(BooruClient):
                     created_at=_parse_date(item.get("created_at")),
                 )
             )
-        if self.category_fetcher is not None:
-            import asyncio
-            asyncio.create_task(self.category_fetcher.prefetch_batch(posts))
         return posts
 
     async def get_post(self, post_id: int) -> Post | None:
