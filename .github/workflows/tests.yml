@@ -8,11 +8,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install system deps
+      - name: Install test deps
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libmpv-dev libegl1 libxkbcommon0
-      - name: Install Python deps
-        run: pip install -e . pytest
+          pip install httpx[http2] Pillow pytest
+          pip install -e . --no-deps
       - name: Run tests
-        run: QT_QPA_PLATFORM=offscreen pytest tests/ -v
+        run: pytest tests/ -v
