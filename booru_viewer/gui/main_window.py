@@ -166,14 +166,15 @@ class BooruApp(QMainWindow):
         No-op if the active client doesn't have a CategoryFetcher
         (Danbooru/e621 categorize inline, no fetcher needed).
 
-        Does NOT check post.tag_categories — partial cache composes
-        from the background prefetch can leave the post at e.g.
-        5/40 coverage. ensure_categories checks 100% cache coverage
-        internally and fetches the remainder if needed.
+        Sets _categories_pending on the info panel so it skips the
+        flat-tag fallback render (avoids the flat→categorized
+        re-layout hitch). The flag clears when categories arrive.
         """
         client = self._make_client()
         if client is None or client.category_fetcher is None:
+            self._info_panel._categories_pending = False
             return
+        self._info_panel._categories_pending = True
         fetcher = client.category_fetcher
         signals = self._signals
 
@@ -195,6 +196,7 @@ class BooruApp(QMainWindow):
         place by the CategoryFetcher, so we just call the panel's
         set_post / set_post_tags again to pick up the new dict.
         """
+        self._info_panel._categories_pending = False
         if not post or not post.tag_categories:
             return
         idx = self._grid.selected_index

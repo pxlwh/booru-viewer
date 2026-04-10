@@ -79,6 +79,7 @@ class InfoPanel(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._categories_pending = False
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
 
@@ -164,8 +165,11 @@ class InfoPanel(QWidget):
                     btn.setStyleSheet(style)
                     btn.clicked.connect(lambda checked, t=tag: self.tag_clicked.emit(t))
                     self._tags_flow.addWidget(btn)
-        else:
-            # Fallback: flat tag list (Gelbooru, Moebooru)
+        elif not self._categories_pending:
+            # Flat tag fallback — only when no category fetch is
+            # in-flight. When a fetch IS pending, leaving the tags
+            # area empty avoids the flat→categorized re-layout hitch
+            # (categories arrive ~200ms later and render in one pass).
             for tag in post.tag_list[:100]:
                 btn = QPushButton(tag)
                 btn.setFlat(True)
