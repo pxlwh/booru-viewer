@@ -1137,6 +1137,16 @@ class BooruApp(QMainWindow):
                 + (f"  {post.created_at}" if post.created_at else "")
             )
             if self._info_panel.isVisible():
+                # Signal the info panel whether a category fetch is
+                # about to fire so it skips the flat-tag fallback
+                # (avoids the flat→categorized re-layout flash).
+                if not post.tag_categories:
+                    client = self._make_client()
+                    self._info_panel._categories_pending = (
+                        client is not None and client.category_fetcher is not None
+                    )
+                else:
+                    self._info_panel._categories_pending = False
                 self._info_panel.set_post(post)
             self._on_post_activated(index)
 
