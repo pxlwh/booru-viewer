@@ -124,6 +124,14 @@ CREATE TABLE IF NOT EXISTS saved_searches (
     query TEXT NOT NULL,
     site_id INTEGER
 );
+
+CREATE TABLE IF NOT EXISTS tag_types (
+    site_id    INTEGER NOT NULL,
+    name       TEXT NOT NULL,
+    label      TEXT NOT NULL,
+    fetched_at TEXT NOT NULL,
+    PRIMARY KEY (site_id, name)
+);
 """
 
 _DEFAULTS = {
@@ -252,6 +260,21 @@ class Database:
                 # Add tag_categories to favorites if missing
                 if "tag_categories" not in cols:
                     self._conn.execute("ALTER TABLE favorites ADD COLUMN tag_categories TEXT DEFAULT ''")
+                # Tag-type cache for boorus that don't return
+                # categorized tags inline (Gelbooru-shape, Moebooru).
+                # Per-site keying so forks don't cross-contaminate.
+                # Uses string labels ("Artist", "Character", ...)
+                # instead of integer codes — the labels come from
+                # the HTML class names directly.
+                self._conn.execute("""
+                    CREATE TABLE IF NOT EXISTS tag_types (
+                        site_id    INTEGER NOT NULL,
+                        name       TEXT NOT NULL,
+                        label      TEXT NOT NULL,
+                        fetched_at TEXT NOT NULL,
+                        PRIMARY KEY (site_id, name)
+                    )
+                """)
 
     def close(self) -> None:
         if self._conn:
@@ -726,6 +749,81 @@ class Database:
     def remove_library_meta(self, post_id: int) -> None:
         with self._write():
             self.conn.execute("DELETE FROM library_meta WHERE post_id = ?", (post_id,))
+
+    # -- Tag-type cache --
+
+    def get_tag_labels(self, site_id: int, names: list[str]) -> dict[str, str]:
+        """Return cached string labels for `names` on `site_id`.
+
+        Result dict only contains tags with a cache entry — callers
+        fetch the misses via CategoryFetcher and call set_tag_labels
+        to backfill. Chunked to stay under SQLite's variable limit.
+        """
+        if not names:
+            return {}
+        result: dict[str, str] = {}
+        BATCH = 500
+        for i in range(0, len(names), BATCH):
+            chunk = names[i:i + BATCH]
+            placeholders = ",".join("?" * len(chunk))
+            rows = self.conn.execute(
+                f"SELECT name, label FROM tag_types WHERE site_id = ? AND name IN ({placeholders})",
+                [site_id, *chunk],
+            ).fetchall()
+            for r in rows:
+                result[r["name"]] = r["label"]
+        return result
+
+    def set_tag_labels(self, site_id: int, mapping: dict[str, str]) -> None:
+        """Bulk INSERT OR REPLACE (name -> label) entries for one site.
+
+        Auto-prunes oldest entries when the table exceeds
+        _TAG_CACHE_MAX_ROWS to prevent unbounded growth.
+        """
+        if not mapping:
+            return
+        now = datetime.now(timezone.utc).isoformat()
+        rows = [(site_id, name, label, now) for name, label in mapping.items()]
+        with self._write():
+            self.conn.executemany(
+                "INSERT OR REPLACE INTO tag_types (site_id, name, label, fetched_at) "
+                "VALUES (?, ?, ?, ?)",
+                rows,
+            )
+            self._prune_tag_cache()
+
+    _TAG_CACHE_MAX_ROWS = 50_000  # ~50k tags ≈ several months of browsing
+
+    def _prune_tag_cache(self) -> None:
+        """Delete the oldest tag_types rows if the table exceeds the cap.
+
+        Keeps the most-recently-fetched entries. Runs inside an
+        existing _write() context from set_tag_labels, so no extra
+        transaction overhead. The cap is generous enough that
+        normal usage never hits it; it's a safety valve for users
+        who browse dozens of boorus over months without clearing.
+        """
+        count = self.conn.execute("SELECT COUNT(*) FROM tag_types").fetchone()[0]
+        if count <= self._TAG_CACHE_MAX_ROWS:
+            return
+        excess = count - self._TAG_CACHE_MAX_ROWS
+        self.conn.execute(
+            "DELETE FROM tag_types WHERE rowid IN ("
+            "  SELECT rowid FROM tag_types ORDER BY fetched_at ASC LIMIT ?"
+            ")",
+            (excess,),
+        )
+
+    def clear_tag_cache(self, site_id: int | None = None) -> int:
+        """Delete cached tag types. Pass site_id to clear one site,
+        or None to clear all. Returns rows deleted. Exposed for
+        future Settings UI "Clear tag cache" button."""
+        with self._write():
+            if site_id is not None:
+                cur = self.conn.execute("DELETE FROM tag_types WHERE site_id = ?", (site_id,))
+            else:
+                cur = self.conn.execute("DELETE FROM tag_types")
+            return cur.rowcount
 
     # -- Settings --
 
