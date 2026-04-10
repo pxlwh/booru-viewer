@@ -1461,21 +1461,25 @@ class BooruApp(QMainWindow):
         flag in that closure so it doesn't re-call set_media with
         the local path mid-playback (which would interrupt mpv and
         reset position to 0).
+
+        When the popout is open, the embedded preview's mpv is not
+        stopped — it's hidden and idle, and the synchronous stop()
+        call would waste critical-path time for no visible benefit.
         """
-        # Stop any video player currently active in the embedded
-        # preview before swapping it out — mirrors the close-old-mpv
-        # discipline of `_update_fullscreen`.
-        self._preview._video_player.stop()
         if self._fullscreen_window and self._fullscreen_window.isVisible():
-            # Popout open — only stream there, keep embedded preview clear.
+            # Popout is the visible target — leave the embedded preview's
+            # mpv alone. It's hidden and idle; stopping it here wastes
+            # synchronous time on the critical path (command('stop') is a
+            # round-trip into mpv's command queue). loadfile("replace") in
+            # the popout's play_file handles the media swap atomically.
             self._preview._info_label.setText(info)
             self._preview._current_path = url
             self._fullscreen_window.set_media(url, info, width=width, height=height)
             self._update_fullscreen_state()
         else:
-            # Embedded preview's set_media doesn't take width/height
-            # (it's in a docked panel and doesn't fit-to-content) so
-            # the pre-fit hint goes nowhere here. Just hand it the URL.
+            # Embedded preview is the visible target — stop any active
+            # playback before handing it the new URL.
+            self._preview._video_player.stop()
             self._preview.set_media(url, info)
         self._status.showMessage(f"Streaming #{Path(url.split('?')[0]).name}...")
         # Note: no `_update_fullscreen_state()` call when popout is
