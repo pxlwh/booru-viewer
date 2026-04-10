@@ -153,6 +153,7 @@ _DEFAULTS = {
     "infinite_scroll": "0",
     "library_filename_template": "",
     "unbookmark_on_save": "0",
+    "search_history_enabled": "1",
 }
 
 

@@ -94,7 +94,7 @@ class SearchBar(QWidget):
 
     def _do_search(self) -> None:
         query = self._input.text().strip()
-        if self._db and query:
+        if self._db and query and self._db.get_setting_bool("search_history_enabled"):
             self._db.add_search_history(query)
         self.search_requested.emit(query)
 
@@ -116,8 +116,8 @@ class SearchBar(QWidget):
                 saved_actions[id(a)] = (sid, query)
             menu.addSeparator()
 
-        # History
-        history = self._db.get_search_history()
+        # History (only shown when the setting is on)
+        history = self._db.get_search_history() if self._db.get_setting_bool("search_history_enabled") else []
         if history:
             hist_header = menu.addAction("-- Recent --")
             hist_header.setEnabled(False)
