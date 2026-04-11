@@ -5,7 +5,8 @@ on how the app should behave there. By default, a handful of `hyprctl`
 dispatches run at runtime to:
 
 - Restore the main window's last floating mode + dimensions on launch
-- Restore the popout's position, center-pin it around its content during
+- Restore the popout's position and keep it anchored to its configured
+  anchor point (center or any corner) as its content resizes during
   navigation, and suppress F11 / fullscreen-transition flicker
 - "Prime" Hyprland's per-window floating cache at startup so a mid-session
   toggle to floating uses your saved dimensions
