@@ -27,7 +27,7 @@ class ThumbnailWidget(QWidget):
     clicked = Signal(int, object)  # index, QMouseEvent
     double_clicked = Signal(int)
     right_clicked = Signal(int, object)  # index, QPoint
-    padding_clicked = Signal(object)  # QMouseEvent — click missed the pixmap
+    padding_clicked = Signal()  # click missed the pixmap
 
     # QSS-controllable dot colors
     _saved_color = QColor("#22cc22")
@@ -307,7 +307,7 @@ class ThumbnailWidget(QWidget):
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             if not self._hit_pixmap(event.position().toPoint()):
-                self.padding_clicked.emit(event)
+                self.padding_clicked.emit()
                 return
             self._drag_start = event.position().toPoint()
             self.clicked.emit(self.index, event)
@@ -321,7 +321,7 @@ class ThumbnailWidget(QWidget):
         self._drag_start = None
         if event.button() == Qt.MouseButton.LeftButton:
             if not self._hit_pixmap(event.position().toPoint()):
-                self.padding_clicked.emit(event)
+                self.padding_clicked.emit()
                 return
             self.double_clicked.emit(self.index)
 
@@ -577,13 +577,9 @@ class ThumbnailGrid(QScrollArea):
         self._rubber_band.show()
         self.clear_selection()
 
-    def _on_padding_click(self, event: QMouseEvent) -> None:
+    def _on_padding_click(self) -> None:
         """Cell padding click — treat as empty space."""
-        # Map the event position from the ThumbnailWidget to the viewport
-        thumb = self.sender()
-        if thumb:
-            vp_pos = self.viewport().mapFrom(thumb, event.position().toPoint())
-            self._start_rubber_band(vp_pos)
+        self.clear_selection()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
