@@ -35,11 +35,12 @@ def test_core_package_import_installs_cap():
     assert int(out) == EXPECTED
 
 
-def test_core_images_import_installs_cap():
-    """The original audit concern: importing core.images without first
-    importing core.cache must still set the cap."""
+def test_core_submodule_import_installs_cap():
+    """Importing any non-cache core submodule must still set the cap —
+    the invariant is that the package __init__.py runs before any
+    submodule code, regardless of which submodule is the entry point."""
     out = _run(
-        "from booru_viewer.core import images; "
+        "from booru_viewer.core import config; "
         "from PIL import Image; "
         "print(Image.MAX_IMAGE_PIXELS)"
     )
