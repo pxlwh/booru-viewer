@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from html import escape
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Property, Signal
@@ -12,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..core.api.base import Post
+from ._source_html import build_source_html
 
 log = logging.getLogger("booru")
 
@@ -115,28 +117,12 @@ class InfoPanel(QWidget):
         log.debug(f"InfoPanel: tag_categories={list(post.tag_categories.keys()) if post.tag_categories else 'empty'}")
         self._title.setText(f"Post #{post.id}")
         filetype = Path(post.file_url.split("?")[0]).suffix.lstrip(".").upper() if post.file_url else "unknown"
-        source = post.source or "none"
-        # Truncate display text but keep full URL for the link
-        source_full = source
-        if len(source) > 60:
-            source_display = source[:57] + "..."
-        else:
-            source_display = source
-        if source_full.startswith(("http://", "https://")):
-            source_html = f'<a href="{source_full}" style="color: #4fc3f7;">{source_display}</a>'
-        else:
-            source_html = source_display
-        from html import escape
-        self._details.setText(
-            f"Score: {post.score}\n"
-            f"Rating: {post.rating or 'unknown'}\n"
-            f"Filetype: {filetype}"
-        )
+        source_html = build_source_html(post.source)
         self._details.setTextFormat(Qt.TextFormat.RichText)
         self._details.setText(
             f"Score: {post.score}<br>"
             f"Rating: {escape(post.rating or 'unknown')}<br>"
-            f"Filetype: {filetype}<br>"
+            f"Filetype: {escape(filetype)}<br>"
             f"Source: {source_html}"
         )
         self._details.setOpenExternalLinks(True)
