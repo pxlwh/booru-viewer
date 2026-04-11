@@ -1,5 +1,30 @@
 # Changelog
 
+## [Unreleased]
+
+### Security: 2026-04-10 audit remediation
+
+Closes 12 of the 16 findings from the read-only audit at `docs/SECURITY_AUDIT.md`. Two High, four Medium, four Low, and two Informational findings fixed; the four skipped Informational items are documented at the bottom. Each fix is its own commit on the `security/audit-2026-04-10` branch with an `Audit-Ref:` trailer.
+
+- **#1 SSRF (High)**: every httpx client now installs an event hook that resolves the target host and rejects loopback, RFC1918, link-local (including the 169.254.169.254 cloud-metadata endpoint), CGNAT, unique-local v6, and multicast. Hook fires on every redirect hop, not just the initial request. **Behavior change:** user-configured boorus pointing at private/loopback addresses now fail with `blocked request target ...` instead of being probed. Test Connection on a local booru will be rejected.
+- **#2 mpv (High)**: the embedded mpv instance is constructed with `ytdl=no`, `load_scripts=no`, and `demuxer_lavf_o=protocol_whitelist=file,http,https,tls,tcp`, plus `input_conf=/dev/null` on POSIX. Closes the yt-dlp delegation surface (CVE-prone extractors invoked on attacker-supplied URLs) and the `concat:`/`subfile:` local-file-read gadget via ffmpeg's lavf demuxer. **Behavior change:** any `file_url` whose host is only handled by yt-dlp (youtube.com, reddit.com, ...) no longer plays. Boorus do not legitimately serve such URLs, so in practice this only affects hostile responses.
+- **#3 Credential logging (Medium)**: `login`, `api_key`, `user_id`, and `password_hash` are now stripped from URLs and params before any logging path emits them. Single redaction helper in `core/api/_safety.py`, called from the booru-base request hook and from each per-client `log.debug` line.
+- **#4 DB + data dir permissions (Medium)**: on POSIX, `~/.local/share/booru-viewer/` is now `0o700` and `booru.db` (plus the `-wal`/`-shm` sidecars) is `0o600`. **Behavior change:** existing installs are tightened on next launch. Windows is unchanged — NTFS ACLs handle this separately.
+- **#5 Lock leak (Medium)**: the per-URL coalesce lock table is capped at 4096 entries with LRU eviction. Eviction skips currently-held locks so a coroutine mid-`async with` can't be ripped out from under itself.
+- **#6 HTML injection (Medium)**: `post.source` is escaped before insertion into the info-panel rich text. Non-http(s) sources (including `javascript:` and `data:`) render as plain escaped text without an `<a>` tag, so they can't become click targets.
+- **#7 Windows reserved names (Low)**: `render_filename_template` now prefixes filenames whose stem matches a reserved Windows device name (`CON`, `PRN`, `AUX`, `NUL`, `COM1-9`, `LPT1-9`) with `_`, regardless of host platform. Cross-OS library copies stay safe.
+- **#8 PIL bomb cap (Low)**: `Image.MAX_IMAGE_PIXELS=256M` moved from `core/cache.py` (where it was a side-effect of import order) to `core/__init__.py`, so any `booru_viewer.core.*` import installs the cap first.
+- **#9 Dependency bounds (Low)**: upper bounds added to runtime deps in `pyproject.toml` (`httpx<1.0`, `Pillow<12.0`, `PySide6<7.0`, `python-mpv<2.0`). Lock-file generation deferred — see `TODO.md`.
+- **#10 Early content validation (Low)**: `_do_download` now accumulates the first 16 bytes of the response and validates magic bytes before committing to writing the rest. A hostile server omitting Content-Type previously could burn up to `MAX_DOWNLOAD_BYTES` (500MB) of bandwidth before the post-download check rejected.
+- **#14 Category fetcher body cap (Informational)**: HTML body the regex walks over in `CategoryFetcher.fetch_post` is truncated at 2MB. Defense in depth — the regex is linear-bounded but a multi-MB hostile body still pegs CPU.
+- **#16 Logging hook gap (Informational)**: e621 and detect_site_type clients now install the `_log_request` hook so their requests appear in the connection log alongside the base client. Absorbed into the #1 wiring commits since both files were already being touched.
+
+**Skipped (Wontfix), with reason:**
+- **#11 64-bit hash truncation**: not exploitable in practice (audit's own words). Fix would change every cache path and require a migration.
+- **#12 Referer leak through CDN redirects**: intentional — booru CDNs gate downloads on Referer matching. Documented; not fixed.
+- **#13 hyprctl batch joining**: user is trusted in the threat model and Hyprland controls the field. Informational only.
+- **#15 dead code in `core/images.py`**: code quality, not security. Out of scope under the no-refactor constraint. Logged in `TODO.md`.
+
 ## v0.2.5
 
 Full UI overhaul (icon buttons, compact top bar, responsive video controls), popout resize-pivot anchor, layout flip, and the main_window.py controller decomposition.
