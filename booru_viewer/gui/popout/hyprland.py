@@ -171,8 +171,48 @@ def _dispatch_batch(cmds: list[str]) -> None:
         pass
 
 
+def get_monitor_available_rect(monitor_id: int | None = None) -> tuple[int, int, int, int] | None:
+    """Return (x, y, w, h) of a monitor's usable area, accounting for
+    exclusive zones (Waybar, etc.) via the ``reserved`` field.
+
+    Falls back to the first monitor if *monitor_id* is None or not found.
+    Returns None if not on Hyprland or the query fails.
+    """
+    if not _on_hyprland():
+        return None
+    try:
+        result = subprocess.run(
+            ["hyprctl", "monitors", "-j"],
+            capture_output=True, text=True, timeout=1,
+        )
+        monitors = json.loads(result.stdout)
+        if not monitors:
+            return None
+        mon = None
+        if monitor_id is not None:
+            mon = next((m for m in monitors if m.get("id") == monitor_id), None)
+        if mon is None:
+            mon = monitors[0]
+        mx = mon.get("x", 0)
+        my = mon.get("y", 0)
+        mw = mon.get("width", 0)
+        mh = mon.get("height", 0)
+        # reserved: [left, top, right, bottom]
+        res = mon.get("reserved", [0, 0, 0, 0])
+        left, top, right, bottom = res[0], res[1], res[2], res[3]
+        return (
+            mx + left,
+            my + top,
+            mw - left - right,
+            mh - top - bottom,
+        )
+    except Exception:
+        return None
+
+
 __all__ = [
     "get_window",
+    "get_monitor_available_rect",
     "resize",
     "resize_and_move",
 ]

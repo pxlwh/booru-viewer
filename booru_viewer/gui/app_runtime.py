@@ -119,6 +119,8 @@ QWidget#_slideshow_controls QPushButton {
     color: white;
     border: 1px solid rgba(255, 255, 255, 80);
     padding: 2px 6px;
+    font-size: 15px;
+    font-weight: bold;
 }
 QWidget#_slideshow_toolbar QPushButton:hover,
 QWidget#_slideshow_controls QPushButton:hover {

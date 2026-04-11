@@ -63,7 +63,7 @@ class BooruApp(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("booru-viewer")
-        self.setMinimumSize(900, 600)
+        self.setMinimumSize(740, 400)
         self.resize(1200, 800)
 
         self._db = Database()
@@ -224,17 +224,22 @@ class BooruApp(QMainWindow):
         layout.setSpacing(6)
 
         # Top bar: site selector + rating + search
-        top = QHBoxLayout()
+        _top_bar = QWidget()
+        _top_bar.setObjectName("_top_bar")
+        top = QHBoxLayout(_top_bar)
+        top.setContentsMargins(0, 0, 0, 0)
+        top.setSpacing(3)
 
         self._site_combo = QComboBox()
-        self._site_combo.setMinimumWidth(150)
+        self._site_combo.setMinimumWidth(80)
+        self._site_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
         self._site_combo.currentIndexChanged.connect(self._on_site_changed)
         top.addWidget(self._site_combo)
 
         # Rating filter
         self._rating_combo = QComboBox()
         self._rating_combo.addItems(["All", "General", "Sensitive", "Questionable", "Explicit"])
-        self._rating_combo.setMinimumWidth(100)
+        self._rating_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
         self._rating_combo.currentTextChanged.connect(self._on_rating_changed)
         top.addWidget(self._rating_combo)
 
@@ -242,23 +247,17 @@ class BooruApp(QMainWindow):
         self._media_filter = QComboBox()
         self._media_filter.addItems(["All", "Animated", "Video", "GIF", "Audio"])
         self._media_filter.setToolTip("Filter by media type")
-        self._media_filter.setFixedWidth(90)
+        self._media_filter.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
         top.addWidget(self._media_filter)
 
-        # Score filter — type the value directly. Spinbox arrows hidden
-        # since the field is small enough to type into and the +/- buttons
-        # were just visual noise. setFixedHeight(23) overrides Qt's
-        # QSpinBox sizeHint which still reserves vertical space for the
-        # arrow buttons internally even when `setButtonSymbols(NoButtons)`
-        # is set, leaving the spinbox 3px taller than the surrounding
-        # combos/inputs/buttons in the top toolbar (26 vs 23).
-        score_label = QLabel("Score≥")
+        # Score filter
+        score_label = QLabel("Score\u2265")
         top.addWidget(score_label)
         self._score_spin = QSpinBox()
         self._score_spin.setRange(0, 99999)
         self._score_spin.setValue(0)
-        self._score_spin.setFixedWidth(40)
-        self._score_spin.setFixedHeight(23)
+        self._score_spin.setFixedWidth(36)
+        self._score_spin.setFixedHeight(21)
         self._score_spin.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
         top.addWidget(self._score_spin)
 
@@ -267,8 +266,8 @@ class BooruApp(QMainWindow):
         self._page_spin = QSpinBox()
         self._page_spin.setRange(1, 99999)
         self._page_spin.setValue(1)
-        self._page_spin.setFixedWidth(40)
-        self._page_spin.setFixedHeight(23)  # match the surrounding 23px row
+        self._page_spin.setFixedWidth(36)
+        self._page_spin.setFixedHeight(21)
         self._page_spin.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
         top.addWidget(self._page_spin)
 
@@ -277,10 +276,15 @@ class BooruApp(QMainWindow):
         self._search_bar.autocomplete_requested.connect(self._search_ctrl.request_autocomplete)
         top.addWidget(self._search_bar, stretch=1)
 
-        layout.addLayout(top)
+        layout.addWidget(_top_bar)
 
         # Nav bar
-        nav = QHBoxLayout()
+        _nav_bar = QWidget()
+        _nav_bar.setObjectName("_nav_bar")
+        nav = QHBoxLayout(_nav_bar)
+        nav.setContentsMargins(0, 0, 0, 0)
+        nav.setSpacing(3)
+
         self._browse_btn = QPushButton("Browse")
         self._browse_btn.setCheckable(True)
         self._browse_btn.setChecked(True)
@@ -294,11 +298,10 @@ class BooruApp(QMainWindow):
 
         self._library_btn = QPushButton("Library")
         self._library_btn.setCheckable(True)
-        self._library_btn.setFixedWidth(80)
         self._library_btn.clicked.connect(lambda: self._switch_view(2))
         nav.addWidget(self._library_btn)
 
-        layout.addLayout(nav)
+        layout.addWidget(_nav_bar)
 
         # Main content
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -359,7 +362,7 @@ class BooruApp(QMainWindow):
         # BL Post, [stretch], Popout) has room to lay out all five buttons
         # at their fixed widths plus spacing without clipping the rightmost
         # one or compressing the row visually.
-        self._preview.setMinimumWidth(380)
+        self._preview.setMinimumWidth(200)
         right.addWidget(self._preview)
 
         self._dl_progress = QProgressBar()
@@ -404,6 +407,10 @@ class BooruApp(QMainWindow):
         )
 
         self._splitter.addWidget(right)
+
+        # Flip layout: preview on the left, grid on the right
+        if self._db.get_setting_bool("flip_layout"):
+            self._splitter.insertWidget(0, right)
 
         # Restore the persisted main-splitter sizes if present, otherwise
         # fall back to the historic default. The sizes are saved as a

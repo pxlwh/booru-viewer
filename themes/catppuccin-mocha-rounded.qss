@@ -9,26 +9,25 @@
  */
 
 /* @palette
-   bg:             #1e1e2e
-   bg_alt:         #181825
-   bg_subtle:      #313244
-   bg_hover:       #45475a
-   bg_active:      #585b70
-   text:           #cdd6f4
-   text_dim:       #a6adc8
-   text_disabled:  #6c7086
-   border:         #313244
-   border_strong:  #45475a
-   accent:         #cba6f7
-   accent_text:    #1e1e2e
-   accent_dim:     #b4befe
-   link:           #89b4fa
-   danger:         #f38ba8
-   success:        #a6e3a1
-   warning:        #f9e2af
-   overlay_bg:     rgba(30, 30, 46, 200)
+   bg:              #1e1e2e
+   bg_alt:          #181825
+   bg_subtle:       #313244
+   bg_hover:        #45475a
+   bg_active:       #585b70
+   text:            #cdd6f4
+   text_dim:        #a6adc8
+   text_disabled:   #6c7086
+   border:          #313244
+   border_strong:   #45475a
+   accent:          #cba6f7
+   accent_text:     #1e1e2e
+   accent_dim:      #b4befe
+   link:            #89b4fa
+   danger:          #f38ba8
+   success:         #a6e3a1
+   warning:         #f9e2af
+   overlay_bg:      rgba(30, 30, 46, 200)
 */
-
 /* ---------- Base ---------- */
 
 QWidget {
@@ -43,8 +42,6 @@ QWidget:disabled {
     color: ${text_disabled};
 }
 
-/* Labels should never paint an opaque background — they sit on top of
- * other widgets in many places (toolbars, info panels, overlays). */
 QLabel {
     background: transparent;
 }
@@ -92,49 +89,26 @@ QPushButton:flat:hover {
     background-color: ${bg_hover};
 }
 
-QToolButton {
-    background-color: transparent;
-    color: ${text};
-    border: 1px solid transparent;
-    border-radius: 4px;
-    padding: 4px;
-}
-QToolButton:hover {
-    background-color: ${bg_hover};
-    border-color: ${border_strong};
-}
-QToolButton:pressed, QToolButton:checked {
-    background-color: ${bg_active};
-}
-
 /* ---------- Inputs ---------- */
 
-QLineEdit, QSpinBox, QDoubleSpinBox, QTextEdit, QPlainTextEdit {
+QLineEdit, QSpinBox, QTextEdit {
     background-color: ${bg_subtle};
     color: ${text};
     border: 1px solid ${border_strong};
     border-radius: 4px;
     padding: 2px 6px;
-    /* min-height ensures the painted text fits inside the widget bounds
-     * even when a parent layout (e.g. QFormLayout inside a QGroupBox)
-     * compresses the natural sizeHint. Without this, spinboxes in dense
-     * forms render with the top of the value text clipped. */
     min-height: 16px;
     selection-background-color: ${accent};
     selection-color: ${accent_text};
 }
 QLineEdit:focus,
 QSpinBox:focus,
-QDoubleSpinBox:focus,
-QTextEdit:focus,
-QPlainTextEdit:focus {
+QTextEdit:focus {
     border-color: ${accent};
 }
 QLineEdit:disabled,
 QSpinBox:disabled,
-QDoubleSpinBox:disabled,
-QTextEdit:disabled,
-QPlainTextEdit:disabled {
+QTextEdit:disabled {
     background-color: ${bg_alt};
     color: ${text_disabled};
     border-color: ${border};
@@ -315,19 +289,6 @@ QSlider::handle:horizontal:hover {
     background: ${accent_dim};
 }
 
-QSlider::groove:vertical {
-    background: ${bg_subtle};
-    width: 4px;
-    border-radius: 2px;
-}
-QSlider::handle:vertical {
-    background: ${accent};
-    width: 12px;
-    height: 12px;
-    margin: 0 -5px;
-    border-radius: 6px;
-}
-
 /* ---------- Progress ---------- */
 
 QProgressBar {
@@ -343,33 +304,28 @@ QProgressBar::chunk {
     border-radius: 3px;
 }
 
-/* ---------- Checkboxes & radio buttons ---------- */
+/* ---------- Checkboxes ---------- */
 
-QCheckBox, QRadioButton {
+QCheckBox {
     background: transparent;
     color: ${text};
     spacing: 6px;
 }
-QCheckBox::indicator, QRadioButton::indicator {
+QCheckBox::indicator {
     width: 14px;
     height: 14px;
     background-color: ${bg_subtle};
     border: 1px solid ${border_strong};
-}
-QCheckBox::indicator {
     border-radius: 3px;
 }
-QRadioButton::indicator {
-    border-radius: 7px;
-}
-QCheckBox::indicator:hover, QRadioButton::indicator:hover {
+QCheckBox::indicator:hover {
     border-color: ${accent};
 }
-QCheckBox::indicator:checked, QRadioButton::indicator:checked {
+QCheckBox::indicator:checked {
     background-color: ${accent};
     border-color: ${accent};
 }
-QCheckBox::indicator:disabled, QRadioButton::indicator:disabled {
+QCheckBox::indicator:disabled {
     background-color: ${bg_alt};
     border-color: ${border};
 }
@@ -384,9 +340,9 @@ QToolTip {
     border-radius: 3px;
 }
 
-/* ---------- Item views (lists, trees, tables) ---------- */
+/* ---------- Lists ---------- */
 
-QListView, QListWidget, QTreeView, QTreeWidget, QTableView, QTableWidget {
+QListView, QListWidget {
     background-color: ${bg};
     alternate-background-color: ${bg_alt};
     color: ${text};
@@ -395,35 +351,18 @@ QListView, QListWidget, QTreeView, QTreeWidget, QTableView, QTableWidget {
     selection-color: ${accent_text};
     outline: none;
 }
-QListView::item, QListWidget::item,
-QTreeView::item, QTreeWidget::item,
-QTableView::item, QTableWidget::item {
+QListView::item, QListWidget::item {
     padding: 4px;
 }
-QListView::item:hover, QListWidget::item:hover,
-QTreeView::item:hover, QTreeWidget::item:hover,
-QTableView::item:hover, QTableWidget::item:hover {
+QListView::item:hover, QListWidget::item:hover {
     background-color: ${bg_hover};
 }
-QListView::item:selected, QListWidget::item:selected,
-QTreeView::item:selected, QTreeWidget::item:selected,
-QTableView::item:selected, QTableWidget::item:selected {
+QListView::item:selected, QListWidget::item:selected {
     background-color: ${accent};
     color: ${accent_text};
 }
 
-QHeaderView::section {
-    background-color: ${bg_subtle};
-    color: ${text};
-    border: none;
-    border-right: 1px solid ${border};
-    padding: 4px 8px;
-}
-QHeaderView::section:hover {
-    background-color: ${bg_hover};
-}
-
-/* ---------- Tabs ---------- */
+/* ---------- Tabs (settings dialog) ---------- */
 
 QTabWidget::pane {
     border: 1px solid ${border};
@@ -448,7 +387,7 @@ QTabBar::tab:hover:!selected {
     color: ${text};
 }
 
-/* ---------- Group boxes ---------- */
+/* ---------- Group boxes (settings dialog) ---------- */
 
 QGroupBox {
     background: transparent;
@@ -465,63 +404,14 @@ QGroupBox::title {
     color: ${text_dim};
 }
 
-/* ---------- Frames ---------- */
-
-QFrame[frameShape="4"], /* HLine */
-QFrame[frameShape="5"]  /* VLine */ {
-    background: ${border};
-    color: ${border};
-}
-
-/* ---------- Toolbars ---------- */
-
-QToolBar {
-    background: ${bg};
-    border: none;
-    spacing: 4px;
-    padding: 2px;
-}
-QToolBar::separator {
-    background: ${border};
-    width: 1px;
-    margin: 4px 4px;
-}
-
-/* ---------- Dock widgets ---------- */
-
-QDockWidget {
-    color: ${text};
-    titlebar-close-icon: none;
-}
-QDockWidget::title {
-    background: ${bg_subtle};
-    padding: 4px;
-    border: 1px solid ${border};
-}
-
-/* ---------- Rubber band (multi-select drag rectangle) ---------- */
+/* ---------- Rubber band (multi-select drag) ---------- */
 
 QRubberBand {
     background: ${accent};
     border: 1px solid ${accent};
-    /* Qt blends rubber band at ~30% so this reads as a translucent
-     * accent-tinted rectangle without needing rgba(). */
 }
 
-
-
-
 /* ---------- Library count label states ---------- */
-/*
- * The library tab's count label switches between three visual states
- * depending on what refresh() found. The state is exposed as a Qt
- * dynamic property `libraryCountState` so users can override these
- * rules in their custom.qss without touching the Python.
- *
- *   normal  N files       — default text color, no rule needed
- *   empty   no items       — dim text (no items found, search miss)
- *   error   bad/unreachable — danger color + bold (real error)
- */
 
 QLabel[libraryCountState="empty"] {
     color: ${text_dim};
@@ -531,18 +421,18 @@ QLabel[libraryCountState="error"] {
     font-weight: bold;
 }
 
-/* ---------- Thumbnail dot indicators (Qt properties on ThumbnailWidget) ---------- */
+/* ---------- Thumbnail indicators ---------- */
 
 ThumbnailWidget {
-    qproperty-savedColor: #22cc22;       /* green dot: saved to library — universal "confirmed" feel */
-    qproperty-bookmarkedColor: #ffcc00;  /* yellow star: bookmarked */
+    qproperty-savedColor: #22cc22;
+    qproperty-bookmarkedColor: #ffcc00;
     qproperty-selectionColor: ${accent};
     qproperty-multiSelectColor: ${accent_dim};
     qproperty-hoverColor: ${accent};
     qproperty-idleColor: ${border_strong};
 }
 
-/* ---------- Info panel tag category colors ---------- */
+/* ---------- Info panel tag colors ---------- */
 
 InfoPanel {
     qproperty-tagArtistColor: ${warning};
@@ -553,19 +443,13 @@ InfoPanel {
     qproperty-tagLoreColor: ${text_dim};
 }
 
-/* ---------- Video player letterbox / pillarbox color (mpv background) ---------- */
+/* ---------- Video player letterbox ---------- */
 
 VideoPlayer {
     qproperty-letterboxColor: ${bg};
 }
 
-/* ---------- Popout overlay bars (slideshow toolbar + slideshow controls + embedded preview controls) ---------- */
-/*
- * The popout window's translucent toolbar (top) and transport controls
- * (bottom) float over the video content. The bg color comes from the
- * @palette overlay_bg slot. Children get the classic overlay treatment:
- * transparent backgrounds, near-white text, hairline borders.
- */
+/* ---------- Popout overlay bars ---------- */
 
 QWidget#_slideshow_toolbar,
 QWidget#_slideshow_controls,
@@ -588,6 +472,8 @@ QWidget#_preview_controls QPushButton {
     color: white;
     border: 1px solid rgba(255, 255, 255, 80);
     padding: 2px 6px;
+    font-size: 15px;
+    font-weight: bold;
 }
 QWidget#_slideshow_toolbar QPushButton:hover,
 QWidget#_slideshow_controls QPushButton:hover,

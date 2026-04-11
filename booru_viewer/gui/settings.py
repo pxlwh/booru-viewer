@@ -197,6 +197,11 @@ class SettingsDialog(QDialog):
         self._search_history.setChecked(self._db.get_setting_bool("search_history_enabled"))
         form.addRow("", self._search_history)
 
+        # Flip layout
+        self._flip_layout = QCheckBox("Preview on left (restart required)")
+        self._flip_layout.setChecked(self._db.get_setting_bool("flip_layout"))
+        form.addRow("", self._flip_layout)
+
         # Slideshow monitor
         from PySide6.QtWidgets import QApplication
         self._monitor_combo = QComboBox()
@@ -209,6 +214,16 @@ class SettingsDialog(QDialog):
             if idx >= 0:
                 self._monitor_combo.setCurrentIndex(idx)
         form.addRow("Popout monitor:", self._monitor_combo)
+
+        # Popout anchor — resize pivot point
+        self._popout_anchor = QComboBox()
+        self._popout_anchor.addItems(["Center", "Top-left", "Top-right", "Bottom-left", "Bottom-right"])
+        _anchor_map = {"center": "Center", "tl": "Top-left", "tr": "Top-right", "bl": "Bottom-left", "br": "Bottom-right"}
+        current_anchor = self._db.get_setting("popout_anchor") or "center"
+        idx = self._popout_anchor.findText(_anchor_map.get(current_anchor, "Center"))
+        if idx >= 0:
+            self._popout_anchor.setCurrentIndex(idx)
+        form.addRow("Popout anchor:", self._popout_anchor)
 
         # File dialog platform (Linux only)
         self._file_dialog_combo = None
@@ -791,7 +806,10 @@ class SettingsDialog(QDialog):
         self._db.set_setting("infinite_scroll", "1" if self._infinite_scroll.isChecked() else "0")
         self._db.set_setting("unbookmark_on_save", "1" if self._unbookmark_on_save.isChecked() else "0")
         self._db.set_setting("search_history_enabled", "1" if self._search_history.isChecked() else "0")
+        self._db.set_setting("flip_layout", "1" if self._flip_layout.isChecked() else "0")
         self._db.set_setting("slideshow_monitor", self._monitor_combo.currentText())
+        _anchor_rmap = {"Center": "center", "Top-left": "tl", "Top-right": "tr", "Bottom-left": "bl", "Bottom-right": "br"}
+        self._db.set_setting("popout_anchor", _anchor_rmap.get(self._popout_anchor.currentText(), "center"))
         self._db.set_setting("library_dir", self._library_dir.text().strip())
         self._db.set_setting("library_filename_template", self._library_filename_template.text().strip())
         self._db.set_setting("max_cache_mb", str(self._max_cache.value()))

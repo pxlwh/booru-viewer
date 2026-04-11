@@ -54,7 +54,7 @@ from .state import (
     WindowMoved,
     WindowResized,
 )
-from .viewport import Viewport, _DRIFT_TOLERANCE
+from .viewport import Viewport, _DRIFT_TOLERANCE, anchor_point
 
 
 # Adapter logger — separate from the popout's main `booru` logger so
@@ -121,10 +121,11 @@ class FullscreenPreview(QMainWindow):
     privacy_requested = Signal()
     closed = Signal()
 
-    def __init__(self, grid_cols: int = 3, show_actions: bool = True, monitor: str = "", parent=None) -> None:
+    def __init__(self, grid_cols: int = 3, show_actions: bool = True, monitor: str = "", anchor: str = "center", parent=None) -> None:
         super().__init__(parent, Qt.WindowType.Window)
         self.setWindowTitle("booru-viewer — Popout")
         self._grid_cols = grid_cols
+        self._anchor = anchor
 
         # Central widget — media fills the entire window
         central = QWidget()
@@ -181,10 +182,6 @@ class FullscreenPreview(QMainWindow):
         toolbar.setContentsMargins(8, 4, 8, 4)
 
         # Same compact-padding override as the embedded preview toolbar —
-        # bundled themes' default `padding: 5px 12px` is too wide for these
-        # short labels in narrow fixed slots.
-        _tb_btn_style = "padding: 2px 6px;"
-
         # Bookmark folders for the popout's Bookmark-as submenu — wired
         # by app.py via set_bookmark_folders_callback after construction.
         self._bookmark_folders_callback = None
@@ -195,30 +192,29 @@ class FullscreenPreview(QMainWindow):
         # are independent name spaces and need separate callbacks.
         self._folders_callback = None
 
-        self._bookmark_btn = QPushButton("Bookmark")
-        self._bookmark_btn.setMaximumWidth(90)
-        self._bookmark_btn.setStyleSheet(_tb_btn_style)
+        _tb_sz = 24
+
+        def _icon_btn(text: str, name: str, tip: str) -> QPushButton:
+            btn = QPushButton(text)
+            btn.setObjectName(name)
+            btn.setFixedSize(_tb_sz, _tb_sz)
+            btn.setToolTip(tip)
+            return btn
+
+        self._bookmark_btn = _icon_btn("\u2606", "_tb_bookmark", "Bookmark (B)")
         self._bookmark_btn.clicked.connect(self._on_bookmark_clicked)
         toolbar.addWidget(self._bookmark_btn)
 
-        self._save_btn = QPushButton("Save")
-        self._save_btn.setMaximumWidth(70)
-        self._save_btn.setStyleSheet(_tb_btn_style)
+        self._save_btn = _icon_btn("\u2193", "_tb_save", "Save to library (S)")
         self._save_btn.clicked.connect(self._on_save_clicked)
         toolbar.addWidget(self._save_btn)
         self._is_saved = False
 
-        self._bl_tag_btn = QPushButton("BL Tag")
-        self._bl_tag_btn.setMaximumWidth(65)
-        self._bl_tag_btn.setStyleSheet(_tb_btn_style)
-        self._bl_tag_btn.setToolTip("Blacklist a tag")
+        self._bl_tag_btn = _icon_btn("\u2298", "_tb_bl_tag", "Blacklist a tag")
         self._bl_tag_btn.clicked.connect(self._show_bl_tag_menu)
         toolbar.addWidget(self._bl_tag_btn)
 
-        self._bl_post_btn = QPushButton("BL Post")
-        self._bl_post_btn.setMaximumWidth(70)
-        self._bl_post_btn.setStyleSheet(_tb_btn_style)
-        self._bl_post_btn.setToolTip("Blacklist this post")
+        self._bl_post_btn = _icon_btn("\u2297", "_tb_bl_post", "Blacklist this post")
         self._bl_post_btn.clicked.connect(self.blacklist_post_requested)
         toolbar.addWidget(self._bl_post_btn)
 
@@ -642,10 +638,11 @@ class FullscreenPreview(QMainWindow):
 
     def update_state(self, bookmarked: bool, saved: bool) -> None:
         self._is_bookmarked = bookmarked
-        self._bookmark_btn.setText("Unbookmark" if bookmarked else "Bookmark")
-        self._bookmark_btn.setMaximumWidth(90 if bookmarked else 80)
+        self._bookmark_btn.setText("\u2605" if bookmarked else "\u2606")  # ★ / ☆
+        self._bookmark_btn.setToolTip("Unbookmark (B)" if bookmarked else "Bookmark (B)")
         self._is_saved = saved
-        self._save_btn.setText("Unsave" if saved else "Save")
+        self._save_btn.setText("\u2715" if saved else "\u2193")  # ✕ / ⤓
+        self._save_btn.setToolTip("Unsave from library" if saved else "Save to library (S)")
 
     # ------------------------------------------------------------------
     # Public method interface (commit 15)
@@ -1054,7 +1051,8 @@ class FullscreenPreview(QMainWindow):
 
     @staticmethod
     def _compute_window_rect(
-        viewport: Viewport, content_aspect: float, screen
+        viewport: Viewport, content_aspect: float, screen,
+        avail_override: tuple[int, int, int, int] | None = None,
     ) -> tuple[int, int, int, int]:
         """Project a viewport onto a window rect for the given content aspect.
 
@@ -1064,6 +1062,16 @@ class FullscreenPreview(QMainWindow):
         if either would exceed its 0.90-of-screen ceiling, preserving
         aspect exactly. Pure function — no side effects, no widget
         access, all inputs explicit so it's trivial to reason about.
+
+        ``viewport.center_x``/``center_y`` hold the anchor point — the
+        window center in ``"center"`` mode, or the pinned corner in
+        corner modes. The anchor stays fixed; the window grows/shrinks
+        away from it.
+
+        *avail_override* is an (x, y, w, h) tuple that replaces
+        ``screen.availableGeometry()`` — used on Hyprland where Qt
+        doesn't see Waybar's exclusive zone but ``hyprctl monitors -j``
+        reports it via the ``reserved`` array.
         """
         if content_aspect >= 1.0:               # landscape or square
             w = viewport.long_side
@@ -1072,19 +1080,37 @@ class FullscreenPreview(QMainWindow):
             h = viewport.long_side
             w = viewport.long_side * content_aspect
 
-        avail = screen.availableGeometry()
-        cap_w = avail.width() * 0.90
-        cap_h = avail.height() * 0.90
+        if avail_override:
+            ax, ay, aw, ah = avail_override
+        else:
+            _a = screen.availableGeometry()
+            ax, ay, aw, ah = _a.x(), _a.y(), _a.width(), _a.height()
+        cap_w = aw * 0.90
+        cap_h = ah * 0.90
         scale = min(1.0, cap_w / w, cap_h / h)
         w *= scale
         h *= scale
 
-        x = viewport.center_x - w / 2
-        y = viewport.center_y - h / 2
+        anchor = viewport.anchor
+        if anchor == "tl":
+            x = viewport.center_x
+            y = viewport.center_y
+        elif anchor == "tr":
+            x = viewport.center_x - w
+            y = viewport.center_y
+        elif anchor == "bl":
+            x = viewport.center_x
+            y = viewport.center_y - h
+        elif anchor == "br":
+            x = viewport.center_x - w
+            y = viewport.center_y - h
+        else:
+            x = viewport.center_x - w / 2
+            y = viewport.center_y - h / 2
 
-        # Nudge onto screen if the projected rect would land off-edge.
-        x = max(avail.x(), min(x, avail.right() - w))
-        y = max(avail.y(), min(y, avail.bottom() - h))
+        # Nudge onto screen if the window would land off-edge.
+        x = max(ax, min(x, ax + aw - w))
+        y = max(ay, min(y, ay + ah - h))
 
         return (round(x), round(y), round(w), round(h))
 
@@ -1110,18 +1136,20 @@ class FullscreenPreview(QMainWindow):
             if win and win.get("at") and win.get("size"):
                 wx, wy = win["at"]
                 ww, wh = win["size"]
+                ax, ay = anchor_point(wx, wy, ww, wh, self._anchor)
                 return Viewport(
-                    center_x=wx + ww / 2,
-                    center_y=wy + wh / 2,
+                    center_x=ax, center_y=ay,
                     long_side=float(max(ww, wh)),
+                    anchor=self._anchor,
                 )
         if floating is None:
             rect = self.geometry()
             if rect.width() > 0 and rect.height() > 0:
+                ax, ay = anchor_point(rect.x(), rect.y(), rect.width(), rect.height(), self._anchor)
                 return Viewport(
-                    center_x=rect.x() + rect.width() / 2,
-                    center_y=rect.y() + rect.height() / 2,
+                    center_x=ax, center_y=ay,
                     long_side=float(max(rect.width(), rect.height())),
+                    anchor=self._anchor,
                 )
         return None
 
@@ -1162,10 +1190,11 @@ class FullscreenPreview(QMainWindow):
         if self._first_fit_pending and self._pending_size and self._pending_position_restore:
             pw, ph = self._pending_size
             px, py = self._pending_position_restore
+            ax, ay = anchor_point(px, py, pw, ph, self._anchor)
             self._viewport = Viewport(
-                center_x=px + pw / 2,
-                center_y=py + ph / 2,
+                center_x=ax, center_y=ay,
                 long_side=float(max(pw, ph)),
+                anchor=self._anchor,
             )
             return self._viewport
 
@@ -1192,10 +1221,11 @@ class FullscreenPreview(QMainWindow):
                 )
                 if drift > _DRIFT_TOLERANCE:
                     # External move/resize detected. Adopt current as intent.
+                    ax, ay = anchor_point(cur_x, cur_y, cur_w, cur_h, self._anchor)
                     self._viewport = Viewport(
-                        center_x=cur_x + cur_w / 2,
-                        center_y=cur_y + cur_h / 2,
+                        center_x=ax, center_y=ay,
                         long_side=float(max(cur_w, cur_h)),
+                        anchor=self._anchor,
                     )
 
         return self._viewport
@@ -1260,7 +1290,10 @@ class FullscreenPreview(QMainWindow):
             # the one-shots would lose the saved position; leaving them
             # set lets a subsequent fit retry.
             return
-        x, y, w, h = self._compute_window_rect(viewport, aspect, screen)
+        avail_rect = None
+        if on_hypr and win:
+            avail_rect = hyprland.get_monitor_available_rect(win.get("monitor"))
+        x, y, w, h = self._compute_window_rect(viewport, aspect, screen, avail_override=avail_rect)
         # Identical-rect skip. If the computed rect is exactly what
         # we last dispatched, the window is already in that state and
         # there's nothing for hyprctl (or setGeometry) to do. Skipping
@@ -1472,19 +1505,21 @@ class FullscreenPreview(QMainWindow):
             x, y = win["at"]
             w, h = win["size"]
             self._windowed_geometry = QRect(x, y, w, h)
+            ax, ay = anchor_point(x, y, w, h, self._anchor)
             self._viewport = Viewport(
-                center_x=x + w / 2,
-                center_y=y + h / 2,
+                center_x=ax, center_y=ay,
                 long_side=float(max(w, h)),
+                anchor=self._anchor,
             )
         else:
             self._windowed_geometry = self.frameGeometry()
             rect = self._windowed_geometry
             if rect.width() > 0 and rect.height() > 0:
+                ax, ay = anchor_point(rect.x(), rect.y(), rect.width(), rect.height(), self._anchor)
                 self._viewport = Viewport(
-                    center_x=rect.x() + rect.width() / 2,
-                    center_y=rect.y() + rect.height() / 2,
+                    center_x=ax, center_y=ay,
                     long_side=float(max(rect.width(), rect.height())),
+                    anchor=self._anchor,
                 )
         self.showFullScreen()
 
@@ -1581,10 +1616,11 @@ class FullscreenPreview(QMainWindow):
             return
         rect = self.geometry()
         if rect.width() > 0 and rect.height() > 0:
+            ax, ay = anchor_point(rect.x(), rect.y(), rect.width(), rect.height(), self._anchor)
             self._viewport = Viewport(
-                center_x=rect.x() + rect.width() / 2,
-                center_y=rect.y() + rect.height() / 2,
+                center_x=ax, center_y=ay,
                 long_side=float(max(rect.width(), rect.height())),
+                anchor=self._anchor,
             )
             # Parallel state machine dispatch for the same event.
             self._dispatch_and_apply(WindowResized(rect=(
@@ -1611,11 +1647,12 @@ class FullscreenPreview(QMainWindow):
         rect = self.geometry()
         if rect.width() > 0 and rect.height() > 0:
             # Move-only update: keep the existing long_side, just
-            # update the center to where the window now sits.
+            # update the anchor point to where the window now sits.
+            ax, ay = anchor_point(rect.x(), rect.y(), rect.width(), rect.height(), self._anchor)
             self._viewport = Viewport(
-                center_x=rect.x() + rect.width() / 2,
-                center_y=rect.y() + rect.height() / 2,
+                center_x=ax, center_y=ay,
                 long_side=self._viewport.long_side,
+                anchor=self._anchor,
             )
             # Parallel state machine dispatch for the same event.
             self._dispatch_and_apply(WindowMoved(rect=(

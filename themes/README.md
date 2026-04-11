@@ -118,15 +118,7 @@ QPushButton:pressed { background-color: ${bg_active}; }
 QPushButton:checked { background-color: ${accent}; }  /* Active tab (Browse/Bookmarks/Library), Autoplay, Loop toggles */
 ```
 
-**Note:** Qt's QSS does not support the CSS `content` property, so you cannot replace button text (e.g. "Play" → "") via stylesheet alone. However, you can use a Nerd Font to change how unicode characters render:
-
-```css
-QPushButton {
-    font-family: "JetBrainsMono Nerd Font", monospace;
-}
-```
-
-To use icon buttons, you would need to modify the Python source code directly — the button labels are set in `preview.py` via `QPushButton("Play")` etc.
+**Note:** Qt's QSS does not support the CSS `content` property, so you cannot replace button text (e.g. swap icon symbols) via stylesheet alone. The toolbar icon buttons use hardcoded Unicode symbols — to change which symbols appear, modify the Python source directly (see `preview_pane.py` and `popout/window.py`).
 
 ### Text Inputs
 
@@ -312,11 +304,34 @@ QWidget#_slideshow_controls QPushButton {
 }
 ```
 
-### Preview Toolbar
+### Preview & Popout Toolbar Icon Buttons
 
-The preview panel has an action toolbar (Bookmark, Save, BL Tag, BL Post, Popout) that appears above the media when a post is active. This toolbar uses the app's default button styling.
+The preview and popout toolbars use 24x24 icon buttons with Unicode symbols. Each button has an object name for QSS targeting:
 
-The toolbar does not have a named object ID — it inherits the app's `QPushButton` styles directly.
+| Object Name | Symbol | Action |
+|-------------|--------|--------|
+| `#_tb_bookmark` | ☆ / ★ | Bookmark / Unbookmark |
+| `#_tb_save` | ⤓ / ✕ | Save / Unsave |
+| `#_tb_bl_tag` | ⊘ | Blacklist a tag |
+| `#_tb_bl_post` | ⊗ | Blacklist this post |
+| `#_tb_popout` | ⧉ | Open popout (preview only) |
+
+```css
+/* Style all toolbar icon buttons */
+QPushButton#_tb_bookmark,
+QPushButton#_tb_save,
+QPushButton#_tb_bl_tag,
+QPushButton#_tb_bl_post,
+QPushButton#_tb_popout {
+    background: transparent;
+    border: 1px solid ${border};
+    color: ${text};
+    padding: 0px;
+}
+
+```
+
+The same object names are used in both the preview pane and the popout overlay, so one rule targets both. The symbols themselves are hardcoded in Python — QSS can style the buttons but cannot change which symbol is displayed.
 
 ### Progress Bar (Download)
 

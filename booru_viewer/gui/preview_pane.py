@@ -64,50 +64,34 @@ class ImagePreview(QWidget):
         tb.setContentsMargins(4, 1, 4, 1)
         tb.setSpacing(4)
 
-        # Compact toolbar buttons. The bundled themes set
-        # `QPushButton { padding: 5px 12px }` which eats 24px of horizontal
-        # space — too much for these short labels in fixed-width slots.
-        # Override with tighter padding inline so the labels (Unbookmark,
-        # Unsave, BL Tag, BL Post, Popout) fit cleanly under any theme.
-        # Same pattern as the search-bar score buttons in app.py and the
-        # settings dialog spinbox +/- buttons.
-        _tb_btn_style = "padding: 2px 6px;"
+        _tb_sz = 24
 
-        self._bookmark_btn = QPushButton("Bookmark")
-        self._bookmark_btn.setFixedWidth(100)
-        self._bookmark_btn.setStyleSheet(_tb_btn_style)
+        def _icon_btn(text: str, name: str, tip: str) -> QPushButton:
+            btn = QPushButton(text)
+            btn.setObjectName(name)
+            btn.setFixedSize(_tb_sz, _tb_sz)
+            btn.setToolTip(tip)
+            return btn
+
+        self._bookmark_btn = _icon_btn("\u2606", "_tb_bookmark", "Bookmark (B)")
         self._bookmark_btn.clicked.connect(self._on_bookmark_clicked)
         tb.addWidget(self._bookmark_btn)
 
-        self._save_btn = QPushButton("Save")
-        # 75 fits "Unsave" (6 chars) cleanly across every bundled theme.
-        # The previous 60 was tight enough that some themes clipped the
-        # last character on library files where the label flips to Unsave.
-        self._save_btn.setFixedWidth(75)
-        self._save_btn.setStyleSheet(_tb_btn_style)
+        self._save_btn = _icon_btn("\u2193", "_tb_save", "Save to library (S)")
         self._save_btn.clicked.connect(self._on_save_clicked)
         tb.addWidget(self._save_btn)
 
-        self._bl_tag_btn = QPushButton("BL Tag")
-        self._bl_tag_btn.setFixedWidth(60)
-        self._bl_tag_btn.setStyleSheet(_tb_btn_style)
-        self._bl_tag_btn.setToolTip("Blacklist a tag")
+        self._bl_tag_btn = _icon_btn("\u2298", "_tb_bl_tag", "Blacklist a tag")
         self._bl_tag_btn.clicked.connect(self._show_bl_tag_menu)
         tb.addWidget(self._bl_tag_btn)
 
-        self._bl_post_btn = QPushButton("BL Post")
-        self._bl_post_btn.setFixedWidth(65)
-        self._bl_post_btn.setStyleSheet(_tb_btn_style)
-        self._bl_post_btn.setToolTip("Blacklist this post")
+        self._bl_post_btn = _icon_btn("\u2297", "_tb_bl_post", "Blacklist this post")
         self._bl_post_btn.clicked.connect(self.blacklist_post_requested)
         tb.addWidget(self._bl_post_btn)
 
         tb.addStretch()
 
-        self._popout_btn = QPushButton("Popout")
-        self._popout_btn.setFixedWidth(65)
-        self._popout_btn.setStyleSheet(_tb_btn_style)
-        self._popout_btn.setToolTip("Open in popout")
+        self._popout_btn = _icon_btn("\u29c9", "_tb_popout", "Popout")
         self._popout_btn.clicked.connect(self.fullscreen_requested)
         tb.addWidget(self._popout_btn)
 
@@ -239,12 +223,13 @@ class ImagePreview(QWidget):
 
     def update_bookmark_state(self, bookmarked: bool) -> None:
         self._is_bookmarked = bookmarked
-        self._bookmark_btn.setText("Unbookmark" if bookmarked else "Bookmark")
-        self._bookmark_btn.setFixedWidth(90 if bookmarked else 80)
+        self._bookmark_btn.setText("\u2605" if bookmarked else "\u2606")  # ★ / ☆
+        self._bookmark_btn.setToolTip("Unbookmark (B)" if bookmarked else "Bookmark (B)")
 
     def update_save_state(self, saved: bool) -> None:
         self._is_saved = saved
-        self._save_btn.setText("Unsave" if saved else "Save")
+        self._save_btn.setText("\u2715" if saved else "\u2193")  # ✕ / ⤓
+        self._save_btn.setToolTip("Unsave from library" if saved else "Save to library (S)")
 
 
 

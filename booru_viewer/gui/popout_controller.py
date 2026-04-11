@@ -90,7 +90,8 @@ class PopoutController:
         cols = self._app._grid._flow.columns
         show_actions = self._app._stack.currentIndex() != 2
         monitor = self._app._db.get_setting("slideshow_monitor")
-        self._fullscreen_window = FullscreenPreview(grid_cols=cols, show_actions=show_actions, monitor=monitor, parent=self._app)
+        anchor = self._app._db.get_setting("popout_anchor") or "center"
+        self._fullscreen_window = FullscreenPreview(grid_cols=cols, show_actions=show_actions, monitor=monitor, anchor=anchor, parent=self._app)
         self._fullscreen_window.navigate.connect(self.navigate)
         self._fullscreen_window.play_next_requested.connect(self._app._on_video_end_next)
         from ..core.config import library_folders

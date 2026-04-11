@@ -6,11 +6,90 @@ import logging
 import os
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, Signal, Property
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt, QTimer, Signal, Property, QPoint
+from PySide6.QtGui import QColor, QIcon, QPixmap, QPainter, QPen, QBrush, QPolygon, QPainterPath
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSlider, QStyle,
+    QApplication,
 )
+
+
+def _paint_icon(shape: str, color: QColor, size: int = 16) -> QIcon:
+    """Paint a media control icon using the given color."""
+    pix = QPixmap(size, size)
+    pix.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(color)
+    s = size
+
+    if shape == "play":
+        p.drawPolygon(QPolygon([QPoint(3, 2), QPoint(3, s - 2), QPoint(s - 2, s // 2)]))
+
+    elif shape == "pause":
+        w = max(2, s // 4)
+        p.drawRect(2, 2, w, s - 4)
+        p.drawRect(s - 2 - w, 2, w, s - 4)
+
+    elif shape == "volume":
+        # Speaker cone
+        p.drawPolygon(QPolygon([
+            QPoint(1, s // 2 - 2), QPoint(4, s // 2 - 2),
+            QPoint(8, 2), QPoint(8, s - 2),
+            QPoint(4, s // 2 + 2), QPoint(1, s // 2 + 2),
+        ]))
+        # Sound waves
+        p.setPen(QPen(color, 1.5))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        path = QPainterPath()
+        path.arcMoveTo(8, 3, 6, s - 6, 45)
+        path.arcTo(8, 3, 6, s - 6, 45, -90)
+        p.drawPath(path)
+
+    elif shape == "muted":
+        p.drawPolygon(QPolygon([
+            QPoint(1, s // 2 - 2), QPoint(4, s // 2 - 2),
+            QPoint(8, 2), QPoint(8, s - 2),
+            QPoint(4, s // 2 + 2), QPoint(1, s // 2 + 2),
+        ]))
+        p.setPen(QPen(color, 2))
+        p.drawLine(10, 4, s - 2, s - 4)
+        p.drawLine(10, s - 4, s - 2, 4)
+
+    elif shape == "loop":
+        p.setPen(QPen(color, 1.5))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        path = QPainterPath()
+        path.arcMoveTo(2, 2, s - 4, s - 4, 30)
+        path.arcTo(2, 2, s - 4, s - 4, 30, 300)
+        p.drawPath(path)
+        # Arrowhead
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(color)
+        end = path.currentPosition().toPoint()
+        p.drawPolygon(QPolygon([
+            end, QPoint(end.x() - 4, end.y() - 3), QPoint(end.x() + 1, end.y() - 4),
+        ]))
+
+    elif shape == "once":
+        p.setPen(QPen(color, 2))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        mid = s // 2
+        p.drawLine(mid, 3, mid, s - 3)
+        p.drawLine(mid - 2, 5, mid, 3)
+
+    elif shape == "next":
+        p.drawPolygon(QPolygon([QPoint(2, 2), QPoint(2, s - 2), QPoint(s - 5, s // 2)]))
+        p.drawRect(s - 4, 2, 2, s - 4)
+
+    elif shape == "auto":
+        mid = s // 2
+        p.drawPolygon(QPolygon([QPoint(1, 3), QPoint(1, s - 3), QPoint(mid - 1, s // 2)]))
+        p.drawPolygon(QPolygon([QPoint(mid, 3), QPoint(mid, s - 3), QPoint(s - 2, s // 2)]))
+
+    p.end()
+    return QIcon(pix)
 
 import mpv as mpvlib
 
@@ -119,15 +198,22 @@ class VideoPlayer(QWidget):
         controls = QHBoxLayout(self._controls_bar)
         controls.setContentsMargins(4, 2, 4, 2)
 
-        # Compact-padding override matches the top preview toolbar so the
-        # bottom controls bar reads as part of the same panel rather than
-        # as a stamped-in overlay. Bundled themes' default `padding: 5px 12px`
-        # is too wide for short labels in narrow button slots.
-        _ctrl_btn_style = "padding: 2px 6px;"
+        _btn_sz = 24
+        _fg = self.palette().buttonText().color()
 
-        self._play_btn = QPushButton("Play")
-        self._play_btn.setMaximumWidth(65)
-        self._play_btn.setStyleSheet(_ctrl_btn_style)
+        def _icon_btn(shape: str, name: str, tip: str) -> QPushButton:
+            btn = QPushButton()
+            btn.setObjectName(name)
+            btn.setIcon(_paint_icon(shape, _fg))
+            btn.setFixedSize(_btn_sz, _btn_sz)
+            btn.setToolTip(tip)
+            return btn
+
+        self._icon_fg = _fg
+        self._play_icon = _paint_icon("play", _fg)
+        self._pause_icon = _paint_icon("pause", _fg)
+
+        self._play_btn = _icon_btn("play", "_ctrl_play", "Play / Pause (Space)")
         self._play_btn.clicked.connect(self._toggle_play)
         controls.addWidget(self._play_btn)
 
@@ -152,28 +238,29 @@ class VideoPlayer(QWidget):
         self._vol_slider.valueChanged.connect(self._set_volume)
         controls.addWidget(self._vol_slider)
 
-        self._mute_btn = QPushButton("Mute")
-        self._mute_btn.setMaximumWidth(80)
-        self._mute_btn.setStyleSheet(_ctrl_btn_style)
+        self._vol_icon = _paint_icon("volume", _fg)
+        self._muted_icon = _paint_icon("muted", _fg)
+
+        self._mute_btn = _icon_btn("volume", "_ctrl_mute", "Mute / Unmute")
         self._mute_btn.clicked.connect(self._toggle_mute)
         controls.addWidget(self._mute_btn)
 
         self._autoplay = True
-        self._autoplay_btn = QPushButton("Auto")
-        self._autoplay_btn.setMaximumWidth(70)
-        self._autoplay_btn.setStyleSheet(_ctrl_btn_style)
+        self._auto_icon = _paint_icon("auto", _fg)
+        self._autoplay_btn = _icon_btn("auto", "_ctrl_autoplay", "Auto-play videos when selected")
         self._autoplay_btn.setCheckable(True)
         self._autoplay_btn.setChecked(True)
-        self._autoplay_btn.setToolTip("Auto-play videos when selected")
         self._autoplay_btn.clicked.connect(self._toggle_autoplay)
         self._autoplay_btn.hide()
         controls.addWidget(self._autoplay_btn)
 
+        self._loop_icons = {
+            0: _paint_icon("loop", _fg),
+            1: _paint_icon("once", _fg),
+            2: _paint_icon("next", _fg),
+        }
         self._loop_state = 0  # 0=Loop, 1=Once, 2=Next
-        self._loop_btn = QPushButton("Loop")
-        self._loop_btn.setMaximumWidth(60)
-        self._loop_btn.setStyleSheet(_ctrl_btn_style)
-        self._loop_btn.setToolTip("Loop: repeat / Once: stop at end / Next: advance")
+        self._loop_btn = _icon_btn("loop", "_ctrl_loop", "Loop / Once / Next")
         self._loop_btn.clicked.connect(self._cycle_loop)
         controls.addWidget(self._loop_btn)
 
@@ -295,7 +382,7 @@ class VideoPlayer(QWidget):
         self._pending_mute = val
         if self._mpv:
             self._mpv.mute = val
-        self._mute_btn.setText("Unmute" if val else "Mute")
+        self._mute_btn.setIcon(self._muted_icon if val else self._vol_icon)
 
     @property
     def autoplay(self) -> bool:
@@ -314,8 +401,9 @@ class VideoPlayer(QWidget):
     @loop_state.setter
     def loop_state(self, val: int) -> None:
         self._loop_state = val
-        labels = ["Loop", "Once", "Next"]
-        self._loop_btn.setText(labels[val])
+        tips = ["Loop: repeat", "Once: stop at end", "Next: advance"]
+        self._loop_btn.setIcon(self._loop_icons[val])
+        self._loop_btn.setToolTip(tips[val])
         self._autoplay_btn.setVisible(val == 2)
         self._apply_loop_to_mpv()
 
@@ -386,7 +474,7 @@ class VideoPlayer(QWidget):
             m.pause = False
         else:
             m.pause = True
-        self._play_btn.setText("Pause" if not m.pause else "Play")
+        self._play_btn.setIcon(self._pause_icon if not m.pause else self._play_icon)
         self._poll_timer.start()
 
     def stop(self) -> None:
@@ -397,17 +485,17 @@ class VideoPlayer(QWidget):
         self._time_label.setText("0:00")
         self._duration_label.setText("0:00")
         self._seek_slider.setRange(0, 0)
-        self._play_btn.setText("Play")
+        self._play_btn.setIcon(self._play_icon)
 
     def pause(self) -> None:
         if self._mpv:
             self._mpv.pause = True
-            self._play_btn.setText("Play")
+            self._play_btn.setIcon(self._play_icon)
 
     def resume(self) -> None:
         if self._mpv:
             self._mpv.pause = False
-            self._play_btn.setText("Pause")
+            self._play_btn.setIcon(self._pause_icon)
 
     # -- Internal controls --
 
@@ -415,11 +503,12 @@ class VideoPlayer(QWidget):
         if not self._mpv:
             return
         self._mpv.pause = not self._mpv.pause
-        self._play_btn.setText("Play" if self._mpv.pause else "Pause")
+        self._play_btn.setIcon(self._play_icon if self._mpv.pause else self._pause_icon)
 
     def _toggle_autoplay(self, checked: bool = True) -> None:
         self._autoplay = self._autoplay_btn.isChecked()
-        self._autoplay_btn.setText("Autoplay" if self._autoplay else "Manual")
+        self._autoplay_btn.setIcon(self._auto_icon if self._autoplay else self._play_icon)
+        self._autoplay_btn.setToolTip("Autoplay on" if self._autoplay else "Autoplay off")
 
     def _cycle_loop(self) -> None:
         self.loop_state = (self._loop_state + 1) % 3
@@ -463,7 +552,7 @@ class VideoPlayer(QWidget):
         if self._mpv:
             self._mpv.mute = not self._mpv.mute
             self._pending_mute = bool(self._mpv.mute)
-            self._mute_btn.setText("Unmute" if self._mpv.mute else "Mute")
+            self._mute_btn.setIcon(self._muted_icon if self._mpv.mute else self._vol_icon)
 
     # -- mpv callbacks (called from mpv thread) --
 
@@ -528,9 +617,9 @@ class VideoPlayer(QWidget):
 
         # Pause state
         paused = self._mpv.pause
-        expected_text = "Play" if paused else "Pause"
-        if self._play_btn.text() != expected_text:
-            self._play_btn.setText(expected_text)
+        expected_icon = self._play_icon if paused else self._pause_icon
+        if self._play_btn.icon().cacheKey() != expected_icon.cacheKey():
+            self._play_btn.setIcon(expected_icon)
 
         # Video size (set by observer on mpv thread, emitted here on main thread)
         if self._pending_video_size is not None:
