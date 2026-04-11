@@ -278,19 +278,8 @@ class ThumbnailWidget(QWidget):
         self._hover = False
         self.update()
 
-    def _hit_pixmap(self, pos) -> bool:
-        """True if pos is within the drawn pixmap area."""
-        if not self._pixmap:
-            return False
-        px = (self.width() - self._pixmap.width()) // 2
-        py = (self.height() - self._pixmap.height()) // 2
-        return QRect(px, py, self._pixmap.width(), self._pixmap.height()).contains(pos)
-
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
-            if not self._hit_pixmap(event.position().toPoint()):
-                event.ignore()
-                return
             self._drag_start = event.position().toPoint()
             self.clicked.emit(self.index, event)
         elif event.button() == Qt.MouseButton.RightButton:
