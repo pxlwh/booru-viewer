@@ -9,7 +9,7 @@ import os
 import tempfile
 import threading
 import zipfile
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
@@ -276,7 +276,59 @@ def _referer_for(parsed) -> str:
 # does the actual download; the other waits and reads the cached file.
 # Loop-bound, but the existing module is already loop-bound, so this
 # doesn't make anything worse and is fixed cleanly in PR2.
-_url_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+#
+# Capped at _URL_LOCKS_MAX entries (audit finding #5). The previous
+# defaultdict grew unbounded over a long browsing session, and an
+# adversarial booru returning cache-buster query strings could turn
+# the leak into an OOM DoS.
+_URL_LOCKS_MAX = 4096
+_url_locks: "OrderedDict[str, asyncio.Lock]" = OrderedDict()
+
+
+def _get_url_lock(h: str) -> asyncio.Lock:
+    """Return the asyncio.Lock for URL hash *h*, creating it if needed.
+
+    Touches LRU order on every call so frequently-accessed hashes
+    survive eviction. The first call for a new hash inserts it and
+    triggers _evict_url_locks() to trim back toward the cap.
+    """
+    lock = _url_locks.get(h)
+    if lock is None:
+        lock = asyncio.Lock()
+        _url_locks[h] = lock
+        _evict_url_locks(skip=h)
+    else:
+        _url_locks.move_to_end(h)
+    return lock
+
+
+def _evict_url_locks(skip: str) -> None:
+    """Trim _url_locks back toward _URL_LOCKS_MAX, oldest first.
+
+    Each pass skips:
+    - the hash *skip* we just inserted (it's the youngest — evicting
+      it immediately would be self-defeating), and
+    - any entry whose lock is currently held (we can't drop a lock
+      that a coroutine is mid-`async with` on without that coroutine
+      blowing up on exit).
+
+    Stops as soon as one pass finds no evictable entries — that
+    handles the edge case where every remaining entry is either
+    *skip* or currently held. In that state the cap is temporarily
+    exceeded; the next insertion will retry eviction.
+    """
+    while len(_url_locks) > _URL_LOCKS_MAX:
+        evicted = False
+        for old_h in list(_url_locks.keys()):
+            if old_h == skip:
+                continue
+            if _url_locks[old_h].locked():
+                continue
+            _url_locks.pop(old_h, None)
+            evicted = True
+            break
+        if not evicted:
+            return
 
 
 async def download_image(
@@ -293,7 +345,7 @@ async def download_image(
     filename = _url_hash(url) + _ext_from_url(url)
     local = dest_dir / filename
 
-    async with _url_locks[_url_hash(url)]:
+    async with _get_url_lock(_url_hash(url)):
         # Check if a ugoira zip was already converted to gif
         if local.suffix.lower() == ".zip":
             gif_path = local.with_suffix(".gif")

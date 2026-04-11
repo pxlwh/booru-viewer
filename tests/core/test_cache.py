@@ -222,3 +222,71 @@ def test_is_valid_media_returns_true_on_oserror(tmp_path):
     OS issue persisted."""
     nonexistent = tmp_path / "definitely-not-here.jpg"
     assert _is_valid_media(nonexistent) is True
+
+
+# -- _url_locks LRU cap (audit finding #5) --
+
+def test_url_locks_capped_at_max():
+    """The per-URL coalesce lock table must not grow beyond _URL_LOCKS_MAX
+    entries. Without the cap, a long browsing session or an adversarial
+    booru returning cache-buster query strings would leak one Lock per
+    unique URL until OOM."""
+    cache._url_locks.clear()
+    try:
+        for i in range(cache._URL_LOCKS_MAX + 500):
+            cache._get_url_lock(f"hash{i}")
+        assert len(cache._url_locks) <= cache._URL_LOCKS_MAX
+    finally:
+        cache._url_locks.clear()
+
+
+def test_url_locks_returns_same_lock_for_same_hash():
+    """Two get_url_lock calls with the same hash must return the same
+    Lock object — that's the whole point of the coalesce table."""
+    cache._url_locks.clear()
+    try:
+        lock_a = cache._get_url_lock("hashA")
+        lock_b = cache._get_url_lock("hashA")
+        assert lock_a is lock_b
+    finally:
+        cache._url_locks.clear()
+
+
+def test_url_locks_lru_keeps_recently_used():
+    """LRU semantics: a hash that gets re-touched moves to the end of
+    the OrderedDict and is the youngest, so eviction picks an older
+    entry instead."""
+    cache._url_locks.clear()
+    try:
+        cache._get_url_lock("oldest")
+        cache._get_url_lock("middle")
+        cache._get_url_lock("oldest")  # touch — now youngest
+        # The dict should now be: middle, oldest (insertion order with
+        # move_to_end on the touch).
+        keys = list(cache._url_locks.keys())
+        assert keys == ["middle", "oldest"]
+    finally:
+        cache._url_locks.clear()
+
+
+def test_url_locks_eviction_skips_held_locks():
+    """A held lock (one a coroutine is mid-`async with` on) must NOT be
+    evicted; popping it would break the coroutine's __aexit__. The
+    eviction loop sees `lock.locked()` and skips it."""
+    cache._url_locks.clear()
+    try:
+        # Seed an entry and hold it.
+        held = cache._get_url_lock("held_hash")
+
+        async def hold_and_fill():
+            async with held:
+                # While we're holding the lock, force eviction by
+                # filling past the cap.
+                for i in range(cache._URL_LOCKS_MAX + 100):
+                    cache._get_url_lock(f"new{i}")
+                # The held lock must still be present.
+                assert "held_hash" in cache._url_locks
+
+        asyncio.run(hold_and_fill())
+    finally:
+        cache._url_locks.clear()
