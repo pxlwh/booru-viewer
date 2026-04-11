@@ -1,0 +1,72 @@
+name: Performance Issue
+about: Slowdowns, lag, high memory/CPU, UI freezes (distinct from broken features)
+title: "[PERF] "
+labels: ["performance"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: What's slow?
+      description: Describe what feels sluggish and what you'd expect
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: What area?
+      options:
+        - Grid scroll / infinite scroll
+        - Thumbnail loading
+        - Search / API requests
+        - Image preview / pan-zoom
+        - Video playback
+        - Popout open / close
+        - Popout navigation
+        - Settings / dialogs
+        - Startup
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: input
+    id: timings
+    attributes:
+      label: Approximate timings
+      description: How long does the slow operation take? How long would you expect?
+  - type: input
+    id: library_size
+    attributes:
+      label: Library / bookmark size
+      description: Number of saved files and/or bookmarks, if relevant
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options: [Linux, Windows, Other]
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware (CPU / RAM / GPU)
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant DEBUG logs
+      description: Launch with Ctrl+L open and reproduce — paste anything that looks slow
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: booru-viewer version / commit
+    validations:
+      required: true

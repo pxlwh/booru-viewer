@@ -1,0 +1,55 @@
+name: Bug Report
+about: Something broken or misbehaving
+title: "[BUG] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What's broken?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual behavior
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options: [Linux, Windows, Other]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: booru-viewer version / commit
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python & PySide6 version
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Booru backend
+      options: [Danbooru, Gelbooru, Safebooru, e621, Other]
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / traceback
+      render: shell

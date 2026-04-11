@@ -1,0 +1,39 @@
+name: UX Feedback
+about: Non-bug UX suggestions, workflow friction, small polish
+title: "[UX] "
+labels: ["ux"]
+body:
+  - type: textarea
+    id: context
+    attributes:
+      label: What were you trying to do?
+      description: The workflow or action where the friction happened
+    validations:
+      required: true
+  - type: textarea
+    id: friction
+    attributes:
+      label: What felt awkward or wrong?
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: What would feel better?
+      description: Optional — a rough idea is fine
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Grid / thumbnails
+        - Preview pane
+        - Popout window
+        - Top bar / filters
+        - Search
+        - Bookmarks
+        - Library
+        - Settings
+        - Keyboard shortcuts
+        - Theming
+        - Other

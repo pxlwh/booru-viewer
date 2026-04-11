@@ -1,0 +1,70 @@
+name: Hyprland / Wayland Issue
+about: Compositor-specific issues (window positioning, popout math, Waybar, multi-monitor)
+title: "[HYPR] "
+labels: ["hyprland", "wayland"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: What's happening?
+      description: Describe the compositor-specific behavior you're seeing
+    validations:
+      required: true
+  - type: dropdown
+    id: compositor
+    attributes:
+      label: Compositor
+      options: [Hyprland, Sway, KDE/KWin Wayland, GNOME/Mutter Wayland, Other Wayland, Other]
+    validations:
+      required: true
+  - type: input
+    id: compositor_version
+    attributes:
+      label: Compositor version
+      description: e.g. Hyprland v0.42.0
+  - type: dropdown
+    id: monitors
+    attributes:
+      label: Monitor setup
+      options: [Single monitor, Dual monitor, 3+ monitors, Mixed scaling, Mixed refresh rates]
+  - type: dropdown
+    id: area
+    attributes:
+      label: What area is affected?
+      options:
+        - Main window geometry / position
+        - Popout window positioning
+        - Popout aspect-ratio lock
+        - Popout anchor (resize pivot)
+        - Context menu / popup positioning
+        - Waybar exclusive zone handling
+        - Fullscreen (F11)
+        - Privacy screen overlay
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: envvars
+    attributes:
+      label: Relevant env vars set
+      description: BOORU_VIEWER_NO_HYPR_RULES, BOORU_VIEWER_NO_POPOUT_ASPECT_LOCK, etc.
+      placeholder: "BOORU_VIEWER_NO_HYPR_RULES=1"
+      render: shell
+  - type: textarea
+    id: windowrules
+    attributes:
+      label: Any windowrules targeting booru-viewer?
+      description: Paste relevant rules from your compositor config
+      render: shell
+  - type: textarea
+    id: hyprctl
+    attributes:
+      label: hyprctl output (if applicable)
+      description: "`hyprctl monitors -j`, `hyprctl clients -j` filtered to booru-viewer"
+      render: json
+  - type: input
+    id: version
+    attributes:
+      label: booru-viewer version / commit
+    validations:
+      required: true

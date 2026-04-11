@@ -1,0 +1,30 @@
+name: Theme Submission
+about: Submit a palette for inclusion
+title: "[THEME] "
+labels: ["theme"]
+body:
+  - type: input
+    id: name
+    attributes:
+      label: Theme name
+    validations:
+      required: true
+  - type: textarea
+    id: palette
+    attributes:
+      label: Palette file contents
+      description: Paste the full @palette block or the complete .qss file
+      render: css
+    validations:
+      required: true
+  - type: input
+    id: screenshot
+    attributes:
+      label: Screenshot URL
+  - type: checkboxes
+    id: license
+    attributes:
+      label: Licensing
+      options:
+        - label: I'm okay with this being distributed under the project's license
+          required: true

@@ -1,0 +1,26 @@
+name: Site Support Request
+about: Request support for a new booru backend
+title: "[SITE] "
+labels: ["site-support"]
+body:
+  - type: input
+    id: site
+    attributes:
+      label: Site name and URL
+    validations:
+      required: true
+  - type: dropdown
+    id: api
+    attributes:
+      label: API type
+      options: [Danbooru-compatible, Gelbooru-compatible, Moebooru, Shimmie2, Unknown, Other]
+    validations:
+      required: true
+  - type: input
+    id: api_docs
+    attributes:
+      label: Link to API documentation (if any)
+  - type: textarea
+    id: notes
+    attributes:
+      label: Auth, rate limits, or quirks worth knowing

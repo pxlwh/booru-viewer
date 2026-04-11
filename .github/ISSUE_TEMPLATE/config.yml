@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and general discussion
+    url: https://github.com/pxlwh/booru-viewer/discussions
+    about: For usage questions, setup help, and general chat that isn't a bug
+  - name: Gitea mirror
+    url: https://git.pax.moe/pax/booru-viewer
+    about: Primary development repo — same codebase, also accepts issues

@@ -1,0 +1,22 @@
+name: Documentation Issue
+about: Typos, unclear sections, missing docs, broken links
+title: "[DOCS] "
+labels: ["documentation"]
+body:
+  - type: input
+    id: file
+    attributes:
+      label: File or page
+      description: README.md, themes/README.md, HYPRLAND.md, KEYBINDS.md, in-app help, etc.
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's wrong or missing?
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested fix or addition
