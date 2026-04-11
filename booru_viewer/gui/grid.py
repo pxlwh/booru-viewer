@@ -96,7 +96,6 @@ class ThumbnailWidget(QWidget):
         self._hover_color = self._selection_color.lighter(150)
         self._idle_color = pal.color(QPalette.ColorRole.Mid)
         self.setFixedSize(THUMB_SIZE, THUMB_SIZE)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setMouseTracking(True)
 
     def set_pixmap(self, pixmap: QPixmap) -> None:
@@ -281,10 +280,11 @@ class ThumbnailWidget(QWidget):
             self.update()
 
     def mouseMoveEvent(self, event) -> None:
-        # Update hover based on whether cursor is over the pixmap
+        # Update hover and cursor based on whether cursor is over the pixmap
         over = self._hit_pixmap(event.position().toPoint()) if self._pixmap else False
         if over != self._hover:
             self._hover = over
+            self.setCursor(Qt.CursorShape.PointingHandCursor if over else Qt.CursorShape.ArrowCursor)
             self.update()
         if (self._drag_start and self._cached_path
                 and (event.position().toPoint() - self._drag_start).manhattanLength() > 10):
@@ -296,7 +296,7 @@ class ThumbnailWidget(QWidget):
                 drag.setPixmap(self._pixmap.scaled(64, 64, Qt.AspectRatioMode.KeepAspectRatio))
             drag.exec(Qt.DropAction.CopyAction)
             self._drag_start = None
-            self.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.setCursor(Qt.CursorShape.ArrowCursor)
             return
 
     def _hit_pixmap(self, pos) -> bool:
@@ -323,6 +323,9 @@ class ThumbnailWidget(QWidget):
     def mouseDoubleClickEvent(self, event) -> None:
         self._drag_start = None
         if event.button() == Qt.MouseButton.LeftButton:
+            if not self._hit_pixmap(event.position().toPoint()):
+                event.ignore()
+                return
             self.double_clicked.emit(self.index)
 
 
