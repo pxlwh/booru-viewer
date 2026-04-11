@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
+
+log = logging.getLogger("booru")
 
 from PySide6.QtCore import Qt, Signal, QSize, QRect, QRectF, QMimeData, QUrl, QPoint, Property, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QPixmap, QPainter, QPainterPath, QColor, QPen, QKeyEvent, QWheelEvent, QDrag, QMouseEvent
@@ -276,6 +279,17 @@ class ThumbnailWidget(QWidget):
             self.update()
 
     def mouseMoveEvent(self, event) -> None:
+        # If the grid has a pending or active rubber band, forward the move
+        grid = self._grid()
+        if grid and (grid._rb_origin or grid._rb_pending_origin):
+            vp_pos = self.mapTo(grid.viewport(), event.position().toPoint())
+            if grid._rb_origin:
+                grid._rb_drag(vp_pos)
+                return
+            if grid._maybe_start_rb(vp_pos):
+                grid._rb_drag(vp_pos)
+                return
+            return
         # Update hover and cursor based on whether cursor is over the pixmap
         over = self._hit_pixmap(event.position().toPoint()) if self._pixmap else False
         if over != self._hover:
@@ -303,19 +317,49 @@ class ThumbnailWidget(QWidget):
         py = (self.height() - self._pixmap.height()) // 2
         return QRect(px, py, self._pixmap.width(), self._pixmap.height()).contains(pos)
 
+    def _grid(self):
+        """Walk up to the ThumbnailGrid ancestor."""
+        w = self.parentWidget()
+        while w:
+            if isinstance(w, ThumbnailGrid):
+                return w
+            w = w.parentWidget()
+        return None
+
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
-            self._drag_start = event.position().toPoint()
+            pos = event.position().toPoint()
+            if not self._hit_pixmap(pos):
+                grid = self._grid()
+                if grid:
+                    grid.on_padding_click(self, pos)
+                event.accept()
+                return
+            self._drag_start = pos
             self.clicked.emit(self.index, event)
         elif event.button() == Qt.MouseButton.RightButton:
             self.right_clicked.emit(self.index, event.globalPosition().toPoint())
 
     def mouseReleaseEvent(self, event) -> None:
         self._drag_start = None
+        grid = self._grid()
+        if grid:
+            if grid._rb_origin:
+                grid._rb_end()
+            elif grid._rb_pending_origin is not None:
+                # Click without drag — treat as deselect
+                grid._rb_pending_origin = None
+                grid.clear_selection()
 
     def mouseDoubleClickEvent(self, event) -> None:
         self._drag_start = None
         if event.button() == Qt.MouseButton.LeftButton:
+            pos = event.position().toPoint()
+            if not self._hit_pixmap(pos):
+                grid = self._grid()
+                if grid:
+                    grid.on_padding_click(self, pos)
+                return
             self.double_clicked.emit(self.index)
 
 
@@ -436,9 +480,9 @@ class ThumbnailGrid(QScrollArea):
         self._last_click_index = -1  # for shift-click range
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.verticalScrollBar().valueChanged.connect(self._check_scroll_bottom)
-        self.viewport().installEventFilter(self)
         # Rubber band drag selection
         self._rubber_band: QRubberBand | None = None
+        self._rb_pending_origin: QPoint | None = None  # press position, not yet confirmed as drag
         self._rb_origin: QPoint | None = None
 
     @property
@@ -466,7 +510,7 @@ class ThumbnailGrid(QScrollArea):
             thumb.clicked.connect(self._on_thumb_click)
             thumb.double_clicked.connect(self._on_thumb_double_click)
             thumb.right_clicked.connect(self._on_thumb_right_click)
-            thumb.installEventFilter(self)
+
             self._flow.add_widget(thumb)
             self._thumbs.append(thumb)
 
@@ -481,7 +525,7 @@ class ThumbnailGrid(QScrollArea):
             thumb.clicked.connect(self._on_thumb_click)
             thumb.double_clicked.connect(self._on_thumb_double_click)
             thumb.right_clicked.connect(self._on_thumb_right_click)
-            thumb.installEventFilter(self)
+
             self._flow.add_widget(thumb)
             self._thumbs.append(thumb)
             new_thumbs.append(thumb)
@@ -571,40 +615,69 @@ class ThumbnailGrid(QScrollArea):
         self._rubber_band.show()
         self.clear_selection()
 
-    def eventFilter(self, obj, event) -> bool:
-        if isinstance(obj, ThumbnailWidget):
-            if event.type() in (event.Type.MouseButtonPress, event.Type.MouseButtonDblClick):
-                if event.button() == Qt.MouseButton.LeftButton and not obj._hit_pixmap(event.position().toPoint()):
-                    vp_pos = self.viewport().mapFromGlobal(obj.mapToGlobal(event.position().toPoint()))
-                    self._start_rubber_band(vp_pos)
-                    return True
-        elif obj is self.viewport():
-            if event.type() == event.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
-                self._start_rubber_band(event.position().toPoint())
-                return True
-        return super().eventFilter(obj, event)
+    def on_padding_click(self, thumb, local_pos) -> None:
+        """Called directly by ThumbnailWidget when a click misses the pixmap."""
+        vp_pos = thumb.mapTo(self.viewport(), local_pos)
+        self._rb_pending_origin = vp_pos
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        # Clicks on viewport/flow (gaps, space below thumbs) start rubber band
+        if event.button() == Qt.MouseButton.LeftButton:
+            child = self.childAt(event.position().toPoint())
+            if child is self.widget() or child is self.viewport():
+                self._rb_pending_origin = event.position().toPoint()
+                return
+        super().mousePressEvent(event)
+
+    def _rb_drag(self, vp_pos: QPoint) -> None:
+        """Update rubber band geometry and intersected thumb selection."""
+        if not (self._rb_origin and self._rubber_band):
+            return
+        rb_rect = QRect(self._rb_origin, vp_pos).normalized()
+        self._rubber_band.setGeometry(rb_rect)
+        vp_offset = self.widget().mapFrom(self.viewport(), QPoint(0, 0))
+        self._clear_multi()
+        for i, thumb in enumerate(self._thumbs):
+            thumb_rect = thumb.geometry().translated(vp_offset)
+            if rb_rect.intersects(thumb_rect):
+                self._multi_selected.add(i)
+                thumb.set_multi_selected(True)
+
+    def _rb_end(self) -> None:
+        """Hide the rubber band and clear origin."""
+        if self._rubber_band:
+            self._rubber_band.hide()
+        self._rb_origin = None
+
+    def _maybe_start_rb(self, vp_pos: QPoint) -> bool:
+        """If a rubber band press is pending and we've moved past threshold, start it."""
+        if self._rb_pending_origin is None:
+            return False
+        if (vp_pos - self._rb_pending_origin).manhattanLength() < 30:
+            return False
+        self._start_rubber_band(self._rb_pending_origin)
+        self._rb_pending_origin = None
+        return True
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        pos = event.position().toPoint()
         if self._rb_origin and self._rubber_band:
-            rb_rect = QRect(self._rb_origin, event.position().toPoint()).normalized()
-            self._rubber_band.setGeometry(rb_rect)
-            # Select thumbnails that intersect the rubber band
-            vp_offset = self.widget().mapFrom(self.viewport(), QPoint(0, 0))
-            self._clear_multi()
-            for i, thumb in enumerate(self._thumbs):
-                thumb_rect = thumb.geometry().translated(vp_offset)
-                if rb_rect.intersects(thumb_rect):
-                    self._multi_selected.add(i)
-                    thumb.set_multi_selected(True)
+            self._rb_drag(pos)
+            return
+        if self._maybe_start_rb(pos):
+            self._rb_drag(pos)
             return
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if self._rb_origin and self._rubber_band:
-            self._rubber_band.hide()
-            self._rb_origin = None
+            self._rb_end()
             return
-        # Reset any stuck cursor from a cancelled drag-and-drop
+        if self._rb_pending_origin is not None:
+            # Click without drag — treat as deselect
+            self._rb_pending_origin = None
+            self.clear_selection()
+            return
         self.unsetCursor()
         super().mouseReleaseEvent(event)
 
