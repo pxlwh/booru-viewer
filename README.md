@@ -172,7 +172,7 @@ Six themes included, each in rounded and square variants. See [`themes/`](themes
 
 ## Settings
 
-- **General** — page size, thumbnail size (100-200px), default site, default rating/score, prefetch mode (Off / Nearby / Aggressive), infinite scroll, popout monitor, file dialog platform
+- **General** — page size, thumbnail size (100-200px), default site, default rating/score, prefetch mode (Off / Nearby / Aggressive), infinite scroll, unbookmark on save, search history, flip layout, popout monitor, popout anchor (resize pivot), file dialog platform
 - **Cache** — max cache size, max thumbnail cache, auto-evict, clear cache on exit (session-only mode)
 - **Blacklist** — tag blacklist with toggle, post URL blacklist
 - **Paths** — data directory, cache, database, configurable library directory, library filename template
