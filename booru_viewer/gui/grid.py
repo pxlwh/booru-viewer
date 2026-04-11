@@ -571,8 +571,7 @@ class ThumbnailGrid(QScrollArea):
             # Empty space: flow layout, viewport, or cell padding (missed pixmap)
             is_empty = child is self.widget() or child is self.viewport()
             if not is_empty and isinstance(child, ThumbnailWidget):
-                global_pos = self.mapToGlobal(event.position().toPoint())
-                local = child.mapFromGlobal(global_pos)
+                local = child.mapFrom(self, event.position().toPoint())
                 if not child._hit_pixmap(local):
                     is_empty = True
             if is_empty:
