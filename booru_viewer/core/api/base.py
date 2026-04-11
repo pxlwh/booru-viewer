@@ -12,7 +12,7 @@ import httpx
 
 from ..config import USER_AGENT, DEFAULT_PAGE_SIZE
 from ..cache import log_connection
-from ._safety import validate_public_request
+from ._safety import redact_url, validate_public_request
 
 log = logging.getLogger("booru")
 
@@ -133,7 +133,11 @@ class BooruClient(ABC):
 
     @staticmethod
     async def _log_request(request: httpx.Request) -> None:
-        log_connection(str(request.url))
+        # Redact api_key / login / user_id / password_hash from the
+        # URL before it ever crosses the function boundary — the
+        # rendered URL would otherwise land in tracebacks, debug logs,
+        # or in-app connection-log views as plaintext.
+        log_connection(redact_url(str(request.url)))
 
     _RETRYABLE_STATUS = frozenset({429, 503})
 
