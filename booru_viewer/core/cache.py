@@ -122,6 +122,33 @@ _IMAGE_MAGIC = {
     b'PK\x03\x04': True,    # ZIP (ugoira)
 }
 
+# Header size used by both _looks_like_media (in-memory bytes) and the
+# in-stream early validator in _do_download. 16 bytes covers JPEG (3),
+# PNG (8), GIF (6), WebP (12), MP4/MOV (8), WebM/MKV (4), and ZIP (4)
+# magics with comfortable margin.
+_MEDIA_HEADER_MIN = 16
+
+
+def _looks_like_media(header: bytes) -> bool:
+    """Return True if the leading bytes match a known media magic.
+
+    Conservative on the empty case: an empty header is "unknown",
+    not "valid", because the streaming validator (audit #10) calls us
+    before any bytes have arrived means the server returned nothing
+    useful. The on-disk validator wraps this with an OSError fallback
+    that returns True instead — see _is_valid_media.
+    """
+    if not header:
+        return False
+    if header.startswith(b'<') or header.startswith(b'<!'):
+        return False
+    for magic in _IMAGE_MAGIC:
+        if header.startswith(magic):
+            return True
+    # Not a known magic and not HTML: treat as ok (some boorus serve
+    # exotic-but-legal containers we don't enumerate above).
+    return b'<html' not in header.lower() and b'<!doctype' not in header.lower()
+
 
 def _is_valid_media(path: Path) -> bool:
     """Check if a file looks like actual media, not an HTML error page.
@@ -133,18 +160,11 @@ def _is_valid_media(path: Path) -> bool:
     """
     try:
         with open(path, "rb") as f:
-            header = f.read(16)
+            header = f.read(_MEDIA_HEADER_MIN)
     except OSError as e:
         log.warning("Cannot read %s for validation (%s); treating as valid", path, e)
         return True
-    if not header or header.startswith(b'<') or header.startswith(b'<!'):
-        return False
-    # Check for known magic bytes
-    for magic in _IMAGE_MAGIC:
-        if header.startswith(magic):
-            return True
-    # If not a known type but not HTML, assume it's ok
-    return b'<html' not in header.lower() and b'<!doctype' not in header.lower()
+    return _looks_like_media(header)
 
 
 def _ext_from_url(url: str) -> str:
@@ -429,7 +449,30 @@ async def _do_download(
                 f"Download too large: {total} bytes (cap {MAX_DOWNLOAD_BYTES})"
             )
 
-        if total >= STREAM_TO_DISK_THRESHOLD:
+        # Audit #10: accumulate the leading bytes (≥16) before
+        # committing to writing the rest. A hostile server that omits
+        # Content-Type and ignores the HTML check could otherwise
+        # stream up to MAX_DOWNLOAD_BYTES of garbage to disk before
+        # the post-download _is_valid_media check rejects and deletes
+        # it. We accumulate across chunks because slow servers (or
+        # chunked encoding with tiny chunks) can deliver fewer than
+        # 16 bytes in the first chunk and validation would false-fail.
+        use_large = total >= STREAM_TO_DISK_THRESHOLD
+        chunk_iter = resp.aiter_bytes(64 * 1024 if use_large else 8192)
+
+        header_buf = bytearray()
+        async for chunk in chunk_iter:
+            header_buf.extend(chunk)
+            if len(header_buf) >= _MEDIA_HEADER_MIN:
+                break
+        if len(header_buf) > MAX_DOWNLOAD_BYTES:
+            raise ValueError(
+                f"Download exceeded cap mid-stream: {len(header_buf)} bytes"
+            )
+        if not _looks_like_media(bytes(header_buf)):
+            raise ValueError("Downloaded data is not valid media")
+
+        if use_large:
             # Large download: stream to tempfile in the same dir, atomic replace.
             local.parent.mkdir(parents=True, exist_ok=True)
             fd, tmp_name = tempfile.mkstemp(
@@ -437,9 +480,12 @@ async def _do_download(
             )
             tmp_path = Path(tmp_name)
             try:
-                downloaded = 0
+                downloaded = len(header_buf)
                 with os.fdopen(fd, "wb") as out:
-                    async for chunk in resp.aiter_bytes(64 * 1024):
+                    out.write(header_buf)
+                    if progress_callback:
+                        progress_callback(downloaded, total)
+                    async for chunk in chunk_iter:
                         out.write(chunk)
                         downloaded += len(chunk)
                         if downloaded > MAX_DOWNLOAD_BYTES:
@@ -457,9 +503,11 @@ async def _do_download(
                 raise
         else:
             # Small/unknown size: buffer in memory, write whole.
-            chunks: list[bytes] = []
-            downloaded = 0
-            async for chunk in resp.aiter_bytes(8192):
+            chunks: list[bytes] = [bytes(header_buf)]
+            downloaded = len(header_buf)
+            if progress_callback:
+                progress_callback(downloaded, total)
+            async for chunk in chunk_iter:
                 chunks.append(chunk)
                 downloaded += len(chunk)
                 if downloaded > MAX_DOWNLOAD_BYTES:

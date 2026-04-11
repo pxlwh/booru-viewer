@@ -212,6 +212,102 @@ def test_download_cap_running_total_aborts(tmp_path, monkeypatch):
     assert not local.exists()
 
 
+# -- _looks_like_media (audit finding #10) --
+
+
+def test_looks_like_media_jpeg_magic_recognised():
+    from booru_viewer.core.cache import _looks_like_media
+    assert _looks_like_media(b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01") is True
+
+
+def test_looks_like_media_png_magic_recognised():
+    from booru_viewer.core.cache import _looks_like_media
+    assert _looks_like_media(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR") is True
+
+
+def test_looks_like_media_webm_magic_recognised():
+    from booru_viewer.core.cache import _looks_like_media
+    # EBML header (Matroska/WebM): 1A 45 DF A3
+    assert _looks_like_media(b"\x1aE\xdf\xa3" + b"\x00" * 20) is True
+
+
+def test_looks_like_media_html_rejected():
+    from booru_viewer.core.cache import _looks_like_media
+    assert _looks_like_media(b"<!doctype html><html><body>") is False
+    assert _looks_like_media(b"<html><head>") is False
+
+
+def test_looks_like_media_empty_rejected():
+    """An empty buffer means the server returned nothing useful — fail
+    closed (rather than the on-disk validator's open-on-error fallback)."""
+    from booru_viewer.core.cache import _looks_like_media
+    assert _looks_like_media(b"") is False
+
+
+def test_looks_like_media_unknown_magic_accepted():
+    """Non-HTML, non-magic bytes are conservative-OK — some boorus
+    serve exotic-but-legal containers we don't enumerate."""
+    from booru_viewer.core.cache import _looks_like_media
+    assert _looks_like_media(b"random non-html data    ") is True
+
+
+# -- _do_download early header validation (audit finding #10) --
+
+
+def test_do_download_early_rejects_html_payload(tmp_path):
+    """A hostile server that returns HTML in the body (omitting
+    Content-Type so the early text/html guard doesn't fire) must be
+    caught by the magic-byte check before any bytes land on disk.
+    Audit finding #10: this used to wait for the full download to
+    complete before _is_valid_media rejected, wasting bandwidth."""
+    response = _FakeResponse(
+        headers={"content-length": "0"},  # no Content-Type, no length
+        chunks=[b"<!doctype html><html><body>500</body></html>"],
+    )
+    client = _FakeClient(response)
+    local = tmp_path / "out.jpg"
+
+    with pytest.raises(ValueError, match="not valid media"):
+        asyncio.run(_do_download(client, "http://example.test/x.jpg", {}, local, None))
+
+    assert not local.exists()
+
+
+def test_do_download_early_rejects_html_across_tiny_chunks(tmp_path):
+    """The accumulator must combine chunks smaller than the 16-byte
+    minimum so a server delivering one byte at a time can't slip
+    past the magic-byte check."""
+    response = _FakeResponse(
+        headers={"content-length": "0"},
+        chunks=[b"<!", b"do", b"ct", b"yp", b"e ", b"ht", b"ml", b">", b"x" * 100],
+    )
+    client = _FakeClient(response)
+    local = tmp_path / "out.jpg"
+
+    with pytest.raises(ValueError, match="not valid media"):
+        asyncio.run(_do_download(client, "http://example.test/x.jpg", {}, local, None))
+
+    assert not local.exists()
+
+
+def test_do_download_writes_valid_jpeg_after_early_validation(tmp_path):
+    """A real JPEG-like header passes the early check and the rest
+    of the stream is written through to disk. Header bytes must
+    appear in the final file (not be silently dropped)."""
+    body = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01" + b"PAYLOAD" + b"\xff\xd9"
+    response = _FakeResponse(
+        headers={"content-length": str(len(body)), "content-type": "image/jpeg"},
+        chunks=[body[:8], body[8:]],  # split mid-magic
+    )
+    client = _FakeClient(response)
+    local = tmp_path / "out.jpg"
+
+    asyncio.run(_do_download(client, "http://example.test/x.jpg", {}, local, None))
+
+    assert local.exists()
+    assert local.read_bytes() == body
+
+
 # -- _is_valid_media OSError fallback --
 
 def test_is_valid_media_returns_true_on_oserror(tmp_path):
