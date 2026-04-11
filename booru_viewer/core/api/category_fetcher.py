@@ -76,6 +76,13 @@ _LABEL_MAP: dict[str, str] = {
     "style":     "Style",
 }
 
+# Sentinel cap on the HTML body the regex walks over. A real
+# Gelbooru/Moebooru post page is ~30-150KB; capping at 2MB gives
+# any legit page comfortable headroom while preventing a hostile
+# server from feeding the regex hundreds of MB and pegging CPU.
+# Audit finding #14.
+_FETCH_POST_HTML_CAP = 2 * 1024 * 1024
+
 # Gelbooru tag DAPI integer code -> Capitalized label (for fetch_via_tag_api)
 _GELBOORU_TYPE_MAP: dict[int, str] = {
     0: "General",
@@ -290,7 +297,12 @@ class CategoryFetcher:
                 log.warning("Category HTML fetch for #%d failed: %s: %s",
                             post.id, type(e).__name__, e)
                 return False
-        cats, labels = _parse_post_html(resp.text)
+        # Cap the HTML the regex walks over (audit #14). Truncation
+        # vs. full read: the body is already buffered by httpx, so
+        # this doesn't prevent a memory hit — but it does cap the
+        # CPU spent in _TAG_ELEMENT_RE.finditer for a hostile server
+        # returning hundreds of MB of HTML.
+        cats, labels = _parse_post_html(resp.text[:_FETCH_POST_HTML_CAP])
         if not cats:
             return False
         post.tag_categories = _canonical_order(cats)
