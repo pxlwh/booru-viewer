@@ -44,19 +44,24 @@ Windows 10 dark mode is automatically detected and applied.
 
 ### Linux
 
-Requires Python 3.11+ and pip. Most distros ship Python but you may need to install pip and the Qt6 system libraries.
-
-**Arch / CachyOS:**
+**Arch / CachyOS / Manjaro** — install from the AUR:
 ```sh
-sudo pacman -S python python-pip qt6-base mpv ffmpeg
+yay -S booru-viewer-git
+# or: paru -S booru-viewer-git
 ```
 
-**Ubuntu / Debian (24.04+):**
+The AUR package tracks the gitea `main` branch, so `yay -Syu` pulls the latest commit. Desktop entry and icon are installed automatically.
+
+AUR: [/packages/booru-viewer-git](https://aur.archlinux.org/packages/booru-viewer-git)
+
+**Other distros** — build from source. Requires Python 3.11+ and Qt6 system libraries.
+
+Ubuntu / Debian (24.04+):
 ```sh
 sudo apt install python3 python3-pip python3-venv mpv libmpv-dev ffmpeg
 ```
 
-**Fedora:**
+Fedora:
 ```sh
 sudo dnf install python3 python3-pip qt6-qtbase mpv mpv-libs-devel ffmpeg
 ```
@@ -68,16 +73,10 @@ cd booru-viewer
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
-```
-
-Run it:
-```sh
 booru-viewer
 ```
 
-Or without installing: `python3 -m booru_viewer.main_gui`
-
-**Desktop entry:** To add booru-viewer to your app launcher, create `~/.local/share/applications/booru-viewer.desktop`:
+To add a launcher entry, create `~/.local/share/applications/booru-viewer.desktop`:
 ```ini
 [Desktop Entry]
 Name=booru-viewer
