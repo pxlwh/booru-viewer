@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 
 from ..config import DEFAULT_PAGE_SIZE
+from ._safety import redact_params
 from .base import BooruClient, Post, _parse_date
 
 log = logging.getLogger("booru")
@@ -23,7 +24,7 @@ class DanbooruClient(BooruClient):
 
         url = f"{self.base_url}/posts.json"
         log.info(f"GET {url}")
-        log.debug(f"  params: {params}")
+        log.debug(f"  params: {redact_params(params)}")
         resp = await self._request("GET", url, params=params)
         log.info(f"  -> {resp.status_code}")
         if resp.status_code != 200:
