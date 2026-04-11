@@ -8,7 +8,7 @@ import threading
 import httpx
 
 from ..config import DEFAULT_PAGE_SIZE, USER_AGENT
-from ._safety import validate_public_request
+from ._safety import redact_params, validate_public_request
 from .base import BooruClient, Post, _parse_date
 
 log = logging.getLogger("booru")
@@ -84,7 +84,7 @@ class E621Client(BooruClient):
 
         url = f"{self.base_url}/posts.json"
         log.info(f"GET {url}")
-        log.debug(f"  params: {params}")
+        log.debug(f"  params: {redact_params(params)}")
         resp = await self._request("GET", url, params=params)
         log.info(f"  -> {resp.status_code}")
         if resp.status_code != 200:
