@@ -196,7 +196,7 @@ class ImagePreview(QWidget):
             self.bookmark_to_folder.emit(folder_actions[id(action)])
 
     def _on_save_clicked(self) -> None:
-        if self._save_btn.text() == "Unsave":
+        if self._is_saved:
             self.unsave_requested.emit()
             return
         menu = QMenu(self)

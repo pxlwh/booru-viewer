@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QRect, QTimer, Signal
+from PySide6.QtCore import Qt, QEventLoop, QRect, QTimer, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QHBoxLayout, QInputDialog, QLabel, QMainWindow, QMenu, QPushButton,
@@ -622,6 +622,25 @@ class FullscreenPreview(QMainWindow):
         self._current_tags = tag_categories
         self._current_tag_list = tag_list
 
+    def _exec_menu_at_button(self, menu: QMenu, btn: QPushButton):
+        """Open a menu anchored below a button, blocking until dismissed.
+
+        Uses popup() + QEventLoop instead of exec(pos) because on
+        Hyprland/Wayland the popout window gets moved via hyprctl after
+        Qt maps it, and Qt's window-position tracking stays stale. Using
+        exec(btn.mapToGlobal(...)) resolves to a global point on the
+        wrong monitor, causing the menu to flash there before the
+        compositor corrects it. popup() routes through the same path
+        but with triggered/aboutToHide signals we can block manually.
+        """
+        result = [None]
+        menu.triggered.connect(lambda a: result.__setitem__(0, a))
+        loop = QEventLoop()
+        menu.aboutToHide.connect(loop.quit)
+        menu.popup(btn.mapToGlobal(btn.rect().bottomLeft()))
+        loop.exec()
+        return result[0]
+
     def _show_bl_tag_menu(self) -> None:
         menu = QMenu(self)
         if self._current_tags:
@@ -632,7 +651,7 @@ class FullscreenPreview(QMainWindow):
         else:
             for tag in self._current_tag_list[:30]:
                 menu.addAction(tag)
-        action = menu.exec(self._bl_tag_btn.mapToGlobal(self._bl_tag_btn.rect().bottomLeft()))
+        action = self._exec_menu_at_button(menu, self._bl_tag_btn)
         if action:
             self.blacklist_tag_requested.emit(action.text())
 
@@ -837,7 +856,7 @@ class FullscreenPreview(QMainWindow):
                 folder_actions[id(a)] = folder
         menu.addSeparator()
         new_action = menu.addAction("+ New Folder...")
-        action = menu.exec(self._save_btn.mapToGlobal(self._save_btn.rect().bottomLeft()))
+        action = self._exec_menu_at_button(menu, self._save_btn)
         if not action:
             return
         if action == unfiled:
@@ -869,7 +888,7 @@ class FullscreenPreview(QMainWindow):
                 folder_actions[id(a)] = folder
         menu.addSeparator()
         new_action = menu.addAction("+ New Folder...")
-        action = menu.exec(self._bookmark_btn.mapToGlobal(self._bookmark_btn.rect().bottomLeft()))
+        action = self._exec_menu_at_button(menu, self._bookmark_btn)
         if not action:
             return
         if action == unfiled:
