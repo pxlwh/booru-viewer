@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## v0.2.6
 
 ### Security: 2026-04-10 audit remediation
 
