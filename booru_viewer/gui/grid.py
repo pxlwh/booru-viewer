@@ -271,12 +271,33 @@ class ThumbnailWidget(QWidget):
         p.end()
 
     def enterEvent(self, event) -> None:
-        self._hover = True
-        self.update()
+        if self._pixmap and self._hit_pixmap(self.mapFromGlobal(self.cursor().pos())):
+            self._hover = True
+            self.update()
 
     def leaveEvent(self, event) -> None:
-        self._hover = False
-        self.update()
+        if self._hover:
+            self._hover = False
+            self.update()
+
+    def mouseMoveEvent(self, event) -> None:
+        # Update hover based on whether cursor is over the pixmap
+        over = self._hit_pixmap(event.position().toPoint()) if self._pixmap else False
+        if over != self._hover:
+            self._hover = over
+            self.update()
+        if (self._drag_start and self._cached_path
+                and (event.position().toPoint() - self._drag_start).manhattanLength() > 10):
+            drag = QDrag(self)
+            mime = QMimeData()
+            mime.setUrls([QUrl.fromLocalFile(self._cached_path)])
+            drag.setMimeData(mime)
+            if self._pixmap:
+                drag.setPixmap(self._pixmap.scaled(64, 64, Qt.AspectRatioMode.KeepAspectRatio))
+            drag.exec(Qt.DropAction.CopyAction)
+            self._drag_start = None
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+            return
 
     def _hit_pixmap(self, pos) -> bool:
         """True if pos is within the drawn pixmap area."""
@@ -295,21 +316,6 @@ class ThumbnailWidget(QWidget):
             self.clicked.emit(self.index, event)
         elif event.button() == Qt.MouseButton.RightButton:
             self.right_clicked.emit(self.index, event.globalPosition().toPoint())
-
-    def mouseMoveEvent(self, event) -> None:
-        if (self._drag_start and self._cached_path
-                and (event.position().toPoint() - self._drag_start).manhattanLength() > 10):
-            drag = QDrag(self)
-            mime = QMimeData()
-            mime.setUrls([QUrl.fromLocalFile(self._cached_path)])
-            drag.setMimeData(mime)
-            if self._pixmap:
-                drag.setPixmap(self._pixmap.scaled(64, 64, Qt.AspectRatioMode.KeepAspectRatio))
-            drag.exec(Qt.DropAction.CopyAction)
-            self._drag_start = None
-            self.setCursor(Qt.CursorShape.PointingHandCursor)
-            return
-        super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:
         self._drag_start = None
