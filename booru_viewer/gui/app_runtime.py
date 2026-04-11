@@ -148,6 +148,15 @@ QWidget#_slideshow_controls QLabel {
     background: transparent;
     color: white;
 }
+/* Hide the standard icon column on every QMessageBox (question mark,
+ * warning triangle, info circle) so confirm dialogs are text-only. */
+QMessageBox QLabel#qt_msgboxex_icon_label {
+    image: none;
+    max-width: 0px;
+    max-height: 0px;
+    margin: 0px;
+    padding: 0px;
+}
 """
 
 
