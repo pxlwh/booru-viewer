@@ -297,9 +297,16 @@ def run() -> None:
         except Exception as e:
             log.warning(f"Operation failed: {e}")
     else:
-        # No custom.qss — still install the popout overlay defaults so the
-        # floating toolbar/controls have a sane background instead of bare
-        # letterbox color.
+        # No custom.qss — force Fusion widgets so distro pyside6 builds linked
+        # against system Qt don't pick up Breeze (or whatever the platform
+        # theme plugin supplies) and diverge from the bundled-Qt look that
+        # source-from-pip users get. The inherited palette is intentionally
+        # left alone: KDE writes ~/.config/Trolltech.conf which every Qt app
+        # reads, so KDE users still get their color scheme — just under
+        # Fusion widgets instead of Breeze.
+        app.setStyle("Fusion")
+        # Install the popout overlay defaults so the floating toolbar/controls
+        # have a sane background instead of bare letterbox color.
         app.setStyleSheet(_BASE_POPOUT_OVERLAY_QSS)
 
     # Set app icon (works in taskbar on all platforms)
