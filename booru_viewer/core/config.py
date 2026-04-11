@@ -44,7 +44,15 @@ def popout_aspect_lock_enabled() -> bool:
 
 
 def data_dir() -> Path:
-    """Return the platform-appropriate data/cache directory."""
+    """Return the platform-appropriate data/cache directory.
+
+    On POSIX, the directory is chmod'd to 0o700 after creation so the
+    SQLite DB inside (and the api_key/api_user columns it stores) are
+    not exposed to other local users on shared workstations or
+    networked home dirs with permissive umasks. On Windows the chmod
+    is a no-op — NTFS ACLs handle access control separately and the
+    OS already restricts AppData\\Roaming\\<app> to the owning user.
+    """
     if IS_WINDOWS:
         base = Path.home() / "AppData" / "Roaming"
     else:
@@ -55,6 +63,13 @@ def data_dir() -> Path:
         )
     path = base / APPNAME
     path.mkdir(parents=True, exist_ok=True)
+    if not IS_WINDOWS:
+        try:
+            os.chmod(path, 0o700)
+        except OSError:
+            # Filesystem may not support chmod (e.g. some FUSE mounts).
+            # Better to keep working than refuse to start.
+            pass
     return path
 
 
