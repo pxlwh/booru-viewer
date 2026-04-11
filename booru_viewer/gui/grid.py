@@ -296,6 +296,7 @@ class ThumbnailWidget(QWidget):
                 drag.setPixmap(self._pixmap.scaled(64, 64, Qt.AspectRatioMode.KeepAspectRatio))
             drag.exec(Qt.DropAction.CopyAction)
             self._drag_start = None
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
             return
         super().mouseMoveEvent(event)
 
