@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import logging
+import sys
 
 from PySide6.QtCore import Signal
 from PySide6.QtOpenGLWidgets import QOpenGLWidget as _QOpenGLWidget
 from PySide6.QtWidgets import QWidget, QVBoxLayout
 
 import mpv as mpvlib
+
+from ._mpv_options import build_mpv_kwargs
 
 log = logging.getLogger(__name__)
 
@@ -35,57 +38,14 @@ class _MpvGLWidget(QWidget):
         self._frame_ready.connect(self._gl.update)
         # Create mpv eagerly on the main thread.
         #
-        # `ao=pulse` is critical for Linux Discord screen-share audio
-        # capture. Discord on Linux only enumerates audio clients via
-        # the libpulse API; it does not see clients that talk to
-        # PipeWire natively (which is mpv's default `ao=pipewire`).
-        # Forcing the pulseaudio output here makes mpv go through
-        # PipeWire's pulseaudio compatibility layer, which Discord
-        # picks up the same way it picks up Firefox. Without this,
-        # videos play locally but the audio is silently dropped from
-        # any Discord screen share. See:
-        #   https://github.com/mpv-player/mpv/issues/11100
-        #   https://github.com/edisionnano/Screenshare-with-audio-on-Discord-with-Linux
-        # On Windows mpv ignores `ao=pulse` and falls through to the
-        # next entry, so listing `wasapi` second keeps Windows playback
-        # working without a platform branch here.
-        #
-        # `audio_client_name` is the name mpv registers with the audio
-        # backend. Sets `application.name` and friends so capture tools
-        # group mpv's audio under the booru-viewer app identity instead
-        # of the default "mpv Media Player".
+        # Options come from `build_mpv_kwargs` (see `_mpv_options.py`
+        # for the full rationale). Summary: Discord screen-share audio
+        # fix via `ao=pulse`, fast-load vd-lavc options, network cache
+        # tuning for the uncached-video fast path, and the SECURITY
+        # hardening from audit #2 (ytdl=no, load_scripts=no,
+        # demuxer_lavf_o protocol whitelist, POSIX input_conf null).
         self._mpv = mpvlib.MPV(
-            vo="libmpv",
-            hwdec="auto",
-            keep_open="yes",
-            ao="pulse,wasapi,",
-            audio_client_name="booru-viewer",
-            input_default_bindings=False,
-            input_vo_keyboard=False,
-            osc=False,
-            # Fast-load options: shave ~50-100ms off first-frame decode
-            # for h264/hevc by skipping a few bitstream-correctness checks
-            # (`vd-lavc-fast`) and the in-loop filter on non-keyframes
-            # (`vd-lavc-skiploopfilter=nonkey`). The artifacts are only
-            # visible on the first few frames before the decoder steady-
-            # state catches up, and only on degraded sources. mpv
-            # documents these as safe for "fast load" use cases like
-            # ours where we want the first frame on screen ASAP and
-            # don't care about a tiny quality dip during ramp-up.
-            vd_lavc_fast="yes",
-            vd_lavc_skiploopfilter="nonkey",
-            # Network streaming tuning for the uncached-video fast path.
-            # cache=yes is mpv's default for network sources but explicit
-            # is clearer. cache_pause=no keeps playback running through
-            # brief buffer underruns instead of pausing — for short booru
-            # clips a momentary stutter beats a pause icon. demuxer caps
-            # keep RAM bounded. network_timeout=10 replaces mpv's ~60s
-            # default so stalled connections surface errors promptly.
-            cache="yes",
-            cache_pause="no",
-            demuxer_max_bytes="50MiB",
-            demuxer_readahead_secs="20",
-            network_timeout="10",
+            **build_mpv_kwargs(is_windows=sys.platform == "win32"),
         )
         # Wire up the GL surface's callbacks to us
         self._gl._owner = self
