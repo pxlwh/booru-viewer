@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal, Property, QPoint
-from PySide6.QtGui import QColor, QIcon, QPixmap, QPainter, QPen, QBrush, QPolygon, QPainterPath
+from PySide6.QtGui import QColor, QIcon, QPixmap, QPainter, QPen, QBrush, QPolygon, QPainterPath, QFont
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSlider, QStyle,
     QApplication,
@@ -73,11 +73,12 @@ def _paint_icon(shape: str, color: QColor, size: int = 16) -> QIcon:
         ]))
 
     elif shape == "once":
-        p.setPen(QPen(color, 2))
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        mid = s // 2
-        p.drawLine(mid, 3, mid, s - 3)
-        p.drawLine(mid - 2, 5, mid, 3)
+        p.setPen(QPen(color, 1))
+        f = QFont()
+        f.setPixelSize(s - 2)
+        f.setBold(True)
+        p.setFont(f)
+        p.drawText(pix.rect(), Qt.AlignmentFlag.AlignCenter, "1\u00D7")
 
     elif shape == "next":
         p.drawPolygon(QPolygon([QPoint(2, 2), QPoint(2, s - 2), QPoint(s - 5, s // 2)]))
@@ -275,6 +276,10 @@ class VideoPlayer(QWidget):
         if embed_controls:
             layout.addWidget(self._controls_bar)
 
+        # Responsive hiding: watch controls bar resize and hide widgets
+        # that don't fit at narrow widths.
+        self._controls_bar.installEventFilter(self)
+
         self._eof_pending = False
         # Stale-eof suppression window. mpv emits `eof-reached=True`
         # whenever a file ends — including via `command('stop')` —
@@ -392,7 +397,8 @@ class VideoPlayer(QWidget):
     def autoplay(self, val: bool) -> None:
         self._autoplay = val
         self._autoplay_btn.setChecked(val)
-        self._autoplay_btn.setText("Autoplay" if val else "Manual")
+        self._autoplay_btn.setIcon(self._auto_icon if val else self._play_icon)
+        self._autoplay_btn.setToolTip("Autoplay on" if val else "Autoplay off")
 
     @property
     def loop_state(self) -> int:
@@ -499,9 +505,35 @@ class VideoPlayer(QWidget):
 
     # -- Internal controls --
 
+    def eventFilter(self, obj, event):
+        if obj is self._controls_bar and event.type() == event.Type.Resize:
+            self._apply_responsive_layout()
+        return super().eventFilter(obj, event)
+
+    def _apply_responsive_layout(self) -> None:
+        """Hide/show control elements based on available width."""
+        w = self._controls_bar.width()
+        # Breakpoints — hide wider elements first
+        show_volume = w >= 320
+        show_duration = w >= 240
+        show_time = w >= 200
+        self._vol_slider.setVisible(show_volume)
+        self._duration_label.setVisible(show_duration)
+        self._time_label.setVisible(show_time)
+
     def _toggle_play(self) -> None:
         if not self._mpv:
             return
+        # If paused at end-of-file (Once mode after playback), seek back
+        # to the start so pressing play replays instead of doing nothing.
+        if self._mpv.pause:
+            try:
+                pos = self._mpv.time_pos
+                dur = self._mpv.duration
+                if pos is not None and dur is not None and dur > 0 and pos >= dur - 0.5:
+                    self._mpv.command('seek', 0, 'absolute+exact')
+            except Exception:
+                pass
         self._mpv.pause = not self._mpv.pause
         self._play_btn.setIcon(self._play_icon if self._mpv.pause else self._pause_icon)
 
