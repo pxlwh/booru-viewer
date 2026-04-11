@@ -6,7 +6,11 @@ from the CI environment that installs only httpx + Pillow + pytest.
 
 from __future__ import annotations
 
-from booru_viewer.gui.media._mpv_options import build_mpv_kwargs
+from booru_viewer.gui.media._mpv_options import (
+    LAVF_PROTOCOL_WHITELIST,
+    build_mpv_kwargs,
+    lavf_options,
+)
 
 
 def test_ytdl_disabled():
@@ -21,13 +25,27 @@ def test_load_scripts_disabled():
     assert kwargs["load_scripts"] == "no"
 
 
-def test_protocol_whitelist_restricts_to_file_and_http():
-    """Finding #2 — lavf demuxer must only accept file + HTTP(S) + TLS/TCP."""
+def test_protocol_whitelist_not_in_init_kwargs():
+    """Finding #2 — the lavf protocol whitelist must NOT be in the
+    init kwargs dict. python-mpv's init path uses
+    ``mpv_set_option_string``, which trips on the comma-laden value
+    with -7 OPT_FORMAT. The whitelist is applied separately via the
+    property API in ``mpv_gl.py`` (see ``lavf_options``)."""
     kwargs = build_mpv_kwargs(is_windows=False)
-    value = kwargs["demuxer_lavf_o"]
-    assert isinstance(value, str)
-    assert value.startswith("protocol_whitelist=")
-    allowed = set(value.split("=", 1)[1].split(","))
+    assert "demuxer_lavf_o" not in kwargs
+    assert "demuxer-lavf-o" not in kwargs
+
+
+def test_lavf_options_protocol_whitelist():
+    """Finding #2 — lavf demuxer must only accept file + HTTP(S) + TLS/TCP.
+
+    Returned as a dict so callers can pass it through the python-mpv
+    property API (which uses the node API and handles comma-laden
+    values cleanly).
+    """
+    opts = lavf_options()
+    assert opts.keys() == {"protocol_whitelist"}
+    allowed = set(opts["protocol_whitelist"].split(","))
     # `file` must be present — cached local clips and .part files use it.
     assert "file" in allowed
     # HTTP(S) + supporting protocols for network videos.
@@ -38,6 +56,8 @@ def test_protocol_whitelist_restricts_to_file_and_http():
     # Dangerous protocols must NOT appear.
     for banned in ("concat", "subfile", "data", "udp", "rtp", "crypto"):
         assert banned not in allowed
+    # The constant and the helper return the same value.
+    assert opts["protocol_whitelist"] == LAVF_PROTOCOL_WHITELIST
 
 
 def test_input_conf_nulled_on_posix():
