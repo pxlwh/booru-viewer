@@ -335,6 +335,11 @@ class ThumbnailWidget(QWidget):
                     grid.on_padding_click(self, pos)
                 event.accept()
                 return
+            # Pixmap click — clear any stale rubber band state from a
+            # previous interrupted drag before starting a new interaction.
+            grid = self._grid()
+            if grid:
+                grid._clear_stale_rubber_band()
             self._drag_start = pos
             self.clicked.emit(self.index, event)
         elif event.button() == Qt.MouseButton.RightButton:
@@ -544,6 +549,21 @@ class ThumbnailGrid(QScrollArea):
             self._thumbs[self._selected_index].set_selected(False)
         self._selected_index = -1
 
+    def _clear_stale_rubber_band(self) -> None:
+        """Reset any leftover rubber band state before starting a new interaction.
+
+        Rubber band state can get stuck if a drag is interrupted without
+        a matching release event — Wayland focus steal, drag outside the
+        window, tab switch mid-drag, etc. Every new mouse press calls this
+        so the next interaction starts from a clean slate instead of
+        reusing a stale origin (which would make the rubber band "not
+        work" until the app is restarted).
+        """
+        if self._rubber_band is not None:
+            self._rubber_band.hide()
+        self._rb_origin = None
+        self._rb_pending_origin = None
+
     def _select(self, index: int) -> None:
         if index < 0 or index >= len(self._thumbs):
             return
@@ -617,12 +637,14 @@ class ThumbnailGrid(QScrollArea):
 
     def on_padding_click(self, thumb, local_pos) -> None:
         """Called directly by ThumbnailWidget when a click misses the pixmap."""
+        self._clear_stale_rubber_band()
         vp_pos = thumb.mapTo(self.viewport(), local_pos)
         self._rb_pending_origin = vp_pos
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         # Clicks on viewport/flow (gaps, space below thumbs) start rubber band
         if event.button() == Qt.MouseButton.LeftButton:
+            self._clear_stale_rubber_band()
             child = self.childAt(event.position().toPoint())
             if child is self.widget() or child is self.viewport():
                 self._rb_pending_origin = event.position().toPoint()
@@ -635,11 +657,15 @@ class ThumbnailGrid(QScrollArea):
             return
         rb_rect = QRect(self._rb_origin, vp_pos).normalized()
         self._rubber_band.setGeometry(rb_rect)
+        # rb_rect is in viewport coords; thumb.geometry() is in widget (content)
+        # coords. Convert rb_rect to widget coords for the intersection test —
+        # widget.mapFrom(viewport, (0,0)) gives the widget-coord of viewport's
+        # origin, which is exactly the translation needed when scrolled.
         vp_offset = self.widget().mapFrom(self.viewport(), QPoint(0, 0))
+        rb_widget = rb_rect.translated(vp_offset)
         self._clear_multi()
         for i, thumb in enumerate(self._thumbs):
-            thumb_rect = thumb.geometry().translated(vp_offset)
-            if rb_rect.intersects(thumb_rect):
+            if rb_widget.intersects(thumb.geometry()):
                 self._multi_selected.add(i)
                 thumb.set_multi_selected(True)
 
