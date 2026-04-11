@@ -89,47 +89,11 @@ Categories=Graphics;
 
 ### Hyprland integration
 
-I daily-drive booru-viewer on Hyprland and I've baked in my own opinions on
-how the app should behave there. By default, a handful of `hyprctl` dispatches
-run at runtime to:
-
-- Restore the main window's last floating mode + dimensions on launch
-- Restore the popout's position, center-pin it around its content during
-  navigation, and suppress F11 / fullscreen-transition flicker
-- "Prime" Hyprland's per-window floating cache at startup so a mid-session
-  toggle to floating uses your saved dimensions
-- Lock the popout's aspect ratio to its content so you can't accidentally
-  stretch mpv playback by dragging the popout corner
-
-If you're a ricer with your own `windowrule`s targeting `class:^(booru-viewer)$`
-and you'd rather the app keep its hands off your setup, there are two
-independent opt-out env vars:
-
-- **`BOORU_VIEWER_NO_HYPR_RULES=1`** — disables every in-code hyprctl dispatch
-  *except* the popout's `keep_aspect_ratio` lock. Use this if you want app-side
-  window management out of the way but you still want the popout to size itself
-  to its content.
-- **`BOORU_VIEWER_NO_POPOUT_ASPECT_LOCK=1`** — independently disables the popout's
-  aspect ratio enforcement. Useful if you want to drag the popout to whatever
-  shape you like (square, panoramic, monitor-aspect, whatever) and accept that
-  mpv playback will letterbox or stretch to match.
-
-For the full hands-off experience, set both:
-
-```ini
-[Desktop Entry]
-Name=booru-viewer
-Exec=env BOORU_VIEWER_NO_HYPR_RULES=1 BOORU_VIEWER_NO_POPOUT_ASPECT_LOCK=1 /path/to/booru-viewer/.venv/bin/booru-viewer
-Icon=/path/to/booru-viewer/icon.png
-Type=Application
-Categories=Graphics;
-```
-
-Or for one-off launches from a shell:
-
-```bash
-BOORU_VIEWER_NO_HYPR_RULES=1 booru-viewer
-```
+booru-viewer ships with built-in Hyprland window management (popout
+geometry restore, aspect ratio lock, animation suppression, etc.) that
+can be fully or partially opted out of via env vars. See
+[HYPRLAND.md](HYPRLAND.md) for the full details, opt-out flags, and
+example `windowrule` reference.
 
 ### Dependencies
 
