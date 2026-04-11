@@ -559,7 +559,8 @@ class ThumbnailGrid(QScrollArea):
                     self._rubber_band = QRubberBand(QRubberBand.Shape.Rectangle, self.viewport())
                 self._rubber_band.setGeometry(QRect(self._rb_origin, QSize()))
                 self._rubber_band.show()
-                self._clear_multi()
+                # Click on empty space deselects everything
+                self.clear_selection()
                 return
         super().mousePressEvent(event)
 
@@ -583,6 +584,8 @@ class ThumbnailGrid(QScrollArea):
             self._rubber_band.hide()
             self._rb_origin = None
             return
+        # Reset any stuck cursor from a cancelled drag-and-drop
+        self.unsetCursor()
         super().mouseReleaseEvent(event)
 
     def select_all(self) -> None:
