@@ -8,7 +8,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt, Property, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, QScrollArea, QPushButton,
+    QWidget, QVBoxLayout, QLabel, QScrollArea, QPushButton, QSizePolicy,
 )
 
 from ..core.api.base import Post
@@ -85,12 +85,16 @@ class InfoPanel(QWidget):
 
         self._title = QLabel("No post selected")
         self._title.setStyleSheet("font-weight: bold;")
+        self._title.setMinimumWidth(0)
+        self._title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         layout.addWidget(self._title)
 
         self._details = QLabel()
         self._details.setWordWrap(True)
         self._details.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextBrowserInteraction)
         self._details.setMaximumHeight(120)
+        self._details.setMinimumWidth(0)
+        self._details.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         layout.addWidget(self._details)
 
         self._tags_label = QLabel("Tags:")
