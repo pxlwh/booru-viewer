@@ -269,14 +269,10 @@ class ThumbnailWidget(QWidget):
 
         p.end()
 
-    def enterEvent(self, event) -> None:
-        if self._pixmap and self._hit_pixmap(self.mapFromGlobal(self.cursor().pos())):
-            self._hover = True
-            self.update()
-
     def leaveEvent(self, event) -> None:
         if self._hover:
             self._hover = False
+            self.setCursor(Qt.CursorShape.ArrowCursor)
             self.update()
 
     def mouseMoveEvent(self, event) -> None:
