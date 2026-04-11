@@ -632,6 +632,8 @@ class ThumbnailGrid(QScrollArea):
         elif key == Qt.Key.Key_Return or key == Qt.Key.Key_Enter:
             if 0 <= idx < len(self._thumbs):
                 self.post_activated.emit(idx)
+        elif key == Qt.Key.Key_Escape:
+            self.clear_selection()
         elif key == Qt.Key.Key_Home:
             self._select(0)
         elif key == Qt.Key.Key_End:
