@@ -12,6 +12,7 @@ import httpx
 
 from ..config import USER_AGENT, DEFAULT_PAGE_SIZE
 from ..cache import log_connection
+from ._safety import validate_public_request
 
 log = logging.getLogger("booru")
 
@@ -106,7 +107,12 @@ class BooruClient(ABC):
                     headers={"User-Agent": USER_AGENT},
                     follow_redirects=True,
                     timeout=20.0,
-                    event_hooks={"request": [self._log_request]},
+                    event_hooks={
+                        "request": [
+                            validate_public_request,
+                            self._log_request,
+                        ],
+                    },
                     limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
                 )
                 BooruClient._shared_client = c
