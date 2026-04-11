@@ -568,15 +568,19 @@ class ThumbnailGrid(QScrollArea):
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
-            # Only start rubber band if click is on empty grid space (not a thumbnail)
             child = self.childAt(event.position().toPoint())
-            if child is self.widget() or child is self.viewport():
+            # Empty space: flow layout, viewport, or cell padding (missed pixmap)
+            is_empty = child is self.widget() or child is self.viewport()
+            if not is_empty and isinstance(child, ThumbnailWidget):
+                local = child.mapFromParent(self.widget().mapFromParent(event.position().toPoint()))
+                if not child._hit_pixmap(local):
+                    is_empty = True
+            if is_empty:
                 self._rb_origin = event.position().toPoint()
                 if not self._rubber_band:
                     self._rubber_band = QRubberBand(QRubberBand.Shape.Rectangle, self.viewport())
                 self._rubber_band.setGeometry(QRect(self._rb_origin, QSize()))
                 self._rubber_band.show()
-                # Click on empty space deselects everything
                 self.clear_selection()
                 return
         super().mousePressEvent(event)
