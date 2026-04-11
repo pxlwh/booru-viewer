@@ -33,10 +33,8 @@ MAX_DOWNLOAD_BYTES = 500 * 1024 * 1024  # 500 MB
 # regression risk of the streaming rewrite is zero.
 STREAM_TO_DISK_THRESHOLD = 50 * 1024 * 1024  # 50 MB
 
-# Cap PIL's auto-DOS guard at 256M pixels (~1 GB raw). Default warns
-# silently above ~89M; we want a hard fail so DecompressionBombError
-# can be caught and treated as a download failure.
-Image.MAX_IMAGE_PIXELS = 256 * 1024 * 1024
+# PIL's MAX_IMAGE_PIXELS cap is set in core/__init__.py so any
+# `booru_viewer.core.*` import installs it first — see audit #8.
 
 # Defends `_convert_ugoira_to_gif` against zip bombs. A real ugoira is
 # typically <500 frames at 1080p; these caps comfortably allow legit
