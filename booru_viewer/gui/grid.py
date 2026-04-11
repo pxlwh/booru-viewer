@@ -305,8 +305,6 @@ class ThumbnailWidget(QWidget):
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
-            if not self._hit_pixmap(event.position().toPoint()):
-                return
             self._drag_start = event.position().toPoint()
             self.clicked.emit(self.index, event)
         elif event.button() == Qt.MouseButton.RightButton:
@@ -318,8 +316,6 @@ class ThumbnailWidget(QWidget):
     def mouseDoubleClickEvent(self, event) -> None:
         self._drag_start = None
         if event.button() == Qt.MouseButton.LeftButton:
-            if not self._hit_pixmap(event.position().toPoint()):
-                return
             self.double_clicked.emit(self.index)
 
 
@@ -470,7 +466,7 @@ class ThumbnailGrid(QScrollArea):
             thumb.clicked.connect(self._on_thumb_click)
             thumb.double_clicked.connect(self._on_thumb_double_click)
             thumb.right_clicked.connect(self._on_thumb_right_click)
-
+            thumb.installEventFilter(self)
             self._flow.add_widget(thumb)
             self._thumbs.append(thumb)
 
@@ -485,7 +481,7 @@ class ThumbnailGrid(QScrollArea):
             thumb.clicked.connect(self._on_thumb_click)
             thumb.double_clicked.connect(self._on_thumb_double_click)
             thumb.right_clicked.connect(self._on_thumb_right_click)
-
+            thumb.installEventFilter(self)
             self._flow.add_widget(thumb)
             self._thumbs.append(thumb)
             new_thumbs.append(thumb)
@@ -566,16 +562,6 @@ class ThumbnailGrid(QScrollArea):
             self.ensureWidgetVisible(self._thumbs[index])
             self.context_requested.emit(index, pos)
 
-    def _is_empty_space(self, vp_pos: QPoint) -> bool:
-        """True if the viewport position is not over a thumbnail's pixmap."""
-        # Map viewport coords to the flow widget (accounts for scroll offset)
-        flow_pos = self._flow.mapFrom(self.viewport(), vp_pos)
-        for thumb in self._thumbs:
-            if thumb.geometry().contains(flow_pos):
-                local = QPoint(flow_pos.x() - thumb.x(), flow_pos.y() - thumb.y())
-                return not thumb._hit_pixmap(local)
-        return True
-
     def _start_rubber_band(self, pos: QPoint) -> None:
         """Start a rubber band selection and deselect."""
         self._rb_origin = pos
@@ -586,15 +572,16 @@ class ThumbnailGrid(QScrollArea):
         self.clear_selection()
 
     def eventFilter(self, obj, event) -> bool:
-        if obj is self.viewport():
+        if isinstance(obj, ThumbnailWidget):
+            if event.type() in (event.Type.MouseButtonPress, event.Type.MouseButtonDblClick):
+                if event.button() == Qt.MouseButton.LeftButton and not obj._hit_pixmap(event.position().toPoint()):
+                    vp_pos = self.viewport().mapFromGlobal(obj.mapToGlobal(event.position().toPoint()))
+                    self._start_rubber_band(vp_pos)
+                    return True
+        elif obj is self.viewport():
             if event.type() == event.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
-                if self._is_empty_space(event.position().toPoint()):
-                    self._start_rubber_band(event.position().toPoint())
-                    return True
-            if event.type() == event.Type.MouseButtonDblClick and event.button() == Qt.MouseButton.LeftButton:
-                if self._is_empty_space(event.position().toPoint()):
-                    self.clear_selection()
-                    return True
+                self._start_rubber_band(event.position().toPoint())
+                return True
         return super().eventFilter(obj, event)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
