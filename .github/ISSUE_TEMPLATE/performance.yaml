@@ -1,5 +1,5 @@
 name: Performance Issue
-about: Slowdowns, lag, high memory/CPU, UI freezes (distinct from broken features)
+description: Slowdowns, lag, high memory/CPU, UI freezes (distinct from broken features)
 title: "[PERF] "
 labels: ["performance"]
 body:

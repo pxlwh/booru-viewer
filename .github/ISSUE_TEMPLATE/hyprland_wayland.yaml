@@ -1,5 +1,5 @@
 name: Hyprland / Wayland Issue
-about: Compositor-specific issues (window positioning, popout math, Waybar, multi-monitor)
+description: Compositor-specific issues (window positioning, popout math, Waybar, multi-monitor)
 title: "[HYPR] "
 labels: ["hyprland", "wayland"]
 body:

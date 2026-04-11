@@ -1,5 +1,5 @@
 name: Bug Report
-about: Something broken or misbehaving
+description: Something broken or misbehaving
 title: "[BUG] "
 labels: ["bug"]
 body:

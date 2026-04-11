@@ -1,5 +1,5 @@
 name: Documentation Issue
-about: Typos, unclear sections, missing docs, broken links
+description: Typos, unclear sections, missing docs, broken links
 title: "[DOCS] "
 labels: ["documentation"]
 body:

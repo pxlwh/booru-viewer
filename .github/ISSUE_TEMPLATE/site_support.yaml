@@ -1,5 +1,5 @@
 name: Site Support Request
-about: Request support for a new booru backend
+description: Request support for a new booru backend
 title: "[SITE] "
 labels: ["site-support"]
 body:
