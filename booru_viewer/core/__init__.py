@@ -7,9 +7,8 @@ treated as a download failure.
 
 Setting it here (rather than as a side effect of importing
 ``core.cache``) means any code path that touches PIL via any
-``booru_viewer.core.*`` submodule gets the cap installed first —
-``core.images`` no longer depends on ``core.cache`` having been
-imported in the right order. Audit finding #8.
+``booru_viewer.core.*`` submodule gets the cap installed first,
+regardless of submodule import order. Audit finding #8.
 """
 
 from PIL import Image as _PILImage
