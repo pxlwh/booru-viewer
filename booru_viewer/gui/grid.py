@@ -599,6 +599,16 @@ class ThumbnailGrid(QScrollArea):
         self.unsetCursor()
         super().mouseReleaseEvent(event)
 
+    def leaveEvent(self, event) -> None:
+        # Clear stuck hover states — Wayland doesn't always fire
+        # leaveEvent on individual child widgets when the mouse
+        # exits the scroll area quickly.
+        for thumb in self._thumbs:
+            if thumb._hover:
+                thumb._hover = False
+                thumb.update()
+        super().leaveEvent(event)
+
     def select_all(self) -> None:
         self._clear_multi()
         for i in range(len(self._thumbs)):
