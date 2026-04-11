@@ -1,10 +1,10 @@
 # Changelog
 
-## 0.2.5
+## v0.2.5
 
 Full UI overhaul (icon buttons, compact top bar, responsive video controls), popout resize-pivot anchor, layout flip, and the main_window.py controller decomposition.
 
-## Changes since 0.2.4
+## Changes since v0.2.4
 
 ### Refactor: main_window.py controller decomposition
 
@@ -82,7 +82,7 @@ All 12 bundled QSS themes were trimmed and regenerated:
 - Popout overlay buttons now use `font-size: 15px; font-weight: bold` so the icon symbols read well against the translucent-black overlay.
 - `themes/README.md` documents the new `#_tb_*` toolbar button object names and the popout overlay styling. Removed the old Nerd Font remapping note — QSS can't change button text, so that claim was incorrect.
 
-## 0.2.4 (pre-release)
+## v0.2.4
 
 Library filename templates, tag category fetching for all backends, and a popout video streaming overhaul. 50+ commits since v0.2.3.
 
