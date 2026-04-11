@@ -27,7 +27,6 @@ class ThumbnailWidget(QWidget):
     clicked = Signal(int, object)  # index, QMouseEvent
     double_clicked = Signal(int)
     right_clicked = Signal(int, object)  # index, QPoint
-    padding_clicked = Signal()  # click missed the pixmap
 
     # QSS-controllable dot colors
     _saved_color = QColor("#22cc22")
@@ -307,7 +306,6 @@ class ThumbnailWidget(QWidget):
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             if not self._hit_pixmap(event.position().toPoint()):
-                self.padding_clicked.emit()
                 return
             self._drag_start = event.position().toPoint()
             self.clicked.emit(self.index, event)
@@ -321,7 +319,6 @@ class ThumbnailWidget(QWidget):
         self._drag_start = None
         if event.button() == Qt.MouseButton.LeftButton:
             if not self._hit_pixmap(event.position().toPoint()):
-                self.padding_clicked.emit()
                 return
             self.double_clicked.emit(self.index)
 
@@ -443,6 +440,7 @@ class ThumbnailGrid(QScrollArea):
         self._last_click_index = -1  # for shift-click range
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.verticalScrollBar().valueChanged.connect(self._check_scroll_bottom)
+        self.viewport().installEventFilter(self)
         # Rubber band drag selection
         self._rubber_band: QRubberBand | None = None
         self._rb_origin: QPoint | None = None
@@ -472,7 +470,7 @@ class ThumbnailGrid(QScrollArea):
             thumb.clicked.connect(self._on_thumb_click)
             thumb.double_clicked.connect(self._on_thumb_double_click)
             thumb.right_clicked.connect(self._on_thumb_right_click)
-            thumb.padding_clicked.connect(self._on_padding_click)
+
             self._flow.add_widget(thumb)
             self._thumbs.append(thumb)
 
@@ -487,7 +485,7 @@ class ThumbnailGrid(QScrollArea):
             thumb.clicked.connect(self._on_thumb_click)
             thumb.double_clicked.connect(self._on_thumb_double_click)
             thumb.right_clicked.connect(self._on_thumb_right_click)
-            thumb.padding_clicked.connect(self._on_padding_click)
+
             self._flow.add_widget(thumb)
             self._thumbs.append(thumb)
             new_thumbs.append(thumb)
@@ -568,6 +566,16 @@ class ThumbnailGrid(QScrollArea):
             self.ensureWidgetVisible(self._thumbs[index])
             self.context_requested.emit(index, pos)
 
+    def _is_empty_space(self, vp_pos: QPoint) -> bool:
+        """True if the viewport position is not over a thumbnail's pixmap."""
+        # Map viewport coords to the flow widget (accounts for scroll offset)
+        flow_pos = self._flow.mapFrom(self.viewport(), vp_pos)
+        for thumb in self._thumbs:
+            if thumb.geometry().contains(flow_pos):
+                local = QPoint(flow_pos.x() - thumb.x(), flow_pos.y() - thumb.y())
+                return not thumb._hit_pixmap(local)
+        return True
+
     def _start_rubber_band(self, pos: QPoint) -> None:
         """Start a rubber band selection and deselect."""
         self._rb_origin = pos
@@ -577,17 +585,17 @@ class ThumbnailGrid(QScrollArea):
         self._rubber_band.show()
         self.clear_selection()
 
-    def _on_padding_click(self) -> None:
-        """Cell padding click — treat as empty space."""
-        self.clear_selection()
-
-    def mousePressEvent(self, event: QMouseEvent) -> None:
-        if event.button() == Qt.MouseButton.LeftButton:
-            child = self.childAt(event.position().toPoint())
-            if child is self.widget() or child is self.viewport():
-                self._start_rubber_band(event.position().toPoint())
-                return
-        super().mousePressEvent(event)
+    def eventFilter(self, obj, event) -> bool:
+        if obj is self.viewport():
+            if event.type() == event.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+                if self._is_empty_space(event.position().toPoint()):
+                    self._start_rubber_band(event.position().toPoint())
+                    return True
+            if event.type() == event.Type.MouseButtonDblClick and event.button() == Qt.MouseButton.LeftButton:
+                if self._is_empty_space(event.position().toPoint()):
+                    self.clear_selection()
+                    return True
+        return super().eventFilter(obj, event)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         if self._rb_origin and self._rubber_band:
