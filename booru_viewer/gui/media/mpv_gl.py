@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout
 
 import mpv as mpvlib
 
-from ._mpv_options import build_mpv_kwargs
+from ._mpv_options import build_mpv_kwargs, lavf_options
 
 log = logging.getLogger(__name__)
 
@@ -42,11 +42,18 @@ class _MpvGLWidget(QWidget):
         # for the full rationale). Summary: Discord screen-share audio
         # fix via `ao=pulse`, fast-load vd-lavc options, network cache
         # tuning for the uncached-video fast path, and the SECURITY
-        # hardening from audit #2 (ytdl=no, load_scripts=no,
-        # demuxer_lavf_o protocol whitelist, POSIX input_conf null).
+        # hardening from audit #2 (ytdl=no, load_scripts=no, POSIX
+        # input_conf null).
         self._mpv = mpvlib.MPV(
             **build_mpv_kwargs(is_windows=sys.platform == "win32"),
         )
+        # The ffmpeg lavf demuxer protocol whitelist (also audit #2)
+        # has to be applied via the property API, not as an init
+        # kwarg — python-mpv's init path goes through
+        # mpv_set_option_string which trips on the comma-laden value.
+        # The property API uses the node API and accepts dict values.
+        for key, value in lavf_options().items():
+            self._mpv["demuxer-lavf-o"] = {key: value}
         # Wire up the GL surface's callbacks to us
         self._gl._owner = self
 
