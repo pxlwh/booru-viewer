@@ -15,6 +15,18 @@ if TYPE_CHECKING:
 APPNAME = "booru-viewer"
 IS_WINDOWS = sys.platform == "win32"
 
+# Windows reserved device names (audit finding #7). Filenames whose stem
+# (before the first dot) lower-cases to one of these are illegal on
+# Windows because the OS routes opens of `con.jpg` to the CON device.
+# Checked by render_filename_template() unconditionally so a library
+# saved on Linux can still be copied to a Windows machine without
+# breaking on these stems.
+_WINDOWS_RESERVED_NAMES = frozenset({
+    "con", "prn", "aux", "nul",
+    *{f"com{i}" for i in range(1, 10)},
+    *{f"lpt{i}" for i in range(1, 10)},
+})
+
 
 def hypr_rules_enabled() -> bool:
     """Whether the in-code hyprctl dispatches that change window state
@@ -290,6 +302,16 @@ def render_filename_template(template: str, post: "Post", ext: str) -> str:
     # Length cap on the stem (before any system-appended extension).
     if len(rendered) > 200:
         rendered = rendered[:200].rstrip("._ ")
+
+    # Reject Windows reserved device names (audit finding #7). On Windows,
+    # opening `con.jpg` or `prn.png` for writing redirects to the device,
+    # so a tag value of `con` from a hostile booru would silently break
+    # save. Prefix with `_` to break the device-name match while keeping
+    # the user's intended name visible.
+    if rendered:
+        stem_lower = rendered.split(".", 1)[0].lower()
+        if stem_lower in _WINDOWS_RESERVED_NAMES:
+            rendered = "_" + rendered
 
     if not rendered:
         return f"{post.id}{ext}"

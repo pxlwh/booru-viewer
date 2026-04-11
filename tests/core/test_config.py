@@ -89,3 +89,57 @@ def test_data_dir_tightens_loose_existing_perms(tmp_path, monkeypatch):
     config.data_dir()
     mode = os.stat(pre).st_mode & 0o777
     assert mode == 0o700
+
+
+# -- render_filename_template Windows reserved names (finding #7) --
+
+
+def _fake_post(tag_categories=None, **overrides):
+    """Build a minimal Post-like object suitable for render_filename_template.
+
+    A real Post needs file_url + tag_categories; defaults are fine for the
+    reserved-name tests since they only inspect the artist/character tokens.
+    """
+    from booru_viewer.core.api.base import Post
+    return Post(
+        id=overrides.get("id", 999),
+        file_url=overrides.get("file_url", "https://x.test/abc.jpg"),
+        preview_url=None,
+        tags="",
+        score=0,
+        rating=None,
+        source=None,
+        tag_categories=tag_categories or {},
+    )
+
+
+@pytest.mark.parametrize("reserved", [
+    "con", "CON", "prn", "PRN", "aux", "AUX", "nul", "NUL",
+    "com1", "COM1", "com9", "lpt1", "LPT1", "lpt9",
+])
+def test_render_filename_template_prefixes_reserved_names(reserved):
+    """A tag whose value renders to a Windows reserved device name must
+    be prefixed with `_` so the resulting filename can't redirect to a
+    device on Windows. Audit finding #7."""
+    post = _fake_post(tag_categories={"Artist": [reserved]})
+    out = config.render_filename_template("%artist%", post, ext=".jpg")
+    # Stem (before extension) must NOT be a reserved name.
+    stem = out.split(".", 1)[0]
+    assert stem.lower() != reserved.lower()
+    assert stem.startswith("_")
+
+
+def test_render_filename_template_passes_normal_names_unchanged():
+    """Non-reserved tags must NOT be prefixed."""
+    post = _fake_post(tag_categories={"Artist": ["miku"]})
+    out = config.render_filename_template("%artist%", post, ext=".jpg")
+    assert out == "miku.jpg"
+
+
+def test_render_filename_template_reserved_with_extension_in_template():
+    """`con.jpg` from a tag-only stem must still be caught — the dot in
+    the stem is irrelevant; CON is reserved regardless of extension."""
+    post = _fake_post(tag_categories={"Artist": ["con"]})
+    out = config.render_filename_template("%artist%.%ext%", post, ext=".jpg")
+    assert not out.startswith("con")
+    assert out.startswith("_con")
