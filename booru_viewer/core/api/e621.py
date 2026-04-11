@@ -8,6 +8,7 @@ import threading
 import httpx
 
 from ..config import DEFAULT_PAGE_SIZE, USER_AGENT
+from ._safety import validate_public_request
 from .base import BooruClient, Post, _parse_date
 
 log = logging.getLogger("booru")
@@ -47,6 +48,12 @@ class E621Client(BooruClient):
                     headers={"User-Agent": ua},
                     follow_redirects=True,
                     timeout=20.0,
+                    event_hooks={
+                        "request": [
+                            validate_public_request,
+                            BooruClient._log_request,
+                        ],
+                    },
                     limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
                 )
                 E621Client._e621_client = c
