@@ -13,6 +13,9 @@ These tests lock in the `54ccc40` security/correctness fixes:
 
 from __future__ import annotations
 
+import os
+import sys
+
 import pytest
 
 from booru_viewer.core.db import _validate_folder_name
@@ -40,6 +43,34 @@ def test_validate_folder_name_rejects_traversal():
         _validate_folder_name(".hidden")   # leading dot
     with pytest.raises(ValueError):
         _validate_folder_name("~user")     # leading tilde
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX-only chmod check")
+def test_db_file_chmod_600(tmp_db):
+    """Audit finding #4: the SQLite file must be 0o600 on POSIX so the
+    plaintext api_key/api_user columns aren't readable by other local
+    users on shared workstations."""
+    # The conn property triggers _restrict_perms() the first time it's
+    # accessed; tmp_db calls it via add_site/etc., but a defensive
+    # access here makes the assertion order-independent.
+    _ = tmp_db.conn
+    mode = os.stat(tmp_db._path).st_mode & 0o777
+    assert mode == 0o600, f"expected 0o600, got {oct(mode)}"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX-only chmod check")
+def test_db_wal_sidecar_chmod_600(tmp_db):
+    """The -wal sidecar created by PRAGMA journal_mode=WAL must also
+    be 0o600. It carries in-flight transactions including the most
+    recent api_key writes — same exposure as the main DB file."""
+    # Force a write so the WAL file actually exists.
+    tmp_db.add_site("test", "http://example.test", "danbooru")
+    # Re-trigger the chmod pass now that the sidecar exists.
+    tmp_db._restrict_perms()
+    wal = type(tmp_db._path)(str(tmp_db._path) + "-wal")
+    if wal.exists():
+        mode = os.stat(wal).st_mode & 0o777
+        assert mode == 0o600, f"expected 0o600 on WAL sidecar, got {oct(mode)}"
 
 
 def test_validate_folder_name_accepts_unicode_and_punctuation():

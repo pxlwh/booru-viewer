@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .config import db_path
+from .config import IS_WINDOWS, db_path
 
 
 def _validate_folder_name(name: str) -> str:
@@ -210,7 +210,29 @@ class Database:
             self._conn.execute("PRAGMA foreign_keys=ON")
             self._conn.executescript(_SCHEMA)
             self._migrate()
+            self._restrict_perms()
         return self._conn
+
+    def _restrict_perms(self) -> None:
+        """Tighten the DB file (and WAL/SHM sidecars) to 0o600 on POSIX.
+
+        The sites table stores api_key + api_user in plaintext, so the
+        file must not be readable by other local users. Sidecars only
+        exist after the first WAL checkpoint, so we tolerate
+        FileNotFoundError. Windows: NTFS ACLs handle this; chmod is a
+        no-op there. Filesystem-level chmod failures are swallowed —
+        better to keep working than refuse to start.
+        """
+        if IS_WINDOWS:
+            return
+        for suffix in ("", "-wal", "-shm"):
+            target = Path(str(self._path) + suffix) if suffix else self._path
+            try:
+                os.chmod(target, 0o600)
+            except FileNotFoundError:
+                pass
+            except OSError:
+                pass
 
     @contextmanager
     def _write(self):
