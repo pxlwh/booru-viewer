@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import socket
 from unittest.mock import patch
 
@@ -134,20 +135,21 @@ def test_empty_host_passes():
     check_public_host("")
 
 
-@pytest.mark.asyncio
-async def test_validate_public_request_hook_rejects_metadata():
+def test_validate_public_request_hook_rejects_metadata():
+    """The async hook is invoked via asyncio.run() instead of
+    pytest-asyncio so the test runs on CI (which only installs
+    httpx + Pillow + pytest)."""
     request = httpx.Request("GET", "http://169.254.169.254/latest/meta-data/")
     with pytest.raises(httpx.RequestError):
-        await validate_public_request(request)
+        asyncio.run(validate_public_request(request))
 
 
-@pytest.mark.asyncio
-async def test_validate_public_request_hook_allows_public():
+def test_validate_public_request_hook_allows_public():
     def _fake(*a, **kw):
         return [(socket.AF_INET, 0, 0, "", ("8.8.8.8", 0))]
     with patch("socket.getaddrinfo", _fake):
         request = httpx.Request("GET", "https://example.test/")
-        await validate_public_request(request)  # must not raise
+        asyncio.run(validate_public_request(request))  # must not raise
 
 
 # ======================================================================
