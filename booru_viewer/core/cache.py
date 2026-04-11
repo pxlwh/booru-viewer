@@ -79,6 +79,10 @@ def _get_shared_client(referer: str = "") -> httpx.AsyncClient:
     c = _shared_client
     if c is not None and not c.is_closed:
         return c
+    # Lazy import: core.api.base imports log_connection from this
+    # module, so a top-level `from .api._safety import ...` would
+    # circular-import through api/__init__.py during cache.py load.
+    from .api._safety import validate_public_request
     with _shared_client_lock:
         c = _shared_client
         if c is None or c.is_closed:
@@ -89,6 +93,7 @@ def _get_shared_client(referer: str = "") -> httpx.AsyncClient:
                 },
                 follow_redirects=True,
                 timeout=60.0,
+                event_hooks={"request": [validate_public_request]},
                 limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
             )
             _shared_client = c
