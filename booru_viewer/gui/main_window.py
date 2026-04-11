@@ -647,7 +647,13 @@ class BooruApp(QMainWindow):
                 f"#{post.id}  {post.width}x{post.height}  score:{post.score}  [{post.rating}]  {Path(post.file_url.split('?')[0]).suffix.lstrip('.').upper() if post.file_url else ''}"
                 + (f"  {post.created_at}" if post.created_at else "")
             )
-            if self._info_panel.isVisible():
+            # Skip media reload if already showing this post (avoids
+            # restarting video when clicking to drag an already-selected cell)
+            already_showing = (
+                self._preview._current_post is not None
+                and self._preview._current_post.id == post.id
+            )
+            if self._info_panel.isVisible() and not already_showing:
                 # Signal the info panel whether a category fetch is
                 # about to fire so it skips the flat-tag fallback
                 # (avoids the flat→categorized re-layout flash).
@@ -659,7 +665,8 @@ class BooruApp(QMainWindow):
                 else:
                     self._info_panel._categories_pending = False
                 self._info_panel.set_post(post)
-            self._media_ctrl.on_post_activated(index)
+            if not already_showing:
+                self._media_ctrl.on_post_activated(index)
 
 
     def _post_id_from_library_path(self, path: Path) -> int | None:
