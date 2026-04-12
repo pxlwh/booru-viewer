@@ -51,6 +51,7 @@ class ImagePreview(QWidget):
         self._is_bookmarked = False  # tracks bookmark state for the button submenu
         self._current_tags: dict[str, list[str]] = {}
         self._current_tag_list: list[str] = []
+        self._vol_scroll_accum = 0
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -405,9 +406,11 @@ class ImagePreview(QWidget):
             self.navigate.emit(1)
             return
         if self._stack.currentIndex() == 1:
-            delta = event.angleDelta().y()
-            if delta:
-                vol = max(0, min(100, self._video_player.volume + (5 if delta > 0 else -5)))
+            self._vol_scroll_accum += event.angleDelta().y()
+            steps = self._vol_scroll_accum // 120
+            if steps:
+                self._vol_scroll_accum -= steps * 120
+                vol = max(0, min(100, self._video_player.volume + 5 * steps))
                 self._video_player.volume = vol
         else:
             super().wheelEvent(event)
