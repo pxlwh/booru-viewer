@@ -79,7 +79,6 @@ def build_mpv_kwargs(is_windows: bool) -> dict[str, object]:
         "cache": "yes",
         "cache_pause": "yes",
         "cache_pause_wait": "2",
-        "cache_pause_initial": "yes",
         "cache_secs": "30",
         "demuxer_max_bytes": "150MiB",
         "demuxer_max_back_bytes": "75MiB",
