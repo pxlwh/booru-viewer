@@ -22,6 +22,7 @@ class ImageViewer(QWidget):
         self._offset = QPointF(0, 0)
         self._drag_start: QPointF | None = None
         self._drag_offset = QPointF(0, 0)
+        self._zoom_scroll_accum = 0
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._info_text = ""
@@ -106,9 +107,14 @@ class ImageViewer(QWidget):
             # Pure horizontal tilt — let parent handle (navigation)
             event.ignore()
             return
+        self._zoom_scroll_accum += delta
+        steps = self._zoom_scroll_accum // 120
+        if not steps:
+            return
+        self._zoom_scroll_accum -= steps * 120
         mouse_pos = event.position()
         old_zoom = self._zoom
-        factor = 1.15 if delta > 0 else 1 / 1.15
+        factor = 1.15 ** steps
         self._zoom = max(0.1, min(self._zoom * factor, 20.0))
         ratio = self._zoom / old_zoom
         self._offset = mouse_pos - ratio * (mouse_pos - self._offset)
