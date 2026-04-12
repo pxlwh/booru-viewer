@@ -326,21 +326,49 @@ class LibraryView(QWidget):
         threading.Thread(target=_work, daemon=True).start()
 
     def _capture_video_thumb(self, index: int, source: str, dest: str) -> None:
-        """Grab first frame from video. Tries ffmpeg, falls back to placeholder."""
+        """Grab first frame from video using mpv, falls back to placeholder."""
         def _work():
+            extracted = False
             try:
-                import subprocess
-                result = subprocess.run(
-                    ["ffmpeg", "-y", "-i", source, "-vframes", "1",
-                     "-vf", f"scale={LIBRARY_THUMB_SIZE}:{LIBRARY_THUMB_SIZE}:force_original_aspect_ratio=decrease",
-                     "-q:v", "5", dest],
-                    capture_output=True, timeout=10,
+                import threading as _threading
+                import mpv as mpvlib
+
+                frame_ready = _threading.Event()
+                m = mpvlib.MPV(
+                    vo='null', ao='null', aid='no',
+                    pause=True, keep_open='yes',
+                    terminal=False, config=False,
                 )
-                if Path(dest).exists():
-                    self._signals.thumb_ready.emit(index, dest)
-                    return
-            except (FileNotFoundError, Exception):
-                pass
+                try:
+                    @m.property_observer('video-params')
+                    def _on_params(_name, value):
+                        if isinstance(value, dict) and value.get('w'):
+                            frame_ready.set()
+
+                    m.loadfile(source)
+                    if frame_ready.wait(timeout=10):
+                        m.command('screenshot-to-file', dest, 'video')
+                finally:
+                    m.terminate()
+
+                if Path(dest).exists() and Path(dest).stat().st_size > 0:
+                    from PIL import Image
+                    with Image.open(dest) as img:
+                        img.thumbnail(
+                            (LIBRARY_THUMB_SIZE, LIBRARY_THUMB_SIZE),
+                            Image.LANCZOS,
+                        )
+                        if img.mode in ("RGBA", "P"):
+                            img = img.convert("RGB")
+                        img.save(dest, "JPEG", quality=85)
+                    extracted = True
+            except Exception as e:
+                log.debug("mpv thumb extraction failed for %s: %s", source, e)
+
+            if extracted and Path(dest).exists():
+                self._signals.thumb_ready.emit(index, dest)
+                return
+
             # Fallback: generate a placeholder
             from PySide6.QtGui import QPainter, QColor, QFont
             from PySide6.QtGui import QPolygon

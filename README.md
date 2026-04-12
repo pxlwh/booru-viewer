@@ -58,12 +58,12 @@ AUR: [/packages/booru-viewer-git](https://aur.archlinux.org/packages/booru-viewe
 
 Ubuntu / Debian (24.04+):
 ```sh
-sudo apt install python3 python3-pip python3-venv mpv libmpv-dev ffmpeg
+sudo apt install python3 python3-pip python3-venv mpv libmpv-dev
 ```
 
 Fedora:
 ```sh
-sudo dnf install python3 python3-pip qt6-qtbase mpv mpv-libs-devel ffmpeg
+sudo dnf install python3 python3-pip qt6-qtbase mpv mpv-libs-devel
 ```
 
 Then clone and install:
