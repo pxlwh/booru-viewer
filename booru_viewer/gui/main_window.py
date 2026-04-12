@@ -585,23 +585,18 @@ class BooruApp(QMainWindow):
         # them again is meaningless. Disabling the QAction also disables
         # its keyboard shortcut.
         self._batch_action.setEnabled(index == 0)
-        # Clear grid selections and current post to prevent cross-tab action conflicts
-        # Preview media stays visible but actions are disabled until a new post is selected
-        self._grid.clear_selection()
-        self._bookmarks_view._grid.clear_selection()
-        self._library_view._grid.clear_selection()
-        self._preview._current_post = None
-        self._preview._current_site_id = None
+        # Clear other tabs' selections to prevent cross-tab action
+        # conflicts (B/S keys acting on a stale selection from another
+        # tab). The target tab keeps its selection so the user doesn't
+        # lose their place when switching back and forth.
+        if index != 0:
+            self._grid.clear_selection()
+        if index != 1:
+            self._bookmarks_view._grid.clear_selection()
+        if index != 2:
+            self._library_view._grid.clear_selection()
         is_library = index == 2
         self._preview.update_bookmark_state(False)
-        # On the library tab the Save button is the only toolbar action
-        # left visible (Bookmark / BL Tag / BL Post are hidden a few lines
-        # down). Library files are saved by definition, so the button
-        # should read "Unsave" the entire time the user is in that tab —
-        # forcing the state to True here makes that true even before the
-        # user clicks anything (the toolbar might already be showing old
-        # media from the previous tab; this is fine because the same media
-        # is also in the library if it was just saved).
         self._preview.update_save_state(is_library)
         # Show/hide preview toolbar buttons per tab
         self._preview._bookmark_btn.setVisible(not is_library)
