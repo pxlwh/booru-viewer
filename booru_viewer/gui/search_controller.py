@@ -506,7 +506,7 @@ class SearchController:
         if 0 <= index < len(thumbs):
             pix = QPixmap(path)
             if not pix.isNull():
-                thumbs[index].set_pixmap(pix)
+                thumbs[index].set_pixmap(pix, path)
 
     # -- Autocomplete --
 
