@@ -940,6 +940,7 @@ class FullscreenPreview(QMainWindow):
 
         menu.addSeparator()
         copy_action = menu.addAction("Copy File to Clipboard")
+        copy_url_action = menu.addAction("Copy Image URL")
         open_action = menu.addAction("Open in Default App")
         browser_action = menu.addAction("Open in Browser")
 
@@ -974,15 +975,27 @@ class FullscreenPreview(QMainWindow):
         elif action == unsave_action:
             self.unsave_requested.emit()
         elif action == copy_action:
+            from pathlib import Path as _Path
+            from PySide6.QtCore import QMimeData, QUrl
             from PySide6.QtWidgets import QApplication
             from PySide6.QtGui import QPixmap as _QP
-            pix = self._viewer._pixmap
-            if pix and not pix.isNull():
-                QApplication.clipboard().setPixmap(pix)
-            elif self._state.current_path:
-                pix = _QP(self._state.current_path)
+            cp = self._state_machine.current_path
+            if cp and cp.startswith(("http://", "https://")):
+                from ...core.cache import cached_path_for
+                cached = cached_path_for(cp)
+                cp = str(cached) if cached.exists() else None
+            if cp and _Path(cp).exists():
+                mime = QMimeData()
+                mime.setUrls([QUrl.fromLocalFile(str(_Path(cp).resolve()))])
+                pix = _QP(cp)
                 if not pix.isNull():
-                    QApplication.clipboard().setPixmap(pix)
+                    mime.setImageData(pix.toImage())
+                QApplication.clipboard().setMimeData(mime)
+        elif action == copy_url_action:
+            from PySide6.QtWidgets import QApplication
+            url = self._state_machine.current_path or ""
+            if url:
+                QApplication.clipboard().setText(url)
         elif action == open_action:
             self.open_in_default.emit()
         elif action == browser_action:
