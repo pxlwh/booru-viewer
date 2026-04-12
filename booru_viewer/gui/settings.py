@@ -201,7 +201,7 @@ class SettingsDialog(QDialog):
         form.addRow("", self._search_history)
 
         # Flip layout
-        self._flip_layout = QCheckBox("Preview on left (restart required)")
+        self._flip_layout = QCheckBox("Preview on left")
         self._flip_layout.setChecked(self._db.get_setting_bool("flip_layout"))
         form.addRow("", self._flip_layout)
 
