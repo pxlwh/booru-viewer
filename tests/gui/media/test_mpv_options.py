@@ -81,7 +81,7 @@ def test_existing_options_preserved():
     # Network tuning from the uncached-video fast path.
     assert kwargs["cache"] == "yes"
     assert kwargs["cache_pause"] == "no"
-    assert kwargs["demuxer_max_bytes"] == "50MiB"
+    assert kwargs["demuxer_max_bytes"] == "150MiB"
     assert kwargs["network_timeout"] == "10"
     # Existing input lockdown (primary — input_conf is defense-in-depth).
     assert kwargs["input_default_bindings"] is False
