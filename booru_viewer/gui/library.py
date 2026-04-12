@@ -201,9 +201,10 @@ class LibraryView(QWidget):
                     thumb_name = filepath.stem
             cached_thumb = lib_thumb_dir / f"{thumb_name}.jpg"
             if cached_thumb.exists():
-                pix = QPixmap(str(cached_thumb))
+                thumb_path = str(cached_thumb)
+                pix = QPixmap(thumb_path)
                 if not pix.isNull():
-                    thumb.set_pixmap(pix)
+                    thumb.set_pixmap(pix, thumb_path)
                     continue
             self._generate_thumb_async(i, filepath, cached_thumb)
 
@@ -367,7 +368,7 @@ class LibraryView(QWidget):
         if 0 <= index < len(thumbs):
             pix = QPixmap(path)
             if not pix.isNull():
-                thumbs[index].set_pixmap(pix)
+                thumbs[index].set_pixmap(pix, path)
 
     # ------------------------------------------------------------------
     # Selection signals
