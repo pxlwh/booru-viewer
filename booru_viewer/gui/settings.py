@@ -825,5 +825,7 @@ class SettingsDialog(QDialog):
             self._db.add_blacklisted_tag(tag)
         if self._file_dialog_combo is not None:
             self._db.set_setting("file_dialog_platform", self._file_dialog_combo.currentText())
+            from .dialogs import reset_gtk_cache
+            reset_gtk_cache()
         self.settings_changed.emit()
         self.accept()
