@@ -332,6 +332,7 @@ class ImagePreview(QWidget):
 
         menu.addSeparator()
         copy_image = menu.addAction("Copy File to Clipboard")
+        copy_url = menu.addAction("Copy Image URL")
         open_action = menu.addAction("Open in Default App")
         browser_action = menu.addAction("Open in Browser")
 
@@ -367,15 +368,22 @@ class ImagePreview(QWidget):
         elif id(action) in save_folder_actions:
             self.save_to_folder.emit(save_folder_actions[id(action)])
         elif action == copy_image:
+            from pathlib import Path as _Path
+            from PySide6.QtCore import QMimeData, QUrl
             from PySide6.QtWidgets import QApplication
             from PySide6.QtGui import QPixmap as _QP
-            pix = self._image_viewer._pixmap
-            if pix and not pix.isNull():
-                QApplication.clipboard().setPixmap(pix)
-            elif self._current_path:
-                pix = _QP(self._current_path)
+            cp = self._current_path
+            if cp and _Path(cp).exists():
+                mime = QMimeData()
+                mime.setUrls([QUrl.fromLocalFile(str(_Path(cp).resolve()))])
+                pix = _QP(cp)
                 if not pix.isNull():
-                    QApplication.clipboard().setPixmap(pix)
+                    mime.setImageData(pix.toImage())
+                QApplication.clipboard().setMimeData(mime)
+        elif action == copy_url:
+            from PySide6.QtWidgets import QApplication
+            if self._current_post and self._current_post.file_url:
+                QApplication.clipboard().setText(self._current_post.file_url)
         elif action == open_action:
             self.open_in_default.emit()
         elif action == browser_action:
