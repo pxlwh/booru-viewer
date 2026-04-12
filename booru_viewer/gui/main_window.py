@@ -488,7 +488,6 @@ class BooruApp(QMainWindow):
         file_menu = menu.addMenu("&File")
 
         sites_action = QAction("&Manage Sites...", self)
-        sites_action.setShortcut(QKeySequence("Ctrl+S"))
         sites_action.triggered.connect(self._open_site_manager)
         file_menu.addAction(sites_action)
 
@@ -500,7 +499,6 @@ class BooruApp(QMainWindow):
         file_menu.addSeparator()
 
         self._batch_action = QAction("Batch &Download Page...", self)
-        self._batch_action.setShortcut(QKeySequence("Ctrl+D"))
         self._batch_action.triggered.connect(self._post_actions.batch_download)
         file_menu.addAction(self._batch_action)
 
