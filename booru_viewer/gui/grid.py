@@ -152,7 +152,6 @@ class ThumbnailWidget(QWidget):
         # Defaults were seeded from the palette in __init__.
         highlight = self._selection_color
         base = pal.color(pal.ColorRole.Base)
-        mid = self._idle_color
         window = pal.color(pal.ColorRole.Window)
 
         # Fill entire cell with window color
