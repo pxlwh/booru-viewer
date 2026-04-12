@@ -182,6 +182,14 @@ class MediaController:
         else:
             self._app._preview._video_player.stop()
             self._app._preview.set_media(url, info)
+        # Set the expected cache path on the thumbnail so drag-to-copy
+        # works once the stream-record promotes the .part file on EOF.
+        # Streaming videos skip on_image_done (which normally sets this),
+        # so without this the thumbnail never gets a _cached_path.
+        from ..core.cache import cached_path_for
+        idx = self._app._grid.selected_index
+        if 0 <= idx < len(self._app._grid._thumbs):
+            self._app._grid._thumbs[idx]._cached_path = str(cached_path_for(url))
         self._app._status.showMessage(f"Streaming #{Path(url.split('?')[0]).name}...")
 
     def on_download_progress(self, downloaded: int, total: int) -> None:
