@@ -137,7 +137,8 @@ class SearchController:
 
     def on_search(self, tags: str) -> None:
         self._current_tags = tags
-        self._current_page = self._app._page_spin.value()
+        self._app._page_spin.setValue(1)
+        self._current_page = 1
         self._search = SearchState()
         self._min_score = self._app._score_spin.value()
         self._app._preview.clear()
