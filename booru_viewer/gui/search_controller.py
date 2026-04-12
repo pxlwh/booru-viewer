@@ -292,7 +292,6 @@ class SearchController:
         from PySide6.QtCore import QTimer
         QTimer.singleShot(100, self.clear_loading)
 
-        from ..core.config import saved_dir
         from ..core.cache import cached_path_for, cache_dir
         site_id = self._app._site_combo.currentData()
 
