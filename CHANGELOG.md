@@ -19,6 +19,8 @@
 - Popout aspect lock for bookmarks now reads actual image dimensions instead of guessing
 
 ### Changed
+- Uncached videos now download via httpx in parallel with mpv streaming — file is cached immediately for copy/paste without waiting for playback to finish
+- Library video thumbnails use mpv instead of ffmpeg — drops the ffmpeg dependency entirely
 - Save/Unsave from Library mutually exclusive in context menus, preview pane, and popout
 - S key guard consistent with B/F behavior
 - Tag count limits removed from info panel
