@@ -31,7 +31,7 @@ from ..core.api.base import BooruClient, Post
 from ..core.api.detect import client_for_type
 from ..core.cache import download_image
 
-from .grid import ThumbnailGrid
+from .grid import ThumbnailGrid, THUMB_SIZE, THUMB_SPACING
 from .preview_pane import ImagePreview
 from .search import SearchBar
 from .sites import SiteManagerDialog
@@ -306,6 +306,7 @@ class BooruApp(QMainWindow):
         self._stack = QStackedWidget()
 
         self._grid = ThumbnailGrid()
+        self._grid.setMinimumWidth(THUMB_SIZE + THUMB_SPACING * 2)
         self._grid.post_selected.connect(self._on_post_selected)
         self._grid.post_activated.connect(self._media_ctrl.on_post_activated)
         self._grid.context_requested.connect(self._context.show_single)
