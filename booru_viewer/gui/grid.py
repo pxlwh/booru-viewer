@@ -107,7 +107,7 @@ class ThumbnailWidget(QWidget):
         )
         self._thumb_opacity = 0.0
         anim = QPropertyAnimation(self, b"thumbOpacity")
-        anim.setDuration(200)
+        anim.setDuration(80)
         anim.setStartValue(0.0)
         anim.setEndValue(1.0)
         anim.setEasingCurve(QEasingCurve.Type.OutCubic)
