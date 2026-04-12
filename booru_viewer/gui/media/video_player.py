@@ -471,7 +471,8 @@ class VideoPlayer(QWidget):
             tmp = target.with_suffix(target.suffix + ".part")
             m.loadfile(path, "replace",
                        referrer=referer,
-                       stream_record=tmp.as_posix())
+                       stream_record=tmp.as_posix(),
+                       demuxer_max_bytes="150MiB")
             self._stream_record_tmp = tmp
             self._stream_record_target = target
         else:
