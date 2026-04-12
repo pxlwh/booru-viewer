@@ -4,10 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
-import sys
 import threading
-from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal, QUrl
 from PySide6.QtGui import QPixmap, QAction, QKeySequence, QDesktopServices, QShortcut
@@ -27,8 +24,6 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QProgressBar,
 )
-
-from dataclasses import field
 
 from ..core.db import Database, Site
 from ..core.api.base import BooruClient, Post
@@ -982,7 +977,7 @@ class BooruApp(QMainWindow):
         self._open_post_id_in_browser(post.id)
 
     def _open_in_default(self, post: Post) -> None:
-        from ..core.cache import cached_path_for, is_cached
+        from ..core.cache import cached_path_for
         path = cached_path_for(post.file_url)
         if path.exists():
             # Pause any playing video before opening externally
