@@ -18,6 +18,7 @@ class PrivacyController:
         self._on = False
         self._overlay: QWidget | None = None
         self._popout_was_visible = False
+        self._preview_was_playing = False
 
     @property
     def is_active(self) -> bool:
@@ -40,8 +41,11 @@ class PrivacyController:
             self._overlay.raise_()
             self._overlay.show()
             self._app.setWindowTitle("booru-viewer")
-            # Pause preview video
+            # Pause preview video, remembering whether it was playing
+            self._preview_was_playing = False
             if self._app._preview._stack.currentIndex() == 1:
+                mpv = self._app._preview._video_player._mpv
+                self._preview_was_playing = mpv is not None and not mpv.pause
                 self._app._preview._video_player.pause()
             # Delegate popout hide-and-pause to FullscreenPreview so it
             # can capture its own geometry for restore.
@@ -53,10 +57,8 @@ class PrivacyController:
                 self._app._popout_ctrl.window.privacy_hide()
         else:
             self._overlay.hide()
-            # Resume embedded preview video — unconditional resume, the
-            # common case (privacy hides -> user comes back -> video should
-            # be playing again) wins over the manually-paused edge case.
-            if self._app._preview._stack.currentIndex() == 1:
+            # Resume embedded preview video only if it was playing before
+            if self._preview_was_playing and self._app._preview._stack.currentIndex() == 1:
                 self._app._preview._video_player.resume()
             # Restore the popout via its own privacy_show method, which
             # also re-dispatches the captured geometry to Hyprland (Qt
