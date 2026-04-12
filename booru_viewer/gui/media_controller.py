@@ -73,6 +73,7 @@ class MediaController:
         self._prefetch_pause = asyncio.Event()
         self._prefetch_pause.set()  # not paused
         self._last_evict_check = 0.0  # monotonic timestamp
+        self._prefetch_gen = 0  # incremented on each prefetch_adjacent call
 
     # -- Post activation (media load) --
 
@@ -162,6 +163,13 @@ class MediaController:
         idx = self._app._grid.selected_index
         if 0 <= idx < len(self._app._grid._thumbs):
             self._app._grid._thumbs[idx]._cached_path = path
+        # Keep the search controller's cached-names set current so
+        # subsequent _drain_append_queue calls see newly downloaded files
+        # without a full directory rescan.
+        cn = self._app._search_ctrl._cached_names
+        if cn is not None:
+            from pathlib import Path as _P
+            cn.add(_P(path).name)
         self._app._popout_ctrl.update_media(path, info)
         self.auto_evict_cache()
 
@@ -207,7 +215,12 @@ class MediaController:
             self._app._grid._thumbs[index].set_prefetch_progress(progress)
 
     def prefetch_adjacent(self, index: int) -> None:
-        """Prefetch posts around the given index."""
+        """Prefetch posts around the given index.
+
+        Bumps a generation counter so any previously running spiral
+        exits at its next iteration instead of continuing to download
+        stale adjacencies.
+        """
         total = len(self._app._posts)
         if total == 0:
             return
@@ -215,9 +228,16 @@ class MediaController:
         mode = self._app._db.get_setting("prefetch_mode")
         order = compute_prefetch_order(index, total, cols, mode)
 
+        self._prefetch_gen += 1
+        gen = self._prefetch_gen
+
         async def _prefetch_spiral():
             for adj in order:
+                if self._prefetch_gen != gen:
+                    return  # superseded by a newer prefetch
                 await self._prefetch_pause.wait()
+                if self._prefetch_gen != gen:
+                    return
                 if 0 <= adj < len(self._app._posts) and self._app._posts[adj].file_url:
                     self._app._signals.prefetch_progress.emit(adj, 0.0)
                     try:
@@ -251,7 +271,7 @@ class MediaController:
             for fav in self._app._db.get_bookmarks(limit=999999):
                 if fav.cached_path:
                     protected.add(fav.cached_path)
-            evicted = evict_oldest(max_bytes, protected)
+            evicted = evict_oldest(max_bytes, protected, current_bytes=current)
             if evicted:
                 log.info(f"Auto-evicted {evicted} cached files")
         max_thumb_mb = self._app._db.get_setting_int("max_thumb_cache_mb") or 500
