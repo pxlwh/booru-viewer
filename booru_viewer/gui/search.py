@@ -17,6 +17,29 @@ from PySide6.QtWidgets import (
 from ..core.db import Database
 
 
+class _TagCompleter(QCompleter):
+    """Completer that operates on the last space-separated tag only.
+
+    When the user types "blue_sky tre", the completer matches against
+    "tre" and the popup shows suggestions for that fragment. Accepting
+    a suggestion replaces only the last tag, preserving everything
+    before the final space.
+    """
+
+    def splitPath(self, path: str) -> list[str]:
+        return [path.split()[-1]] if path.split() else [""]
+
+    def pathFromIndex(self, index) -> str:
+        completion = super().pathFromIndex(index)
+        text = self.widget().text()
+        parts = text.split()
+        if parts:
+            parts[-1] = completion
+        else:
+            parts = [completion]
+        return " ".join(parts) + " "
+
+
 class SearchBar(QWidget):
     """Tag search bar with autocomplete, history dropdown, and saved searches."""
 
@@ -63,9 +86,10 @@ class SearchBar(QWidget):
         self._btn.clicked.connect(self._do_search)
         layout.addWidget(self._btn)
 
-        # Autocomplete
+        # Autocomplete — _TagCompleter only completes the last tag,
+        # preserving previous tags in multi-tag queries.
         self._completer_model = QStringListModel()
-        self._completer = QCompleter(self._completer_model)
+        self._completer = _TagCompleter(self._completer_model)
         self._completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         self._completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
         self._input.setCompleter(self._completer)
@@ -78,6 +102,9 @@ class SearchBar(QWidget):
         self._input.textChanged.connect(self._on_text_changed)
 
     def _on_text_changed(self, text: str) -> None:
+        if text.endswith(" "):
+            self._completer_model.setStringList([])
+            return
         self._ac_timer.start()
 
     def _request_autocomplete(self) -> None:
