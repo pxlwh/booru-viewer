@@ -133,8 +133,6 @@ class MediaController:
             async def _load():
                 self._prefetch_pause.clear()
                 try:
-                    if streaming:
-                        return
                     path = await download_image(post.file_url, progress_callback=_progress)
                     self._app._signals.image_done.emit(str(path), info)
                 except Exception as e:
@@ -154,6 +152,25 @@ class MediaController:
 
     def on_image_done(self, path: str, info: str) -> None:
         self._app._dl_progress.hide()
+        # If the preview is already streaming this video from URL,
+        # just update path references so copy/paste works — don't
+        # restart playback.
+        current = self._app._preview._current_path
+        if current and current.startswith(("http://", "https://")):
+            from ..core.cache import cached_path_for
+            if Path(path) == cached_path_for(current):
+                self._app._preview._current_path = path
+                idx = self._app._grid.selected_index
+                if 0 <= idx < len(self._app._grid._thumbs):
+                    self._app._grid._thumbs[idx]._cached_path = path
+                cn = self._app._search_ctrl._cached_names
+                if cn is not None:
+                    cn.add(Path(path).name)
+                self._app._status.showMessage(
+                    f"{len(self._app._posts)} results — Loaded"
+                )
+                self.auto_evict_cache()
+                return
         if self._app._popout_ctrl.window and self._app._popout_ctrl.window.isVisible():
             self._app._preview._info_label.setText(info)
             self._app._preview._current_path = path
@@ -182,10 +199,10 @@ class MediaController:
         else:
             self._app._preview._video_player.stop()
             self._app._preview.set_media(url, info)
-        # Set the expected cache path on the thumbnail so drag-to-copy
-        # works once the stream-record promotes the .part file on EOF.
-        # Streaming videos skip on_image_done (which normally sets this),
-        # so without this the thumbnail never gets a _cached_path.
+        # Pre-set the expected cache path on the thumbnail immediately.
+        # The parallel httpx download will also set it via on_image_done
+        # when it completes, but this makes it available for drag-to-copy
+        # from the moment streaming starts.
         from ..core.cache import cached_path_for
         idx = self._app._grid.selected_index
         if 0 <= idx < len(self._app._grid._thumbs):
