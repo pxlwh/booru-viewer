@@ -37,19 +37,22 @@ class ContextMenuHandler:
         save_as = menu.addAction("Save As...")
 
         from ..core.config import library_folders
-        save_lib_menu = menu.addMenu("Save to Library")
-        save_lib_unsorted = save_lib_menu.addAction("Unfiled")
-        save_lib_menu.addSeparator()
+        save_lib_menu = None
+        save_lib_unsorted = None
+        save_lib_new = None
         save_lib_folders = {}
-        for folder in library_folders():
-            a = save_lib_menu.addAction(folder)
-            save_lib_folders[id(a)] = folder
-        save_lib_menu.addSeparator()
-        save_lib_new = save_lib_menu.addAction("+ New Folder...")
-
         unsave_lib = None
         if self._app._post_actions.is_post_saved(post.id):
             unsave_lib = menu.addAction("Unsave from Library")
+        else:
+            save_lib_menu = menu.addMenu("Save to Library")
+            save_lib_unsorted = save_lib_menu.addAction("Unfiled")
+            save_lib_menu.addSeparator()
+            for folder in library_folders():
+                a = save_lib_menu.addAction(folder)
+                save_lib_folders[id(a)] = folder
+            save_lib_menu.addSeparator()
+            save_lib_new = save_lib_menu.addAction("+ New Folder...")
         copy_clipboard = menu.addAction("Copy File to Clipboard")
         copy_url = menu.addAction("Copy Image URL")
         copy_tags = menu.addAction("Copy Tags")
@@ -108,7 +111,6 @@ class ContextMenuHandler:
         elif id(action) in save_lib_folders:
             self._app._post_actions.save_to_library(post, save_lib_folders[id(action)])
         elif action == unsave_lib:
-            self._app._preview._current_post = post
             self._app._post_actions.unsave_from_preview()
         elif action == copy_clipboard:
             self._app._copy_file_to_clipboard()
