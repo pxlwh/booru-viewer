@@ -64,6 +64,10 @@ class SettingsDialog(QDialog):
         btns = QHBoxLayout()
         btns.addStretch()
 
+        apply_btn = QPushButton("Apply")
+        apply_btn.clicked.connect(self._apply)
+        btns.addWidget(apply_btn)
+
         save_btn = QPushButton("Save")
         save_btn.clicked.connect(self._save_and_close)
         btns.addWidget(save_btn)
@@ -794,7 +798,8 @@ class SettingsDialog(QDialog):
 
     # -- Save --
 
-    def _save_and_close(self) -> None:
+    def _apply(self) -> None:
+        """Write all settings to DB and emit settings_changed."""
         self._db.set_setting("page_size", str(self._page_size.value()))
         self._db.set_setting("thumbnail_size", str(self._thumb_size.value()))
         self._db.set_setting("default_rating", self._default_rating.currentText())
@@ -828,4 +833,7 @@ class SettingsDialog(QDialog):
             from .dialogs import reset_gtk_cache
             reset_gtk_cache()
         self.settings_changed.emit()
+
+    def _save_and_close(self) -> None:
+        self._apply()
         self.accept()
