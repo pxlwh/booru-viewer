@@ -543,7 +543,6 @@ class SettingsDialog(QDialog):
     # -- Network tab --
 
     def _build_network_tab(self) -> QWidget:
-        from ..core.cache import get_connection_log
         w = QWidget()
         layout = QVBoxLayout(w)
 
