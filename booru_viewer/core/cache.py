@@ -599,23 +599,36 @@ def cache_file_count(include_thumbnails: bool = True) -> tuple[int, int]:
     return images, thumbs
 
 
-def evict_oldest(max_bytes: int, protected_paths: set[str] | None = None) -> int:
-    """Delete oldest non-protected cached images until under max_bytes. Returns count deleted."""
-    protected = protected_paths or set()
-    files = sorted(cache_dir().iterdir(), key=lambda f: f.stat().st_mtime)
-    deleted = 0
-    current = cache_size_bytes(include_thumbnails=False)
+def evict_oldest(max_bytes: int, protected_paths: set[str] | None = None,
+                  current_bytes: int | None = None) -> int:
+    """Delete oldest non-protected cached images until under max_bytes. Returns count deleted.
 
-    for f in files:
+    *current_bytes* avoids a redundant directory scan when the caller
+    already measured the cache size.
+    """
+    protected = protected_paths or set()
+    # Single directory walk: collect (path, stat) pairs, sort by mtime,
+    # and sum sizes — avoids the previous pattern of iterdir() for the
+    # sort + a second full iterdir()+stat() inside cache_size_bytes().
+    entries = []
+    total = 0
+    for f in cache_dir().iterdir():
+        if not f.is_file():
+            continue
+        st = f.stat()
+        entries.append((f, st))
+        total += st.st_size
+    current = current_bytes if current_bytes is not None else total
+    entries.sort(key=lambda e: e[1].st_mtime)
+    deleted = 0
+    for f, st in entries:
         if current <= max_bytes:
             break
-        if not f.is_file() or str(f) in protected or f.suffix == ".part":
+        if str(f) in protected or f.suffix == ".part":
             continue
-        size = f.stat().st_size
         f.unlink()
-        current -= size
+        current -= st.st_size
         deleted += 1
-
     return deleted
 
 
@@ -624,17 +637,23 @@ def evict_oldest_thumbnails(max_bytes: int) -> int:
     td = thumbnails_dir()
     if not td.exists():
         return 0
-    files = sorted(td.iterdir(), key=lambda f: f.stat().st_mtime)
-    deleted = 0
-    current = sum(f.stat().st_size for f in td.iterdir() if f.is_file())
-    for f in files:
-        if current <= max_bytes:
-            break
+    entries = []
+    current = 0
+    for f in td.iterdir():
         if not f.is_file():
             continue
-        size = f.stat().st_size
+        st = f.stat()
+        entries.append((f, st))
+        current += st.st_size
+    if current <= max_bytes:
+        return 0
+    entries.sort(key=lambda e: e[1].st_mtime)
+    deleted = 0
+    for f, st in entries:
+        if current <= max_bytes:
+            break
         f.unlink()
-        current -= size
+        current -= st.st_size
         deleted += 1
     return deleted
 
