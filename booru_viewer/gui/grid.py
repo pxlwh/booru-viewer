@@ -784,6 +784,58 @@ class ThumbnailGrid(QScrollArea):
             self.reached_bottom.emit()
         if value <= 0 and sb.maximum() > 0:
             self.reached_top.emit()
+        self._recycle_offscreen()
+
+    def _recycle_offscreen(self) -> None:
+        """Release decoded pixmaps for thumbnails far from the viewport.
+
+        Thumbnails within the visible area plus a buffer zone keep their
+        pixmaps.  Thumbnails outside that zone have their pixmap set to
+        None to free decoded-image memory.  When they scroll back into
+        view, the pixmap is re-decoded from the on-disk thumbnail cache
+        via ``_source_path``.
+
+        This caps decoded-thumbnail memory to roughly (visible + buffer)
+        widgets instead of every widget ever created during infinite scroll.
+        """
+        if not self._thumbs:
+            return
+        step = THUMB_SIZE + THUMB_SPACING
+        if step == 0:
+            return
+        cols = self._flow.columns
+        vp_top = self.verticalScrollBar().value()
+        vp_height = self.viewport().height()
+
+        # Row range that's visible (0-based row indices)
+        first_visible_row = max(0, (vp_top - THUMB_SPACING) // step)
+        last_visible_row = (vp_top + vp_height) // step
+
+        # Buffer: keep ±5 rows of decoded pixmaps beyond the viewport
+        buffer_rows = 5
+        keep_first = max(0, first_visible_row - buffer_rows)
+        keep_last = last_visible_row + buffer_rows
+
+        keep_start = keep_first * cols
+        keep_end = min(len(self._thumbs), (keep_last + 1) * cols)
+
+        for i, thumb in enumerate(self._thumbs):
+            if keep_start <= i < keep_end:
+                # Inside keep zone — restore if missing
+                if thumb._pixmap is None and thumb._source_path:
+                    pix = QPixmap(thumb._source_path)
+                    if not pix.isNull():
+                        thumb._pixmap = pix.scaled(
+                            THUMB_SIZE - 4, THUMB_SIZE - 4,
+                            Qt.AspectRatioMode.KeepAspectRatio,
+                            Qt.TransformationMode.SmoothTransformation,
+                        )
+                        thumb._thumb_opacity = 1.0
+                        thumb.update()
+            else:
+                # Outside keep zone — release
+                if thumb._pixmap is not None:
+                    thumb._pixmap = None
 
     def _nav_horizontal(self, direction: int) -> None:
         """Move selection one cell left (-1) or right (+1); emit edge signals at boundaries."""
