@@ -191,7 +191,7 @@ class SiteDialog(QDialog):
 
     def _try_parse_url(self, text: str) -> None:
         """Strip query params from pasted URLs like https://gelbooru.com/index.php?page=post&s=list&tags=all."""
-        from urllib.parse import urlparse, parse_qs
+        from urllib.parse import urlparse
         text = text.strip()
         if "?" not in text:
             return
