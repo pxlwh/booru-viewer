@@ -1028,12 +1028,31 @@ class BooruApp(QMainWindow):
         if lib_dir:
             from ..core.config import set_library_dir
             set_library_dir(Path(lib_dir))
-        # Apply thumbnail size
+        # Apply thumbnail size live — update the module constant, resize
+        # existing thumbnails, and reflow the grid.
         from .grid import THUMB_SIZE
         new_size = self._db.get_setting_int("thumbnail_size")
         if new_size and new_size != THUMB_SIZE:
             import booru_viewer.gui.grid as grid_mod
             grid_mod.THUMB_SIZE = new_size
+            for grid in (self._grid, self._bookmarks_view._grid, self._library_view._grid):
+                for thumb in grid._thumbs:
+                    thumb.setFixedSize(new_size, new_size)
+                    if thumb._source_pixmap:
+                        thumb._pixmap = thumb._source_pixmap.scaled(
+                            new_size - 4, new_size - 4,
+                            Qt.AspectRatioMode.KeepAspectRatio,
+                            Qt.TransformationMode.SmoothTransformation,
+                        )
+                        thumb.update()
+                grid._flow._do_layout()
+        # Apply flip layout live
+        flip = self._db.get_setting_bool("flip_layout")
+        current_first = self._splitter.widget(0)
+        want_right_first = flip
+        right_is_first = current_first is self._right_splitter
+        if want_right_first != right_is_first:
+            self._splitter.insertWidget(0, self._right_splitter if flip else self._stack)
         self._status.showMessage("Settings applied")
 
     # -- Fullscreen & Privacy --
