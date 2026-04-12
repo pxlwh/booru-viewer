@@ -596,8 +596,20 @@ class BooruApp(QMainWindow):
         if index != 2:
             self._library_view._grid.clear_selection()
         is_library = index == 2
-        self._preview.update_bookmark_state(False)
-        self._preview.update_save_state(is_library)
+        # Resolve actual bookmark/save state for the current preview post
+        # so toolbar buttons reflect reality instead of a per-tab default.
+        post = self._preview._current_post
+        if post:
+            site_id = self._preview._current_site_id or self._site_combo.currentData()
+            self._preview.update_bookmark_state(
+                bool(site_id and self._db.is_bookmarked(site_id, post.id))
+            )
+            self._preview.update_save_state(
+                is_library or self._post_actions.is_post_saved(post.id)
+            )
+        else:
+            self._preview.update_bookmark_state(False)
+            self._preview.update_save_state(is_library)
         # Show/hide preview toolbar buttons per tab
         self._preview._bookmark_btn.setVisible(not is_library)
         self._preview._bl_tag_btn.setVisible(not is_library)
@@ -761,8 +773,17 @@ class BooruApp(QMainWindow):
         self._preview.update_save_state(self._post_actions.is_post_saved(post.id))
         info = f"Bookmark #{fav.post_id}"
 
+        def _set_dims_from_file(filepath: str) -> None:
+            """Read image dimensions from a local file into the Post object
+            so the popout can set keep_aspect_ratio correctly."""
+            w, h = MediaController.image_dimensions(filepath)
+            if w and h:
+                post.width = w
+                post.height = h
+
         # Try local cache first
         if fav.cached_path and Path(fav.cached_path).exists():
+            _set_dims_from_file(fav.cached_path)
             self._media_ctrl.set_preview_media(fav.cached_path, info)
             self._popout_ctrl.update_media(fav.cached_path, info)
             return
@@ -773,6 +794,7 @@ class BooruApp(QMainWindow):
         # legacy digit-stem files would be found).
         from ..core.config import find_library_files
         for path in find_library_files(fav.post_id, db=self._db):
+            _set_dims_from_file(str(path))
             self._media_ctrl.set_preview_media(str(path), info)
             self._popout_ctrl.update_media(str(path), info)
             return
