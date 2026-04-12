@@ -72,6 +72,7 @@ class MediaController:
         self._app = app
         self._prefetch_pause = asyncio.Event()
         self._prefetch_pause.set()  # not paused
+        self._last_evict_check = 0.0  # monotonic timestamp
 
     # -- Post activation (media load) --
 
@@ -233,6 +234,11 @@ class MediaController:
     # -- Cache eviction --
 
     def auto_evict_cache(self) -> None:
+        import time
+        now = time.monotonic()
+        if now - self._last_evict_check < 30:
+            return
+        self._last_evict_check = now
         if not self._app._db.get_setting_bool("auto_evict"):
             return
         max_mb = self._app._db.get_setting_int("max_cache_mb")
@@ -258,15 +264,16 @@ class MediaController:
 
     @staticmethod
     def image_dimensions(path: str) -> tuple[int, int]:
-        """Read image width/height from a local file."""
+        """Read image width/height from a local file without decoding pixels."""
         from .media.constants import _is_video
         if _is_video(path):
             return 0, 0
         try:
-            from PySide6.QtGui import QPixmap
-            pix = QPixmap(path)
-            if not pix.isNull():
-                return pix.width(), pix.height()
+            from PySide6.QtGui import QImageReader
+            reader = QImageReader(path)
+            size = reader.size()
+            if size.isValid():
+                return size.width(), size.height()
         except Exception:
             pass
         return 0, 0
