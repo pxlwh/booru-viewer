@@ -139,6 +139,8 @@ class FullscreenPreview(QMainWindow):
         self._stack = QStackedWidget()
         central.layout().addWidget(self._stack)
 
+        self._vol_scroll_accum = 0
+
         self._viewer = ImageViewer()
         self._viewer.close_requested.connect(self.close)
         self._stack.addWidget(self._viewer)
@@ -1454,13 +1456,11 @@ class FullscreenPreview(QMainWindow):
                 return True
             # Vertical wheel adjusts volume on the video stack only
             if self._stack.currentIndex() == 1:
-                delta = event.angleDelta().y()
-                if delta:
-                    vol = max(0, min(100, self._video.volume + (5 if delta > 0 else -5)))
-                    # Dispatch VolumeSet so state.volume tracks. The
-                    # actual mpv.volume write still happens via the
-                    # legacy assignment below — ApplyVolume is a no-op
-                    # in 14b (see _apply_effects docstring).
+                self._vol_scroll_accum += event.angleDelta().y()
+                steps = self._vol_scroll_accum // 120
+                if steps:
+                    self._vol_scroll_accum -= steps * 120
+                    vol = max(0, min(100, self._video.volume + 5 * steps))
                     self._dispatch_and_apply(VolumeSet(value=vol))
                     self._video.volume = vol
                     self._show_overlay()
