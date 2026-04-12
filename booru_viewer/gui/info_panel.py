@@ -140,7 +140,7 @@ class InfoPanel(QWidget):
                 color = self._category_color(category)
                 header = QLabel(f"{category}:")
                 header.setStyleSheet(
-                    f"font-weight: bold; margin-top: 6px; margin-bottom: 2px;"
+                    "font-weight: bold; margin-top: 6px; margin-bottom: 2px;"
                     + (f" color: {color};" if color else "")
                 )
                 self._tags_flow.addWidget(header)
