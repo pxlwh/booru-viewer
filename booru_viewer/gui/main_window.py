@@ -1084,9 +1084,11 @@ class BooruApp(QMainWindow):
             if 0 <= idx < len(self._posts):
                 self._post_actions.toggle_bookmark(idx)
                 return
-        if key == Qt.Key.Key_S and self._preview._current_post:
-            self._post_actions.toggle_save_from_preview()
-            return
+        if key == Qt.Key.Key_S and self._posts:
+            idx = self._grid.selected_index
+            if 0 <= idx < len(self._posts):
+                self._post_actions.toggle_save_from_preview()
+                return
         elif key == Qt.Key.Key_I:
             self._toggle_info()
             return
