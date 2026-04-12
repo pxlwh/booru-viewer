@@ -124,11 +124,29 @@ class SearchController:
         self._search = SearchState()
         self._last_scroll_page = 0
         self._infinite_scroll = app._db.get_setting_bool("infinite_scroll")
+        # Cached lookup sets — rebuilt once per search, reused in
+        # _drain_append_queue to avoid repeated DB queries and directory
+        # listings on every infinite-scroll append.
+        self._cached_names: set[str] | None = None
+        self._bookmarked_ids: set[int] | None = None
+        self._saved_ids: set[int] | None = None
 
     def reset(self) -> None:
         """Reset search state for a site change."""
         self._search.shown_post_ids.clear()
         self._search.page_cache.clear()
+        self._cached_names = None
+        self._bookmarked_ids = None
+        self._saved_ids = None
+
+    def invalidate_lookup_caches(self) -> None:
+        """Clear cached bookmark/saved/cache-dir sets.
+
+        Call after a bookmark or save operation so the next
+        ``_drain_append_queue`` picks up the change.
+        """
+        self._bookmarked_ids = None
+        self._saved_ids = None
 
     def clear_loading(self) -> None:
         self._loading = False
@@ -140,6 +158,9 @@ class SearchController:
         self._app._page_spin.setValue(1)
         self._current_page = 1
         self._search = SearchState()
+        self._cached_names = None
+        self._bookmarked_ids = None
+        self._saved_ids = None
         self._min_score = self._app._score_spin.value()
         self._app._preview.clear()
         self._app._next_page_btn.setVisible(True)
@@ -296,22 +317,22 @@ class SearchController:
         from ..core.cache import cached_path_for, cache_dir
         site_id = self._app._site_combo.currentData()
 
-        _saved_ids = self._app._db.get_saved_post_ids()
+        self._saved_ids = self._app._db.get_saved_post_ids()
 
         _favs = self._app._db.get_bookmarks(site_id=site_id) if site_id else []
-        _bookmarked_ids: set[int] = {f.post_id for f in _favs}
+        self._bookmarked_ids = {f.post_id for f in _favs}
 
         _cd = cache_dir()
-        _cached_names: set[str] = set()
+        self._cached_names = set()
         if _cd.exists():
-            _cached_names = {f.name for f in _cd.iterdir() if f.is_file()}
+            self._cached_names = {f.name for f in _cd.iterdir() if f.is_file()}
 
         for i, (post, thumb) in enumerate(zip(posts, thumbs)):
-            if post.id in _bookmarked_ids:
+            if post.id in self._bookmarked_ids:
                 thumb.set_bookmarked(True)
-            thumb.set_saved_locally(post.id in _saved_ids)
+            thumb.set_saved_locally(post.id in self._saved_ids)
             cached = cached_path_for(post.file_url)
-            if cached.name in _cached_names:
+            if cached.name in self._cached_names:
                 thumb._cached_path = str(cached)
 
             if post.preview_url:
@@ -449,16 +470,23 @@ class SearchController:
             self._loading = False
             return
 
-        from ..core.cache import cached_path_for, cache_dir
-        site_id = self._app._site_combo.currentData()
-        _saved_ids = self._app._db.get_saved_post_ids()
+        from ..core.cache import cached_path_for
 
-        _favs = self._app._db.get_bookmarks(site_id=site_id) if site_id else []
-        _bookmarked_ids: set[int] = {f.post_id for f in _favs}
-        _cd = cache_dir()
-        _cached_names: set[str] = set()
-        if _cd.exists():
-            _cached_names = {f.name for f in _cd.iterdir() if f.is_file()}
+        # Reuse the lookup sets built in on_search_done. They stay valid
+        # within an infinite-scroll session — bookmarks/saves don't change
+        # during passive scrolling, and the cache directory only grows.
+        if self._saved_ids is None:
+            self._saved_ids = self._app._db.get_saved_post_ids()
+        if self._bookmarked_ids is None:
+            site_id = self._app._site_combo.currentData()
+            _favs = self._app._db.get_bookmarks(site_id=site_id) if site_id else []
+            self._bookmarked_ids = {f.post_id for f in _favs}
+        if self._cached_names is None:
+            from ..core.cache import cache_dir
+            _cd = cache_dir()
+            self._cached_names = set()
+            if _cd.exists():
+                self._cached_names = {f.name for f in _cd.iterdir() if f.is_file()}
 
         posts = ss.append_queue[:]
         ss.append_queue.clear()
@@ -468,11 +496,11 @@ class SearchController:
 
         for i, (post, thumb) in enumerate(zip(posts, thumbs)):
             idx = start_idx + i
-            if post.id in _bookmarked_ids:
+            if post.id in self._bookmarked_ids:
                 thumb.set_bookmarked(True)
-            thumb.set_saved_locally(post.id in _saved_ids)
+            thumb.set_saved_locally(post.id in self._saved_ids)
             cached = cached_path_for(post.file_url)
-            if cached.name in _cached_names:
+            if cached.name in self._cached_names:
                 thumb._cached_path = str(cached)
             if post.preview_url:
                 self.fetch_thumbnail(idx, post.preview_url)
