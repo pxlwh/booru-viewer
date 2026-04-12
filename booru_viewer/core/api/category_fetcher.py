@@ -593,6 +593,9 @@ def _parse_tag_response(resp) -> list[tuple[str, int]]:
         return []
     out: list[tuple[str, int]] = []
     if body.startswith("<"):
+        if "<!DOCTYPE" in body or "<!ENTITY" in body:
+            log.warning("XML response contains DOCTYPE/ENTITY, skipping")
+            return []
         try:
             root = ET.fromstring(body)
         except ET.ParseError as e:
