@@ -3,21 +3,16 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 log = logging.getLogger("booru")
 
 from PySide6.QtCore import Qt, Signal, QSize, QRect, QRectF, QMimeData, QUrl, QPoint, Property, QPropertyAnimation, QEasingCurve
-from PySide6.QtGui import QPixmap, QPainter, QPainterPath, QColor, QPen, QKeyEvent, QWheelEvent, QDrag, QMouseEvent
+from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QKeyEvent, QWheelEvent, QDrag, QMouseEvent
 from PySide6.QtWidgets import (
     QWidget,
     QScrollArea,
-    QMenu,
-    QApplication,
     QRubberBand,
 )
-
-from ..core.api.base import Post
 
 THUMB_SIZE = 180
 THUMB_SPACING = 2
@@ -382,6 +377,8 @@ class FlowLayout(QWidget):
 
     def clear(self) -> None:
         for w in self._items:
+            if hasattr(w, '_fade_anim') and w._fade_anim is not None:
+                w._fade_anim.stop()
             w.setParent(None)  # type: ignore
             w.deleteLater()
         self._items.clear()
