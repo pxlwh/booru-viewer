@@ -335,6 +335,7 @@ class BooruApp(QMainWindow):
         self._right_splitter = right = QSplitter(Qt.Orientation.Vertical)
 
         self._preview = ImagePreview()
+        self._preview._video_player._loudnorm = self._db.get_setting_bool("loudnorm")
         self._preview.close_requested.connect(self._close_preview)
         self._preview.open_in_default.connect(self._open_preview_in_default)
         self._preview.open_in_browser.connect(self._open_preview_in_browser)
@@ -1077,6 +1078,13 @@ class BooruApp(QMainWindow):
         right_is_first = current_first is self._right_splitter
         if want_right_first != right_is_first:
             self._splitter.insertWidget(0, self._right_splitter if flip else self._stack)
+        # Apply audio normalization live
+        loudnorm = self._db.get_setting_bool("loudnorm")
+        af_val = "loudnorm" if loudnorm else ""
+        for vp in self._get_all_video_players():
+            vp._loudnorm = loudnorm
+            if vp._mpv is not None:
+                vp._mpv.af = af_val
         self._status.showMessage("Settings applied")
 
     # -- Fullscreen & Privacy --
@@ -1103,6 +1111,14 @@ class BooruApp(QMainWindow):
         # timer regardless. resizeEvent is the more reliable trigger.
         if hasattr(self, '_main_window_save_timer'):
             self._main_window_save_timer.start()
+
+    def _get_all_video_players(self):
+        """Return every VideoPlayer instance that currently exists."""
+        players = [self._preview._video_player]
+        pw = self._popout_ctrl.window
+        if pw is not None:
+            players.append(pw._video)
+        return players
 
     # -- Keyboard shortcuts --
 
