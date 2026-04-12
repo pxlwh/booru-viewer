@@ -5,10 +5,9 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import Qt, QTimer, Signal, Property, QPoint
-from PySide6.QtGui import QColor, QIcon, QPixmap, QPainter, QPen, QBrush, QPolygon, QPainterPath, QFont
+from PySide6.QtGui import QColor, QIcon, QPixmap, QPainter, QPen, QPolygon, QPainterPath, QFont
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSlider, QStyle,
-    QApplication,
 )
 
 
