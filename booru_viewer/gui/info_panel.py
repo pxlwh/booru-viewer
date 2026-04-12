@@ -144,7 +144,7 @@ class InfoPanel(QWidget):
                     + (f" color: {color};" if color else "")
                 )
                 self._tags_flow.addWidget(header)
-                for tag in tags[:50]:
+                for tag in tags:
                     btn = QPushButton(tag)
                     btn.setFlat(True)
                     btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -160,7 +160,7 @@ class InfoPanel(QWidget):
             # in-flight. When a fetch IS pending, leaving the tags
             # area empty avoids the flat→categorized re-layout hitch
             # (categories arrive ~200ms later and render in one pass).
-            for tag in post.tag_list[:100]:
+            for tag in post.tag_list:
                 btn = QPushButton(tag)
                 btn.setFlat(True)
                 btn.setCursor(Qt.CursorShape.PointingHandCursor)
