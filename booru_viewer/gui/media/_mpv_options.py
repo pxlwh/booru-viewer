@@ -78,7 +78,7 @@ def build_mpv_kwargs(is_windows: bool) -> dict[str, object]:
         "vd_lavc_skiploopfilter": "nonkey",
         "cache": "yes",
         "cache_pause": "no",
-        "demuxer_max_bytes": "150MiB",
+        "demuxer_max_bytes": "50MiB",
         "demuxer_readahead_secs": "20",
         "network_timeout": "10",
         "ytdl": "no",
