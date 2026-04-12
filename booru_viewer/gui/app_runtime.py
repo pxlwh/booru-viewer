@@ -309,11 +309,32 @@ def run() -> None:
         # No custom.qss — force Fusion widgets so distro pyside6 builds linked
         # against system Qt don't pick up Breeze (or whatever the platform
         # theme plugin supplies) and diverge from the bundled-Qt look that
-        # source-from-pip users get. The inherited palette is intentionally
-        # left alone: KDE writes ~/.config/Trolltech.conf which every Qt app
-        # reads, so KDE users still get their color scheme — just under
-        # Fusion widgets instead of Breeze.
+        # source-from-pip users get.
         app.setStyle("Fusion")
+        # If no system theme is detected, apply a dark Fusion palette so
+        # fresh installs don't land on blinding white.  KDE/GNOME users
+        # keep their palette (dark or light) — we only intervene when
+        # Qt is running on its built-in defaults with no Trolltech.conf.
+        from PySide6.QtGui import QPalette, QColor
+        pal = app.palette()
+        _has_system_theme = Path("~/.config/Trolltech.conf").expanduser().exists()
+        if not _has_system_theme and pal.color(QPalette.ColorRole.Window).lightness() > 128:
+            dark = QPalette()
+            dark.setColor(QPalette.ColorRole.Window, QColor("#2b2b2b"))
+            dark.setColor(QPalette.ColorRole.WindowText, QColor("#d4d4d4"))
+            dark.setColor(QPalette.ColorRole.Base, QColor("#232323"))
+            dark.setColor(QPalette.ColorRole.AlternateBase, QColor("#2b2b2b"))
+            dark.setColor(QPalette.ColorRole.Text, QColor("#d4d4d4"))
+            dark.setColor(QPalette.ColorRole.Button, QColor("#353535"))
+            dark.setColor(QPalette.ColorRole.ButtonText, QColor("#d4d4d4"))
+            dark.setColor(QPalette.ColorRole.BrightText, QColor("#ff4444"))
+            dark.setColor(QPalette.ColorRole.Highlight, QColor("#3daee9"))
+            dark.setColor(QPalette.ColorRole.HighlightedText, QColor("#1e1e1e"))
+            dark.setColor(QPalette.ColorRole.ToolTipBase, QColor("#353535"))
+            dark.setColor(QPalette.ColorRole.ToolTipText, QColor("#d4d4d4"))
+            dark.setColor(QPalette.ColorRole.PlaceholderText, QColor("#7a7a7a"))
+            dark.setColor(QPalette.ColorRole.Link, QColor("#3daee9"))
+            app.setPalette(dark)
         # Install the popout overlay defaults so the floating toolbar/controls
         # have a sane background instead of bare letterbox color.
         app.setStyleSheet(_BASE_POPOUT_OVERLAY_QSS)
