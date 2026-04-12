@@ -337,7 +337,6 @@ class VideoPlayer(QWidget):
         self._stream_record_tmp: Path | None = None
         self._stream_record_target: Path | None = None
         self._seeked_during_record: bool = False
-        self._loudnorm: bool = False
 
     def _ensure_mpv(self) -> mpvlib.MPV:
         """Set up mpv callbacks on first use. MPV instance is pre-created."""
@@ -365,9 +364,6 @@ class VideoPlayer(QWidget):
         # exists. The qproperty-letterboxColor setter is a no-op if mpv
         # hasn't been initialized yet, so we have to (re)apply on init.
         self._apply_letterbox_color()
-        # Apply audio normalization if enabled in settings.
-        if self._loudnorm:
-            self._mpv.af = "loudnorm"
         return self._mpv
 
     # -- Public API (used by app.py for state sync) --
