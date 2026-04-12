@@ -274,14 +274,18 @@ class LibraryView(QWidget):
     def _sort_files(self) -> None:
         mode = self._sort_combo.currentText()
         if mode == "Post ID":
-            # Numeric sort by post id (filename stem). Library files are
-            # named {post_id}.{ext} in normal usage; anything with a
-            # non-digit stem (someone manually dropped a file in) sorts
-            # to the end alphabetically so the numeric ordering of real
-            # posts isn't disrupted by stray names.
+            # Numeric sort by post id. Resolves templated filenames
+            # (e.g. artist_12345.jpg) via library_meta DB lookup, falls
+            # back to digit-stem parsing for legacy files. Anything
+            # without a resolvable post_id sorts to the end alphabetically.
             def _key(p: Path) -> tuple:
-                stem = p.stem
-                return (0, int(stem)) if stem.isdigit() else (1, stem.lower())
+                if self._db:
+                    pid = self._db.get_library_post_id_by_filename(p.name)
+                    if pid is not None:
+                        return (0, pid)
+                if p.stem.isdigit():
+                    return (0, int(p.stem))
+                return (1, p.stem.lower())
             self._files.sort(key=_key)
         elif mode == "Size":
             self._files.sort(key=lambda p: p.stat().st_size, reverse=True)
