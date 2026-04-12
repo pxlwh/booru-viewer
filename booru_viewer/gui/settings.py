@@ -21,7 +21,6 @@ from PySide6.QtWidgets import (
     QListWidget,
     QMessageBox,
     QGroupBox,
-    QProgressBar,
 )
 
 from ..core.db import Database
