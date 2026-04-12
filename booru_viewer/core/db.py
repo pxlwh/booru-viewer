@@ -767,9 +767,14 @@ class Database:
 
     def search_library_meta(self, query: str) -> set[int]:
         """Search library metadata by tags. Returns matching post IDs."""
+        escaped = (
+            query.replace("\\", "\\\\")
+                 .replace("%", "\\%")
+                 .replace("_", "\\_")
+        )
         rows = self.conn.execute(
-            "SELECT post_id FROM library_meta WHERE tags LIKE ?",
-            (f"%{query}%",),
+            "SELECT post_id FROM library_meta WHERE tags LIKE ? ESCAPE '\\'",
+            (f"%{escaped}%",),
         ).fetchall()
         return {r["post_id"] for r in rows}
 
