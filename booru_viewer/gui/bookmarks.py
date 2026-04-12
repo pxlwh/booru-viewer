@@ -215,7 +215,7 @@ class BookmarksView(QWidget):
             elif fav.cached_path and Path(fav.cached_path).exists():
                 pix = QPixmap(fav.cached_path)
                 if not pix.isNull():
-                    thumb.set_pixmap(pix)
+                    thumb.set_pixmap(pix, fav.cached_path)
 
     def _load_thumb_async(self, index: int, url: str) -> None:
         # Schedule the download on the persistent event loop instead of
@@ -236,7 +236,7 @@ class BookmarksView(QWidget):
         if 0 <= index < len(thumbs):
             pix = QPixmap(path)
             if not pix.isNull():
-                thumbs[index].set_pixmap(pix)
+                thumbs[index].set_pixmap(pix, path)
 
     def _on_save_done(self, post_id: int) -> None:
         """Light the saved-locally dot on the thumbnail for post_id."""
