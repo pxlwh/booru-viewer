@@ -520,7 +520,8 @@ class LibraryView(QWidget):
                 if post_id is None and filepath.stem.isdigit():
                     post_id = int(filepath.stem)
                 filepath.unlink(missing_ok=True)
-                lib_thumb = thumbnails_dir() / "library" / f"{filepath.stem}.jpg"
+                thumb_key = str(post_id) if post_id is not None else filepath.stem
+                lib_thumb = thumbnails_dir() / "library" / f"{thumb_key}.jpg"
                 lib_thumb.unlink(missing_ok=True)
                 if post_id is not None:
                     self._db.remove_library_meta(post_id)
@@ -575,7 +576,8 @@ class LibraryView(QWidget):
                     if post_id is None and f.stem.isdigit():
                         post_id = int(f.stem)
                     f.unlink(missing_ok=True)
-                    lib_thumb = thumbnails_dir() / "library" / f"{f.stem}.jpg"
+                    thumb_key = str(post_id) if post_id is not None else f.stem
+                    lib_thumb = thumbnails_dir() / "library" / f"{thumb_key}.jpg"
                     lib_thumb.unlink(missing_ok=True)
                     if post_id is not None:
                         self._db.remove_library_meta(post_id)
