@@ -244,6 +244,7 @@ class PostActionsController:
 
         if self._app._db.is_bookmarked(site_id, post.id):
             self._app._db.remove_bookmark(site_id, post.id)
+            self._app._search_ctrl.invalidate_lookup_caches()
             self._app._status.showMessage(f"Unbookmarked #{post.id}")
             thumbs = self._app._grid._thumbs
             if 0 <= index < len(thumbs):
@@ -538,6 +539,7 @@ class PostActionsController:
 
     def on_bookmark_done(self, index: int, msg: str) -> None:
         self._app._status.showMessage(f"{len(self._app._posts)} results — {msg}")
+        self._app._search_ctrl.invalidate_lookup_caches()
         # Detect batch operations (e.g. "Saved 3/10 to Unfiled") -- skip heavy updates
         is_batch = is_batch_message(msg)
         thumbs = self._app._grid._thumbs
