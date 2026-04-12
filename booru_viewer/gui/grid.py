@@ -106,12 +106,14 @@ class ThumbnailWidget(QWidget):
             Qt.TransformationMode.SmoothTransformation,
         )
         self._thumb_opacity = 0.0
-        self._fade_anim = QPropertyAnimation(self, b"thumbOpacity")
-        self._fade_anim.setDuration(200)
-        self._fade_anim.setStartValue(0.0)
-        self._fade_anim.setEndValue(1.0)
-        self._fade_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-        self._fade_anim.start()
+        anim = QPropertyAnimation(self, b"thumbOpacity")
+        anim.setDuration(200)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        anim.finished.connect(anim.deleteLater)
+        self._fade_anim = anim
+        anim.start()
 
     def set_selected(self, selected: bool) -> None:
         self._selected = selected
