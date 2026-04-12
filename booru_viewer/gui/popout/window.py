@@ -1486,7 +1486,7 @@ class FullscreenPreview(QMainWindow):
             cursor_pos = self.mapFromGlobal(event.globalPosition().toPoint() if hasattr(event, 'globalPosition') else event.globalPos())
             y = cursor_pos.y()
             h = self.height()
-            zone = 40  # px from top/bottom edge to trigger
+            zone = max(60, h // 10)  # ~10% of window height, floor 60px
             if y < zone:
                 self._toolbar.show()
                 self._hide_timer.start()
