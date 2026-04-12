@@ -1,5 +1,51 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- Video stutter on network streams — `cache_pause_initial` was blocking first frame, reverted cache_pause changes and kept larger demuxer buffer
+- Rubber band selection state getting stuck across interrupted drags
+- LIKE wildcards in `search_library_meta` not being escaped
+- Copy File to Clipboard broken in preview pane and popout; added Copy Image URL action
+- Thumbnail cleanup and Post ID sort broken for templated filenames in library
+- Save/unsave bookmark UX — no flash on toggle, correct dot indicators
+- Autocomplete broken for multi-tag queries
+- Search not resetting to page 1 on new query
+- Fade animation cleanup crashing `FlowLayout.clear`
+- Privacy toggle not preserving video pause state
+- Bookmarks grid not refreshing on unsave
+- `_cached_path` not set for streaming videos
+- Standard icon column showing in QMessageBox dialogs
+- Popout aspect lock for bookmarks now reads actual image dimensions instead of guessing
+
+### Changed
+- Save/Unsave from Library mutually exclusive in context menus, preview pane, and popout
+- S key guard consistent with B/F behavior
+- Tag count limits removed from info panel
+- Ctrl+S and Ctrl+D menu shortcuts removed (conflict-prone)
+- Thumbnail fade-in shortened from 200ms to 80ms
+- Default demuxer buffer reduced to 50MiB; streaming URLs still get 150MiB
+- Minimum width set on thumbnail grid
+- Popout overlay hover zone enlarged
+- Settings dialog gets an Apply button; thumbnail size and flip layout apply live
+- Tab selection preserved on view switch
+- Scroll delta accumulated for volume control and zoom (smoother with hi-res scroll wheels)
+- Force Fusion widget style when no `custom.qss` is present
+
+### Performance
+- Thumbnails re-decoded from disk on size change instead of holding full pixmaps in memory
+- Off-screen thumbnail pixmaps recycled (decoded on demand from cached path)
+- Lookup sets cached across infinite scroll appends; invalidated on bookmark/save
+- `auto_evict_cache` throttled to once per 30s
+- Stale prefetch spirals cancelled on new click
+- Single-pass directory walk in cache eviction functions
+- GTK dialog platform detection cached instead of recreating Database per call
+
+### Removed
+- Dead code: `core/images.py`
+- `TODO.md`
+- Unused imports across `main_window`, `grid`, `settings`, `dialogs`, `sites`, `search_controller`
+
 ## v0.2.6
 
 ### Security: 2026-04-10 audit remediation
