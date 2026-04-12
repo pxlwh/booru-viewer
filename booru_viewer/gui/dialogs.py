@@ -9,17 +9,29 @@ from PySide6.QtWidgets import QFileDialog, QWidget
 from ..core.config import IS_WINDOWS
 
 
+_gtk_cached: bool | None = None
+
 def _use_gtk() -> bool:
+    global _gtk_cached
     if IS_WINDOWS:
         return False
+    if _gtk_cached is not None:
+        return _gtk_cached
     try:
         from ..core.db import Database
         db = Database()
         val = db.get_setting("file_dialog_platform")
         db.close()
-        return val == "gtk"
+        _gtk_cached = val == "gtk"
     except Exception:
-        return False
+        _gtk_cached = False
+    return _gtk_cached
+
+
+def reset_gtk_cache() -> None:
+    """Called after settings change so the next dialog picks up the new value."""
+    global _gtk_cached
+    _gtk_cached = None
 
 
 def save_file(
