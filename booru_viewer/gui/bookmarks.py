@@ -32,6 +32,7 @@ log = logging.getLogger("booru")
 
 class BookmarkThumbSignals(QObject):
     thumb_ready = Signal(int, str)
+    save_done = Signal(int)  # post_id
 
 
 class BookmarksView(QWidget):
@@ -48,6 +49,7 @@ class BookmarksView(QWidget):
         self._bookmarks: list[Bookmark] = []
         self._signals = BookmarkThumbSignals()
         self._signals.thumb_ready.connect(self._on_thumb_ready, Qt.ConnectionType.QueuedConnection)
+        self._signals.save_done.connect(self._on_save_done, Qt.ConnectionType.QueuedConnection)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -236,6 +238,13 @@ class BookmarksView(QWidget):
             if not pix.isNull():
                 thumbs[index].set_pixmap(pix)
 
+    def _on_save_done(self, post_id: int) -> None:
+        """Light the saved-locally dot on the thumbnail for post_id."""
+        for i, fav in enumerate(self._bookmarks):
+            if fav.post_id == post_id and i < len(self._grid._thumbs):
+                self._grid._thumbs[i].set_saved_locally(True)
+                break
+
     def _do_search(self) -> None:
         text = self._search_input.text().strip()
         self.refresh(search=text if text else None)
@@ -290,6 +299,7 @@ class BookmarksView(QWidget):
         async def _do():
             try:
                 await save_post_file(src, post, dest_dir, self._db)
+                self._signals.save_done.emit(fav.post_id)
             except Exception as e:
                 log.warning(f"Bookmark→library save #{fav.post_id} failed: {e}")
 
@@ -329,25 +339,25 @@ class BookmarksView(QWidget):
         menu.addSeparator()
         save_as = menu.addAction("Save As...")
 
-        # Save to Library submenu — folders come from the library
-        # filesystem, not the bookmark folder DB.
+        # Save to Library / Unsave — mutually exclusive based on
+        # whether the post is already in the library.
         from ..core.config import library_folders
-        save_lib_menu = menu.addMenu("Save to Library")
-        save_lib_unsorted = save_lib_menu.addAction("Unfiled")
-        save_lib_menu.addSeparator()
+        save_lib_menu = None
+        save_lib_unsorted = None
+        save_lib_new = None
         save_lib_folders = {}
-        for folder in library_folders():
-            a = save_lib_menu.addAction(folder)
-            save_lib_folders[id(a)] = folder
-        save_lib_menu.addSeparator()
-        save_lib_new = save_lib_menu.addAction("+ New Folder...")
-
         unsave_lib = None
-        # Only show unsave if the post is actually saved. is_post_in_library
-        # is the format-agnostic DB check — works for digit-stem and
-        # templated filenames alike.
         if self._db.is_post_in_library(fav.post_id):
             unsave_lib = menu.addAction("Unsave from Library")
+        else:
+            save_lib_menu = menu.addMenu("Save to Library")
+            save_lib_unsorted = save_lib_menu.addAction("Unfiled")
+            save_lib_menu.addSeparator()
+            for folder in library_folders():
+                a = save_lib_menu.addAction(folder)
+                save_lib_folders[id(a)] = folder
+            save_lib_menu.addSeparator()
+            save_lib_new = save_lib_menu.addAction("+ New Folder...")
         copy_file = menu.addAction("Copy File to Clipboard")
         copy_url = menu.addAction("Copy Image URL")
         copy_tags = menu.addAction("Copy Tags")
@@ -373,13 +383,9 @@ class BookmarksView(QWidget):
 
         if action == save_lib_unsorted:
             self._copy_to_library_unsorted(fav)
-            self.refresh()
         elif action == save_lib_new:
             name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
             if ok and name.strip():
-                # Validate the name via saved_folder_dir() which mkdir's
-                # the library subdir and runs the path-traversal check.
-                # No DB folder write — bookmark folders are independent.
                 try:
                     from ..core.config import saved_folder_dir
                     saved_folder_dir(name.strip())
@@ -387,11 +393,9 @@ class BookmarksView(QWidget):
                     QMessageBox.warning(self, "Invalid Folder Name", str(e))
                     return
                 self._copy_to_library(fav, name.strip())
-                self.refresh()
         elif id(action) in save_lib_folders:
             folder_name = save_lib_folders[id(action)]
             self._copy_to_library(fav, folder_name)
-            self.refresh()
         elif action == open_browser:
             self.open_in_browser_requested.emit(fav.site_id, fav.post_id)
         elif action == open_default:
@@ -421,12 +425,11 @@ class BookmarksView(QWidget):
                     run_on_app_loop(_do_save_as())
         elif action == unsave_lib:
             from ..core.cache import delete_from_library
-            # Pass db so templated filenames are matched and the meta
-            # row gets cleaned up. Refresh on success OR on a meta-only
-            # cleanup (orphan row, no on-disk file) — either way the
-            # saved-dot indicator state has changed.
             delete_from_library(fav.post_id, db=self._db)
-            self.refresh()
+            for i, f in enumerate(self._bookmarks):
+                if f.post_id == fav.post_id and i < len(self._grid._thumbs):
+                    self._grid._thumbs[i].set_saved_locally(False)
+                    break
             self.bookmarks_changed.emit()
         elif action == copy_file:
             path = fav.cached_path
@@ -477,21 +480,25 @@ class BookmarksView(QWidget):
 
         menu = QMenu(self)
 
-        # Save All to Library submenu — folders are filesystem-truth.
-        # Conversion from a flat action to a submenu so the user can
-        # pick a destination instead of having "save all" silently use
-        # each bookmark's fav.folder (which was the cross-bleed bug).
-        save_lib_menu = menu.addMenu(f"Save All ({len(favs)}) to Library")
-        save_lib_unsorted = save_lib_menu.addAction("Unfiled")
-        save_lib_menu.addSeparator()
-        save_lib_folder_actions: dict[int, str] = {}
-        for folder in library_folders():
-            a = save_lib_menu.addAction(folder)
-            save_lib_folder_actions[id(a)] = folder
-        save_lib_menu.addSeparator()
-        save_lib_new = save_lib_menu.addAction("+ New Folder...")
+        any_unsaved = any(not self._db.is_post_in_library(f.post_id) for f in favs)
+        any_saved = any(self._db.is_post_in_library(f.post_id) for f in favs)
 
-        unsave_all = menu.addAction(f"Unsave All ({len(favs)}) from Library")
+        save_lib_menu = None
+        save_lib_unsorted = None
+        save_lib_new = None
+        save_lib_folder_actions: dict[int, str] = {}
+        unsave_all = None
+        if any_unsaved:
+            save_lib_menu = menu.addMenu(f"Save All ({len(favs)}) to Library")
+            save_lib_unsorted = save_lib_menu.addAction("Unfiled")
+            save_lib_menu.addSeparator()
+            for folder in library_folders():
+                a = save_lib_menu.addAction(folder)
+                save_lib_folder_actions[id(a)] = folder
+            save_lib_menu.addSeparator()
+            save_lib_new = save_lib_menu.addAction("+ New Folder...")
+        if any_saved:
+            unsave_all = menu.addAction(f"Unsave All ({len(favs)}) from Library")
         menu.addSeparator()
 
         # Move to Folder is bookmark organization — reads from the DB.
@@ -516,7 +523,6 @@ class BookmarksView(QWidget):
                     self._copy_to_library(fav, folder_name)
                 else:
                     self._copy_to_library_unsorted(fav)
-            self.refresh()
 
         if action == save_lib_unsorted:
             _save_all_into(None)
@@ -534,9 +540,13 @@ class BookmarksView(QWidget):
             _save_all_into(save_lib_folder_actions[id(action)])
         elif action == unsave_all:
             from ..core.cache import delete_from_library
+            unsaved_ids = set()
             for fav in favs:
                 delete_from_library(fav.post_id, db=self._db)
-            self.refresh()
+                unsaved_ids.add(fav.post_id)
+            for i, fav in enumerate(self._bookmarks):
+                if fav.post_id in unsaved_ids and i < len(self._grid._thumbs):
+                    self._grid._thumbs[i].set_saved_locally(False)
             self.bookmarks_changed.emit()
         elif action == move_none:
             for fav in favs:
