@@ -923,20 +923,23 @@ class FullscreenPreview(QMainWindow):
             bm_menu.addSeparator()
             bm_new_action = bm_menu.addAction("+ New Folder...")
 
-        save_menu = menu.addMenu("Save to Library")
-        save_unsorted = save_menu.addAction("Unfiled")
-        save_menu.addSeparator()
+        save_menu = None
+        save_unsorted = None
+        save_new = None
         save_folder_actions = {}
-        if self._folders_callback:
-            for folder in self._folders_callback():
-                a = save_menu.addAction(folder)
-                save_folder_actions[id(a)] = folder
-        save_menu.addSeparator()
-        save_new = save_menu.addAction("+ New Folder...")
-
         unsave_action = None
         if self._is_saved:
             unsave_action = menu.addAction("Unsave from Library")
+        else:
+            save_menu = menu.addMenu("Save to Library")
+            save_unsorted = save_menu.addAction("Unfiled")
+            save_menu.addSeparator()
+            if self._folders_callback:
+                for folder in self._folders_callback():
+                    a = save_menu.addAction(folder)
+                    save_folder_actions[id(a)] = folder
+            save_menu.addSeparator()
+            save_new = save_menu.addAction("+ New Folder...")
 
         menu.addSeparator()
         copy_action = menu.addAction("Copy File to Clipboard")
