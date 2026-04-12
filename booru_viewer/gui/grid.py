@@ -74,6 +74,7 @@ class ThumbnailWidget(QWidget):
         super().__init__(parent)
         self.index = index
         self._pixmap: QPixmap | None = None
+        self._source_pixmap: QPixmap | None = None  # original, for re-scaling on size change
         self._selected = False
         self._multi_selected = False
         self._bookmarked = False
@@ -97,6 +98,7 @@ class ThumbnailWidget(QWidget):
         self.setMouseTracking(True)
 
     def set_pixmap(self, pixmap: QPixmap) -> None:
+        self._source_pixmap = pixmap
         self._pixmap = pixmap.scaled(
             THUMB_SIZE - 4, THUMB_SIZE - 4,
             Qt.AspectRatioMode.KeepAspectRatio,
