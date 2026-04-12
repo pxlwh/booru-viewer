@@ -193,9 +193,12 @@ class PostActionsController:
                 if fav.post_id == post.id and i < len(bm_grid._thumbs):
                     bm_grid._thumbs[i].set_saved_locally(False)
                     break
-            # Refresh library tab if visible
+            # Refresh the active tab's grid so the unsaved post disappears
+            # from library or loses its saved dot on bookmarks.
             if self._app._stack.currentIndex() == 2:
                 self._app._library_view.refresh()
+            elif self._app._stack.currentIndex() == 1:
+                self._app._bookmarks_view.refresh()
         else:
             self._app._status.showMessage(f"#{post.id} not in library")
         self._app._popout_ctrl.update_state()
