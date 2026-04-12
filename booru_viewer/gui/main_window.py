@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, Signal, QUrl
 from PySide6.QtGui import QPixmap, QAction, QKeySequence, QDesktopServices, QShortcut
