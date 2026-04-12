@@ -111,9 +111,15 @@ class ThumbnailWidget(QWidget):
         anim.setStartValue(0.0)
         anim.setEndValue(1.0)
         anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-        anim.finished.connect(anim.deleteLater)
+        anim.finished.connect(lambda: self._on_fade_done(anim))
         self._fade_anim = anim
         anim.start()
+
+    def _on_fade_done(self, anim: QPropertyAnimation) -> None:
+        """Clear the reference then schedule deletion."""
+        if self._fade_anim is anim:
+            self._fade_anim = None
+        anim.deleteLater()
 
     def set_selected(self, selected: bool) -> None:
         self._selected = selected
