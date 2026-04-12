@@ -1038,13 +1038,15 @@ class BooruApp(QMainWindow):
             for grid in (self._grid, self._bookmarks_view._grid, self._library_view._grid):
                 for thumb in grid._thumbs:
                     thumb.setFixedSize(new_size, new_size)
-                    if thumb._source_pixmap:
-                        thumb._pixmap = thumb._source_pixmap.scaled(
-                            new_size - 4, new_size - 4,
-                            Qt.AspectRatioMode.KeepAspectRatio,
-                            Qt.TransformationMode.SmoothTransformation,
-                        )
-                        thumb.update()
+                    if thumb._source_path:
+                        src = QPixmap(thumb._source_path)
+                        if not src.isNull():
+                            thumb._pixmap = src.scaled(
+                                new_size - 4, new_size - 4,
+                                Qt.AspectRatioMode.KeepAspectRatio,
+                                Qt.TransformationMode.SmoothTransformation,
+                            )
+                            thumb.update()
                 grid._flow._do_layout()
         # Apply flip layout live
         flip = self._db.get_setting_bool("flip_layout")
