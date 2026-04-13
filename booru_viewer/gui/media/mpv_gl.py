@@ -113,7 +113,15 @@ class _MpvGLWidget(QWidget):
 
     def cleanup(self) -> None:
         if self._ctx:
-            self._ctx.free()
+            # GL context must be current so mpv can release its textures
+            # and FBOs on the correct context. Without this, drivers that
+            # enforce per-context resource ownership (not NVIDIA, but
+            # Mesa/Intel) leak the GPU objects.
+            self._gl.makeCurrent()
+            try:
+                self._ctx.free()
+            finally:
+                self._gl.doneCurrent()
             self._ctx = None
         if self._mpv:
             self._mpv.terminate()
