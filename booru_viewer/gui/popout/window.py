@@ -287,7 +287,9 @@ class FullscreenPreview(QMainWindow):
         self._stack.setMouseTracking(True)
 
         from PySide6.QtWidgets import QApplication
-        QApplication.instance().installEventFilter(self)
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self)
         # Pick target monitor
         target_screen = None
         if monitor and monitor != "Same as app":
@@ -1631,8 +1633,11 @@ class FullscreenPreview(QMainWindow):
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         # Position floating overlays
-        w = self.centralWidget().width()
-        h = self.centralWidget().height()
+        central = self.centralWidget()
+        if central is None:
+            return
+        w = central.width()
+        h = central.height()
         tb_h = self._toolbar.sizeHint().height()
         self._toolbar.setGeometry(0, 0, w, tb_h)
         ctrl_h = self._video._controls_bar.sizeHint().height()
@@ -1756,7 +1761,9 @@ class FullscreenPreview(QMainWindow):
                 FullscreenPreview._saved_geometry = QRect(x, y, w, h)
             else:
                 FullscreenPreview._saved_geometry = self.frameGeometry()
-        QApplication.instance().removeEventFilter(self)
+        app = QApplication.instance()
+        if app is not None:
+            app.removeEventFilter(self)
         # Snapshot video position BEFORE StopMedia destroys it.
         # _on_fullscreen_closed reads this via get_video_state() to
         # seek the embedded preview to the same position.
