@@ -333,6 +333,15 @@ class FullscreenPreview(QMainWindow):
         # Qt fallback path) skip viewport updates triggered by our own
         # programmatic geometry changes.
         self._applying_dispatch: bool = False
+        # Stashed content dims from the tiled early-return in
+        # _fit_to_content. When the user un-tiles the window, resizeEvent
+        # fires — the debounce timer re-runs _fit_to_content with these
+        # dims so the floating window gets the correct aspect ratio.
+        self._tiled_pending_content: tuple[int, int] | None = None
+        self._untile_refit_timer = QTimer(self)
+        self._untile_refit_timer.setSingleShot(True)
+        self._untile_refit_timer.setInterval(50)
+        self._untile_refit_timer.timeout.connect(self._check_untile_refit)
         # Last known windowed geometry — captured on entering fullscreen so
         # F11 → windowed can land back on the same spot. Seeded from saved
         # geometry when the popout opens windowed, so even an immediate
@@ -1315,7 +1324,9 @@ class FullscreenPreview(QMainWindow):
             floating = None
         if floating is False:
             hyprland.resize(self.windowTitle(), 0, 0)  # tiled: just set keep_aspect_ratio
+            self._tiled_pending_content = (content_w, content_h)
             return
+        self._tiled_pending_content = None
         aspect = content_w / content_h
         screen = self.screen()
         if screen is None:
@@ -1379,6 +1390,18 @@ class FullscreenPreview(QMainWindow):
         self._first_fit_pending = False
         self._pending_position_restore = None
         self._pending_size = None
+
+    def _check_untile_refit(self) -> None:
+        """Debounced callback: re-run fit if we left tiled under new content."""
+        if self._tiled_pending_content is not None:
+            cw, ch = self._tiled_pending_content
+            self._fit_to_content(cw, ch)
+            # Reset image zoom/offset so the image fits the new window
+            # geometry cleanly — the viewer's state is stale from the
+            # tiled layout.
+            if self._stack.currentIndex() == 0:
+                self._viewer._fit_to_view()
+                self._viewer.update()
 
     def _show_overlay(self) -> None:
         """Show toolbar and video controls, restart auto-hide timer."""
@@ -1646,6 +1669,8 @@ class FullscreenPreview(QMainWindow):
         # position source on Wayland).
         import os
         if os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+            if self._tiled_pending_content is not None:
+                self._untile_refit_timer.start()
             return
         if self._applying_dispatch or self.isFullScreen():
             return
