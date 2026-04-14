@@ -1777,4 +1777,14 @@ class FullscreenPreview(QMainWindow):
         # EmitClosed emits self.closed which triggers main_window's
         # _on_fullscreen_closed handler.
         self._dispatch_and_apply(CloseRequested())
+        # Tear down the popout's mpv + GL render context explicitly.
+        # FullscreenPreview has no WA_DeleteOnClose and Qt's C++ dtor
+        # doesn't reliably call Python-side destroy() overrides once
+        # popout_controller drops its reference, so without this the
+        # popout's separate mpv instance + NVDEC surface pool leak
+        # until the next full Python GC cycle.
+        try:
+            self._video._gl_widget.cleanup()
+        except Exception:
+            pass
         super().closeEvent(event)
