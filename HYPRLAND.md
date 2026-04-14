@@ -89,7 +89,9 @@ windowrule {
   popout geometry
 - `dispatch togglefloating` on the main window at launch
 - `dispatch setprop address:<addr> no_anim 1` applied during popout
-  transitions
+  transitions (skipped on the first fit after open so Hyprland's
+  `windowsIn` / `popin` animation can play — subsequent navigation
+  fits still suppress anim to avoid resize flicker)
 - The startup "prime" sequence that warms Hyprland's per-window
   floating cache
 

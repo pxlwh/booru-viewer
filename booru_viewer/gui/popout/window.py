@@ -1325,7 +1325,7 @@ class FullscreenPreview(QMainWindow):
         else:
             floating = None
         if floating is False:
-            hyprland.resize(self.windowTitle(), 0, 0)  # tiled: just set keep_aspect_ratio
+            hyprland.resize(self.windowTitle(), 0, 0, animate=self._first_fit_pending)  # tiled: just set keep_aspect_ratio
             self._tiled_pending_content = (content_w, content_h)
             return
         self._tiled_pending_content = None
@@ -1373,7 +1373,10 @@ class FullscreenPreview(QMainWindow):
                 # Hyprland: hyprctl is the sole authority. Calling self.resize()
                 # here would race with the batch below and produce visible flashing
                 # when the window also has to move.
-                hyprland.resize_and_move(self.windowTitle(), w, h, x, y, win=win)
+                hyprland.resize_and_move(
+                    self.windowTitle(), w, h, x, y, win=win,
+                    animate=self._first_fit_pending,
+                )
             else:
                 # Non-Hyprland fallback: Qt drives geometry directly. Use
                 # setGeometry with the computed top-left rather than resize()

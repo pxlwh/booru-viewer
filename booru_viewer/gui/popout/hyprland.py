@@ -54,7 +54,7 @@ def get_window(window_title: str) -> dict | None:
     return None
 
 
-def resize(window_title: str, w: int, h: int) -> None:
+def resize(window_title: str, w: int, h: int, animate: bool = False) -> None:
     """Ask Hyprland to resize the popout and lock its aspect ratio.
 
     No-op on non-Hyprland systems. Tiled windows skip the resize
@@ -86,12 +86,12 @@ def resize(window_title: str, w: int, h: int) -> None:
     if not win.get("floating"):
         # Tiled — don't resize (fights the layout). Optionally set
         # aspect lock and no_anim depending on the env vars.
-        if rules_on:
+        if rules_on and not animate:
             cmds.append(f"dispatch setprop address:{addr} no_anim 1")
         if aspect_on:
             cmds.append(f"dispatch setprop address:{addr} keep_aspect_ratio 1")
     else:
-        if rules_on:
+        if rules_on and not animate:
             cmds.append(f"dispatch setprop address:{addr} no_anim 1")
         if aspect_on:
             cmds.append(f"dispatch setprop address:{addr} keep_aspect_ratio 0")
@@ -111,6 +111,7 @@ def resize_and_move(
     x: int,
     y: int,
     win: dict | None = None,
+    animate: bool = False,
 ) -> None:
     """Atomically resize and move the popout via a single hyprctl batch.
 
@@ -140,7 +141,7 @@ def resize_and_move(
     if not addr:
         return
     cmds: list[str] = []
-    if rules_on:
+    if rules_on and not animate:
         cmds.append(f"dispatch setprop address:{addr} no_anim 1")
     if aspect_on:
         cmds.append(f"dispatch setprop address:{addr} keep_aspect_ratio 0")
