@@ -338,6 +338,13 @@ class LibraryView(QWidget):
                     vo='null', ao='null', aid='no',
                     pause=True, keep_open='yes',
                     terminal=False, config=False,
+                    # Seek to 10% before first frame decode so a video that
+                    # opens on a black frame (fade-in, title card, codec
+                    # warmup) doesn't produce a black thumbnail. mpv clamps
+                    # `start` to valid range so very short clips still land
+                    # on a real frame.
+                    start='10%',
+                    hr_seek='yes',
                 )
                 try:
                     @m.property_observer('video-params')
