@@ -20,6 +20,8 @@
 - GPU resource leak on Mesa/Intel drivers — `mpv_render_context_free` now runs with the owning GL context current (NVIDIA tolerated the bug, other drivers did not)
 - Popout teardown `AttributeError` when `centralWidget()` or `QApplication.instance()` returned `None` during init/shutdown race
 - Category fetcher rejects XML responses containing `<!DOCTYPE` or `<!ENTITY` before parsing, blocking XXE and billion-laughs payloads from user-configured sites
+- VRAM not released on popout close — `video_player` now drops the hwdec surface pool on stop and popout runs explicit mpv cleanup before teardown
+- Popout open animation was being suppressed by the `no_anim` aspect-lock workaround — first fit after open now lets Hyprland's `windowsIn`/`popin` play; subsequent navigation fits still suppress anim to avoid resize flicker
 
 ### Changed
 - Uncached videos now download via httpx in parallel with mpv streaming — file is cached immediately for copy/paste without waiting for playback to finish
