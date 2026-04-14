@@ -431,6 +431,16 @@ class VideoPlayer(QWidget):
         """
         m = self._ensure_mpv()
         self._gl_widget.ensure_gl_init()
+        # Re-arm hardware decoder before each load. stop() sets
+        # hwdec=no to release the NVDEC/VAAPI surface pool (the bulk
+        # of mpv's idle VRAM footprint on NVIDIA), so we flip it back
+        # to auto here so the next loadfile picks up hwdec again.
+        # mpv re-inits the decoder context on the next frame — swamped
+        # by the network fetch for uncached videos.
+        try:
+            m['hwdec'] = 'auto'
+        except Exception:
+            pass
         self._current_file = path
         self._media_ready_fired = False
         self._pending_duration = None
@@ -463,6 +473,15 @@ class VideoPlayer(QWidget):
         self._poll_timer.stop()
         if self._mpv:
             self._mpv.command('stop')
+            # Drop the hardware decoder surface pool to release VRAM
+            # while idle. On NVIDIA the NVDEC pool is the bulk of mpv's
+            # idle footprint and keep_open=yes + the live GL render
+            # context would otherwise pin it for the widget lifetime.
+            # play_file re-arms hwdec='auto' before the next loadfile.
+            try:
+                self._mpv['hwdec'] = 'no'
+            except Exception:
+                pass
         self._time_label.setText("0:00")
         self._duration_label.setText("0:00")
         self._seek_slider.setRange(0, 0)
