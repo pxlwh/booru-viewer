@@ -22,6 +22,8 @@
 - Category fetcher rejects XML responses containing `<!DOCTYPE` or `<!ENTITY` before parsing, blocking XXE and billion-laughs payloads from user-configured sites
 - VRAM not released on popout close — `video_player` now drops the hwdec surface pool on stop and popout runs explicit mpv cleanup before teardown
 - Popout open animation was being suppressed by the `no_anim` aspect-lock workaround — first fit after open now lets Hyprland's `windowsIn`/`popin` play; subsequent navigation fits still suppress anim to avoid resize flicker
+- Thumbnail grid blanking out after Hyprland tiled resize until a scroll/click — viewport is now force-updated at the end of `ThumbnailGrid.resizeEvent` so the Qt Wayland buffer stays in sync with the new geometry
+- Library video thumbnails captured from a black opening frame — mpv now seeks to 10% before the first frame decode so title cards, fade-ins, and codec warmup no longer produce a black thumbnail (delete `~/.cache/booru-viewer/thumbnails/library/` to regenerate existing entries)
 
 ### Changed
 - Uncached videos now download via httpx in parallel with mpv streaming — file is cached immediately for copy/paste without waiting for playback to finish
