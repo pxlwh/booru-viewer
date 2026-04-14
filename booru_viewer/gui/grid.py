@@ -868,3 +868,8 @@ class ThumbnailGrid(QScrollArea):
         super().resizeEvent(event)
         if self._flow:
             self._flow.resize(self.viewport().size().width(), self._flow.minimumHeight())
+            # Qt Wayland buffer goes stale after compositor-driven resize
+            # (Hyprland tiled geometry change). Thumbs reflow but paint
+            # skips until a scroll/click invalidates the viewport. Force
+            # repaint so the grid stays visible through tile resizes.
+            self.viewport().update()
