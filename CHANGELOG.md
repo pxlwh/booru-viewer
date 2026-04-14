@@ -17,6 +17,9 @@
 - `_cached_path` not set for streaming videos
 - Standard icon column showing in QMessageBox dialogs
 - Popout aspect lock for bookmarks now reads actual image dimensions instead of guessing
+- GPU resource leak on Mesa/Intel drivers — `mpv_render_context_free` now runs with the owning GL context current (NVIDIA tolerated the bug, other drivers did not)
+- Popout teardown `AttributeError` when `centralWidget()` or `QApplication.instance()` returned `None` during init/shutdown race
+- Category fetcher rejects XML responses containing `<!DOCTYPE` or `<!ENTITY` before parsing, blocking XXE and billion-laughs payloads from user-configured sites
 
 ### Changed
 - Uncached videos now download via httpx in parallel with mpv streaming — file is cached immediately for copy/paste without waiting for playback to finish
@@ -33,6 +36,8 @@
 - Tab selection preserved on view switch
 - Scroll delta accumulated for volume control and zoom (smoother with hi-res scroll wheels)
 - Force Fusion widget style when no `custom.qss` is present
+- Dark Fusion palette applied as fallback when no system Qt theme file (`Trolltech.conf`) is detected; KDE/GNOME users keep their own palette
+- **Behavior change:** popout re-fits window to current content's aspect and resets zoom when leaving a tiled layout to a different-aspect image or video; previously restored the old floating geometry with the wrong aspect lock
 
 ### Performance
 - Thumbnails re-decoded from disk on size change instead of holding full pixmaps in memory
@@ -46,7 +51,8 @@
 ### Removed
 - Dead code: `core/images.py`
 - `TODO.md`
-- Unused imports across `main_window`, `grid`, `settings`, `dialogs`, `sites`, `search_controller`
+- Unused imports across `main_window`, `grid`, `settings`, `dialogs`, `sites`, `search_controller`, `video_player`, `info_panel`
+- Dead `mid` variable in `grid.paintEvent`, dead `get_connection_log` import in `settings._build_network_tab`
 
 ## v0.2.6
 
