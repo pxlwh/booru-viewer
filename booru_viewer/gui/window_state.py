@@ -160,6 +160,10 @@ class WindowStateController:
                         continue
                     return c
         except Exception:
+            # hyprctl unavailable (non-Hyprland session), timed out,
+            # or produced invalid JSON. Caller treats None as
+            # "no Hyprland-visible main window" and falls back to
+            # Qt's own geometry tracking.
             pass
         return None
 
@@ -207,6 +211,9 @@ class WindowStateController:
             # When tiled, intentionally do NOT touch floating_geometry --
             # preserve the last good floating dimensions.
         except Exception:
+            # Geometry persistence is best-effort; swallowing here
+            # beats crashing closeEvent over a hyprctl timeout or a
+            # setting-write race. Next save attempt will retry.
             pass
 
     def restore_main_window_state(self) -> None:
