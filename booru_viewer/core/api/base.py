@@ -152,9 +152,18 @@ class BooruClient(ABC):
                         wait = 2.0
                 log.info(f"Retrying {url} after {resp.status_code} (wait {wait}s)")
                 await asyncio.sleep(wait)
-            except (httpx.TimeoutException, httpx.ConnectError, httpx.NetworkError) as e:
-                # Retry on transient DNS/TCP/timeout failures. Without this,
-                # a single DNS hiccup or RST blows up the whole search.
+            except (
+                httpx.TimeoutException,
+                httpx.ConnectError,
+                httpx.NetworkError,
+                httpx.RemoteProtocolError,
+                httpx.ReadError,
+            ) as e:
+                # Retry on transient DNS/TCP/timeout failures plus
+                # mid-response drops — RemoteProtocolError and ReadError
+                # are common when an overloaded booru closes the TCP
+                # connection between headers and body. Without them a
+                # single dropped response blows up the whole search.
                 if attempt == 1:
                     raise
                 log.info(f"Retrying {url} after {type(e).__name__}: {e}")
