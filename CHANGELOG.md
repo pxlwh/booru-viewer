@@ -11,6 +11,7 @@
 ### Fixed
 - `category_fetcher._do_ensure` no longer permanently flips `_batch_api_works` to False when a transient network error drops a tag-API request mid-call; the unprobed path now routes through `_probe_batch_api`, which distinguishes clean 200-with-zero-matches (structurally broken, flip) from timeout/HTTP-error (transient, retry next call)
 - Bookmark→library save and bookmark Save As now plumb the active site's `CategoryFetcher` through to the filename template, so `%artist%`/`%character%` tokens render correctly instead of silently dropping out when saving a post that wasn't previewed first
+- Info panel no longer silently drops tags that failed to land in a cached category — any tag from `post.tag_list` not rendered under a known category section now appears in an "Other" bucket, so partial cache coverage can't make individual tags invisible
 
 ### Refactored
 - `category_fetcher` batch tag-API params are now built by a shared `_build_tag_api_params` helper instead of duplicated across `fetch_via_tag_api` and `_probe_batch_api`

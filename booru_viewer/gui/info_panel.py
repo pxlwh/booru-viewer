@@ -136,6 +136,7 @@ class InfoPanel(QWidget):
             # Display tags grouped by category. Colors come from the
             # tag*Color Qt Properties so a custom.qss can override any of
             # them via `InfoPanel { qproperty-tagCharacterColor: ...; }`.
+            rendered: set[str] = set()
             for category, tags in post.tag_categories.items():
                 color = self._category_color(category)
                 header = QLabel(f"{category}:")
@@ -145,6 +146,7 @@ class InfoPanel(QWidget):
                 )
                 self._tags_flow.addWidget(header)
                 for tag in tags:
+                    rendered.add(tag)
                     btn = QPushButton(tag)
                     btn.setFlat(True)
                     btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -153,6 +155,27 @@ class InfoPanel(QWidget):
                         style += f" color: {color};"
                     style += " }"
                     btn.setStyleSheet(style)
+                    btn.clicked.connect(lambda checked, t=tag: self.tag_clicked.emit(t))
+                    self._tags_flow.addWidget(btn)
+            # Safety net: any tag in post.tag_list that didn't land in
+            # a cached category (batch tag API returned partial results,
+            # HTML scrape fell short, cache stale, etc.) is still shown
+            # under an "Other" bucket so tags can't silently disappear
+            # from the info panel.
+            leftover = [t for t in post.tag_list if t and t not in rendered]
+            if leftover:
+                header = QLabel("Other:")
+                header.setStyleSheet(
+                    "font-weight: bold; margin-top: 6px; margin-bottom: 2px;"
+                )
+                self._tags_flow.addWidget(header)
+                for tag in leftover:
+                    btn = QPushButton(tag)
+                    btn.setFlat(True)
+                    btn.setCursor(Qt.CursorShape.PointingHandCursor)
+                    btn.setStyleSheet(
+                        "QPushButton { text-align: left; padding: 1px 4px; border: none; }"
+                    )
                     btn.clicked.connect(lambda checked, t=tag: self.tag_clicked.emit(t))
                     self._tags_flow.addWidget(btn)
         elif not self._categories_pending:
