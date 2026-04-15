@@ -11,11 +11,11 @@ behind the same `HYPRLAND_INSTANCE_SIGNATURE` env var check the
 legacy code used. Off-Hyprland systems no-op or return None at every
 entry point.
 
-The legacy `FullscreenPreview._hyprctl_*` methods become 1-line
-shims that call into this module — see commit 13's changes to
-`popout/window.py`. The shims preserve byte-for-byte call-site
-compatibility for the existing window.py code; commit 14's adapter
-rewrite drops them in favor of direct calls.
+The popout adapter calls these helpers directly; there are no
+`FullscreenPreview._hyprctl_*` shims anymore. Every env-var gate
+for opt-out (`BOORU_VIEWER_NO_HYPR_RULES`, popout-specific aspect
+lock) is implemented inside these functions so every call site
+gets the same behavior.
 """
 
 from __future__ import annotations

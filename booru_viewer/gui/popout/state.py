@@ -16,12 +16,6 @@ becomes the forcing function that keeps this module pure.
 The architecture, state diagram, invariant→transition mapping, and
 event/effect lists are documented in `docs/POPOUT_ARCHITECTURE.md`.
 This module's job is to be the executable form of that document.
-
-This is the **commit 2 skeleton**: every state, every event type, every
-effect type, and the `StateMachine` class with all fields initialized.
-The `dispatch` method routes events to per-event handlers that all
-currently return empty effect lists. Real transitions land in
-commits 4-11 of `docs/POPOUT_REFACTOR_PLAN.md`.
 """
 
 from __future__ import annotations
@@ -423,10 +417,6 @@ class StateMachine:
     The state machine never imports Qt or mpv. It never calls into the
     adapter. The communication is one-directional: events in, effects
     out.
-
-    **This is the commit 2 skeleton**: all state fields are initialized,
-    `dispatch` is wired but every transition handler is a stub that
-    returns an empty effect list. Real transitions land in commits 4-11.
     """
 
     def __init__(self) -> None:
@@ -511,14 +501,7 @@ class StateMachine:
     # and reads back the returned effects + the post-dispatch state.
 
     def dispatch(self, event: Event) -> list[Effect]:
-        """Process one event and return the effect list.
-
-        **Skeleton (commit 2):** every event handler currently returns
-        an empty effect list. Real transitions land in commits 4-11.
-        Tests written in commit 3 will document what each transition
-        is supposed to do; they fail at this point and progressively
-        pass as the transitions land.
-        """
+        """Process one event and return the effect list."""
         # Closing is terminal — drop everything once we're done.
         if self.state == State.CLOSING:
             return []
@@ -577,13 +560,13 @@ class StateMachine:
             case CloseRequested():
                 return self._on_close_requested(event)
             case _:
-                # Unknown event type. Returning [] keeps the skeleton
-                # safe; the illegal-transition handler in commit 11
-                # will replace this with the env-gated raise.
+                # Unknown event type — defensive fall-through. The
+                # legality check above is the real gate; in release
+                # mode illegal events log and drop, strict mode raises.
                 return []
 
     # ------------------------------------------------------------------
-    # Per-event stub handlers (commit 2 — all return [])
+    # Per-event handlers
     # ------------------------------------------------------------------
 
     def _on_open(self, event: Open) -> list[Effect]:
@@ -594,8 +577,7 @@ class StateMachine:
         on the state machine instance for the first ContentArrived
         handler to consume. After Open the machine is still in
         AwaitingContent — the actual viewport seeding from saved_geo
-        happens inside the first ContentArrived (commit 8 wires the
-        actual viewport math; this commit just stashes the inputs).
+        happens inside the first ContentArrived.
 
         No effects: the popout window is already constructed and
         showing. The first content load triggers the first fit.
@@ -610,12 +592,11 @@ class StateMachine:
 
         Snapshot the content into `current_*` fields regardless of
         kind so the rest of the state machine can read them. Then
-        transition to LoadingVideo (video) or DisplayingImage (image,
-        commit 10) and emit the appropriate load + fit effects.
+        transition to LoadingVideo (video) or DisplayingImage (image)
+        and emit the appropriate load + fit effects.
 
         The first-content-load one-shot consumes `saved_geo` to seed
-        the viewport before the first fit (commit 8 wires the actual
-        seeding). After this commit, every ContentArrived flips
+        the viewport before the first fit. Every ContentArrived flips
         `is_first_content_load` to False — the saved_geo path runs at
         most once per popout open.
         """

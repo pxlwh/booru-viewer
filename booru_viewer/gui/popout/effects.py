@@ -114,7 +114,7 @@ class FitWindowToContent:
     """Compute the new window rect for the given content aspect using
     `state.viewport` and dispatch it to Hyprland (or `setGeometry()`
     on non-Hyprland). The adapter delegates the rect math + dispatch
-    to `popout/hyprland.py`'s helper, which lands in commit 13.
+    to the helpers in `popout/hyprland.py`.
     """
 
     content_w: int

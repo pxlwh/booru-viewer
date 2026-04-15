@@ -68,9 +68,8 @@ from .viewport import Viewport, _DRIFT_TOLERANCE, anchor_point
 # the dispatch trace to the Ctrl+L log panel — useful but invisible
 # from the shell. We additionally attach a stderr StreamHandler to
 # the adapter logger so `python -m booru_viewer.main_gui 2>&1 |
-# grep POPOUT_FSM` works during the commit-14a verification gate.
-# The handler is tagged with a sentinel attribute so re-imports
-# don't stack duplicates.
+# grep POPOUT_FSM` works from the terminal. The handler is tagged
+# with a sentinel attribute so re-imports don't stack duplicates.
 import sys as _sys
 _fsm_log = logging.getLogger("booru.popout.adapter")
 _fsm_log.setLevel(logging.DEBUG)
@@ -146,25 +145,20 @@ class FullscreenPreview(QMainWindow):
         self._stack.addWidget(self._viewer)
 
         self._video = VideoPlayer()
-        # Note: two legacy VideoPlayer signal connections removed in
-        # commits 14b and 16:
+        # Two legacy VideoPlayer forwarding connections were removed
+        # during the state machine extraction — don't reintroduce:
         #
-        # - `self._video.play_next.connect(self.play_next_requested)`
-        #   (removed in 14b): the EmitPlayNextRequested effect now
-        #   emits play_next_requested via the state machine dispatch
-        #   path. Keeping the forwarding would double-emit the signal
-        #   and cause main_window to navigate twice on every video
-        #   EOF in Loop=Next mode.
+        # - `self._video.play_next.connect(self.play_next_requested)`:
+        #   the EmitPlayNextRequested effect emits play_next_requested
+        #   via the state machine dispatch path. Keeping the forward
+        #   would double-emit on every video EOF in Loop=Next mode.
         #
-        # - `self._video.video_size.connect(self._on_video_size)`
-        #   (removed in 16): the dispatch path's VideoSizeKnown
-        #   handler emits FitWindowToContent which the apply path
-        #   delegates to _fit_to_content. The legacy direct call to
-        #   _on_video_size → _fit_to_content was a parallel duplicate
-        #   that the same-rect skip in _fit_to_content made harmless,
-        #   but it muddied the trace. The dispatch lambda below is
-        #   wired in the same __init__ block (post state machine
-        #   construction) and is now the sole path.
+        # - `self._video.video_size.connect(self._on_video_size)`:
+        #   the dispatch path's VideoSizeKnown handler produces
+        #   FitWindowToContent which the apply path delegates to
+        #   _fit_to_content. The direct forwarding was a parallel
+        #   duplicate that same-rect-skip in _fit_to_content masked
+        #   but that muddied the dispatch trace.
         self._stack.addWidget(self._video)
 
         self.setCentralWidget(central)
@@ -374,17 +368,15 @@ class FullscreenPreview(QMainWindow):
         else:
             self.showFullScreen()
 
-        # ---- State machine adapter wiring (commit 14a) ----
+        # ---- State machine adapter wiring ----
         # Construct the pure-Python state machine and dispatch the
         # initial Open event with the cross-popout-session class state
-        # the legacy code stashed above. The state machine runs in
-        # PARALLEL with the legacy imperative code: every Qt event
-        # handler / mpv signal / button click below dispatches a state
-        # machine event AND continues to run the existing imperative
-        # action. The state machine's returned effects are LOGGED at
-        # DEBUG, not applied to widgets. The legacy path stays
-        # authoritative through commit 14a; commit 14b switches the
-        # authority to the dispatch path.
+        # the legacy code stashed above. Every Qt event handler, mpv
+        # signal, and button click below dispatches a state machine
+        # event via `_dispatch_and_apply`, which applies the returned
+        # effects to widgets. The state machine is the authority for
+        # "what to do next"; the imperative helpers below are the
+        # implementation the apply path delegates into.
         #
         # The grid_cols field is used by the keyboard nav handlers
         # for the Up/Down ±cols stride.
@@ -403,20 +395,17 @@ class FullscreenPreview(QMainWindow):
             monitor=monitor,
         ))
 
-        # Wire VideoPlayer's playback_restart Signal (added in commit 1)
-        # to the adapter's dispatch routing. mpv emits playback-restart
-        # once after each loadfile and once after each completed seek;
-        # the adapter distinguishes by checking the state machine's
-        # current state at dispatch time.
+        # Wire VideoPlayer's playback_restart Signal to the adapter's
+        # dispatch routing. mpv emits playback-restart once after each
+        # loadfile and once after each completed seek; the adapter
+        # distinguishes by checking the state machine's current state
+        # at dispatch time.
         self._video.playback_restart.connect(self._on_video_playback_restart)
         # Wire VideoPlayer signals to dispatch+apply via the
-        # _dispatch_and_apply helper. NOTE: every lambda below MUST
-        # call _dispatch_and_apply, not _fsm_dispatch directly. Calling
-        # _fsm_dispatch alone produces effects that never reach
-        # widgets — the bug that landed in commit 14b and broke
-        # video auto-fit (FitWindowToContent never applied) and
-        # Loop=Next play_next (EmitPlayNextRequested never applied)
-        # until the lambdas were fixed in this commit.
+        # _dispatch_and_apply helper. Every lambda below MUST call
+        # _dispatch_and_apply, not _fsm_dispatch directly — see the
+        # docstring on _dispatch_and_apply for the historical bug that
+        # explains the distinction.
         self._video.play_next.connect(
             lambda: self._dispatch_and_apply(VideoEofReached())
         )
@@ -465,8 +454,8 @@ class FullscreenPreview(QMainWindow):
 
         Adapter-internal helper. Centralizes the dispatch + log path
         so every wire-point is one line. Returns the effect list for
-        callers that want to inspect it (commit 14a doesn't use the
-        return value; commit 14b will pattern-match and apply).
+        callers that want to inspect it; prefer `_dispatch_and_apply`
+        at wire-points so the apply step can't be forgotten.
 
         The hasattr guard handles edge cases where Qt events might
         fire during __init__ (e.g. resizeEvent on the first show())
@@ -488,10 +477,10 @@ class FullscreenPreview(QMainWindow):
         return effects
 
     def _on_video_playback_restart(self) -> None:
-        """mpv `playback-restart` event arrived (via VideoPlayer's
-        playback_restart Signal added in commit 1). Distinguish
-        VideoStarted (after load) from SeekCompleted (after seek) by
-        the state machine's current state.
+        """mpv `playback-restart` event arrived via VideoPlayer's
+        playback_restart Signal. Distinguish VideoStarted (after load)
+        from SeekCompleted (after seek) by the state machine's current
+        state.
 
         This is the ONE place the adapter peeks at state to choose an
         event type — it's a read, not a write, and it's the price of
@@ -508,42 +497,35 @@ class FullscreenPreview(QMainWindow):
         # round trip.
 
     # ------------------------------------------------------------------
-    # Commit 14b — effect application
+    # Effect application
     # ------------------------------------------------------------------
     #
     # The state machine's dispatch returns a list of Effect descriptors
     # describing what the adapter should do. `_apply_effects` is the
-    # single dispatch point: every wire-point that calls `_fsm_dispatch`
-    # follows it with `_apply_effects(effects)`. The pattern-match by
-    # type is the architectural choke point — if a new effect type is
-    # added in state.py, the type-check below catches the missing
-    # handler at runtime instead of silently dropping.
+    # single dispatch point: `_dispatch_and_apply` dispatches then calls
+    # this. The pattern-match by type is the architectural choke point
+    # — a new Effect type in state.py triggers the TypeError branch at
+    # runtime instead of silently dropping the effect.
     #
-    # Several apply handlers are deliberate no-ops in commit 14b:
+    # A few apply handlers are intentional no-ops:
     #
     # - ApplyMute / ApplyVolume / ApplyLoopMode: the legacy slot
-    #   connections on the popout's VideoPlayer are still active and
-    #   handle the user-facing toggles directly. The state machine
-    #   tracks these values for the upcoming SyncFromEmbedded path
-    #   (future commit) but doesn't push them to widgets — pushing
-    #   would create a sync hazard with the embedded preview's mute
-    #   state, which main_window pushes via direct attribute writes.
+    #   connections on the popout's VideoPlayer handle the user-facing
+    #   toggles directly. The state machine tracks these values as the
+    #   source of truth for sync with the embedded preview; pushing
+    #   them back here would create a double-write hazard.
     #
-    # - SeekVideoTo: the legacy `_ClickSeekSlider.clicked_position →
-    #   VideoPlayer._seek` connection still handles both the mpv.seek
-    #   call and the legacy 500ms `_seek_pending_until` pin window.
-    #   The state machine's SeekingVideo state tracks the seek for
-    #   future authority, but the slider rendering and the seek call
-    #   itself stay legacy. Replacing this requires either modifying
-    #   VideoPlayer's _poll loop (forbidden by the no-touch rule) or
-    #   building a custom poll loop in the adapter.
+    # - SeekVideoTo: `_ClickSeekSlider.clicked_position → _seek` on the
+    #   VideoPlayer handles both the mpv.seek call and the legacy
+    #   500ms pin window. The state machine's SeekingVideo state
+    #   tracks the seek; the slider rendering and the seek call itself
+    #   live on VideoPlayer.
     #
-    # The other effect types (LoadImage, LoadVideo, StopMedia,
+    # Every other effect (LoadImage, LoadVideo, StopMedia,
     # FitWindowToContent, EnterFullscreen, ExitFullscreen,
     # EmitNavigate, EmitPlayNextRequested, EmitClosed, TogglePlay)
-    # delegate to existing private helpers in this file. The state
-    # machine becomes the official entry point for these operations;
-    # the helpers stay in place as the implementation.
+    # delegates to a private helper in this file. The state machine
+    # is the entry point; the helpers are the implementation.
 
     def _apply_effects(self, effects: list) -> None:
         """Apply a list of Effect descriptors returned by dispatch.
@@ -560,18 +542,19 @@ class FullscreenPreview(QMainWindow):
             elif isinstance(e, StopMedia):
                 self._apply_stop_media()
             elif isinstance(e, ApplyMute):
-                # No-op in 14b — legacy slot handles widget update.
-                # State machine tracks state.mute for future authority.
+                # No-op — VideoPlayer's legacy slot owns widget update;
+                # the state machine keeps state.mute as the sync source
+                # for the embedded-preview path.
                 pass
             elif isinstance(e, ApplyVolume):
-                pass  # same — no-op in 14b
+                pass  # same — widget update handled by VideoPlayer
             elif isinstance(e, ApplyLoopMode):
-                pass  # same — no-op in 14b
+                pass  # same — widget update handled by VideoPlayer
             elif isinstance(e, SeekVideoTo):
-                # No-op in 14b — legacy `_seek` slot handles both
-                # mpv.seek (now exact) and the pin window. Replacing
-                # this requires touching VideoPlayer._poll which is
-                # out of scope.
+                # No-op — `_seek` slot on VideoPlayer handles both
+                # mpv.seek and the pin window. The state's SeekingVideo
+                # fields exist so the slider's read-path still returns
+                # the clicked position during the seek.
                 pass
             elif isinstance(e, TogglePlay):
                 self._video._toggle_play()
@@ -687,14 +670,14 @@ class FullscreenPreview(QMainWindow):
         self._save_btn.setToolTip("Unsave from library" if saved else "Save to library (S)")
 
     # ------------------------------------------------------------------
-    # Public method interface (commit 15)
+    # Public method interface
     # ------------------------------------------------------------------
     #
-    # The methods below replace direct underscore access from
-    # main_window.py. They wrap the existing private fields so
-    # main_window doesn't have to know about VideoPlayer / ImageViewer
-    # / QStackedWidget internals. The legacy private fields stay in
-    # place — these are clean public wrappers, not a re-architecture.
+    # The methods below are the only entry points main_window.py uses
+    # to drive the popout. They wrap the private fields so main_window
+    # doesn't have to know about VideoPlayer / ImageViewer /
+    # QStackedWidget internals. The private fields stay in place; these
+    # are clean public wrappers, not a re-architecture.
 
     def is_video_active(self) -> bool:
         """True if the popout is currently showing a video (vs image).
@@ -1489,11 +1472,11 @@ class FullscreenPreview(QMainWindow):
                 return True
             elif key == Qt.Key.Key_Period and self._stack.currentIndex() == 1:
                 # +/- keys are seek-relative, NOT slider-pin seeks. The
-                # state machine's SeekRequested is for slider-driven
-                # seeks. The +/- keys go straight to mpv via the
-                # legacy path; the dispatch path doesn't see them in
-                # 14a (commit 14b will route them through SeekRequested
-                # with a target_ms computed from current position).
+                # state machine's SeekRequested models slider-driven
+                # seeks (target_ms known up front); relative seeks go
+                # straight to mpv. If we ever want the dispatch path to
+                # own them, compute target_ms from current position and
+                # route through SeekRequested.
                 self._video._seek_relative(1800)
                 return True
             elif key == Qt.Key.Key_Comma and self._stack.currentIndex() == 1:
