@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Callable, TYPE_CHECKING
 
 from PySide6.QtCore import Qt, Signal, QObject, QTimer
 from PySide6.QtGui import QPixmap
@@ -27,6 +28,9 @@ from ..core.cache import download_thumbnail
 from ..core.concurrency import run_on_app_loop
 from .grid import ThumbnailGrid
 
+if TYPE_CHECKING:
+    from ..core.api.category_fetcher import CategoryFetcher
+
 log = logging.getLogger("booru")
 
 
@@ -43,9 +47,19 @@ class BookmarksView(QWidget):
     bookmarks_changed = Signal()  # emitted after bookmark add/remove/unsave
     open_in_browser_requested = Signal(int, int)  # (site_id, post_id)
 
-    def __init__(self, db: Database, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        db: Database,
+        category_fetcher_factory: Callable[[], "CategoryFetcher | None"],
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self._db = db
+        # Factory returns the fetcher for the currently-active site, or
+        # None when the site categorises tags inline (Danbooru, e621).
+        # Called at save time so a site switch between BookmarksView
+        # construction and a save picks up the new site's fetcher.
+        self._category_fetcher_factory = category_fetcher_factory
         self._bookmarks: list[Bookmark] = []
         self._signals = BookmarkThumbSignals()
         self._signals.thumb_ready.connect(self._on_thumb_ready, Qt.ConnectionType.QueuedConnection)
@@ -296,9 +310,14 @@ class BookmarksView(QWidget):
         src = Path(fav.cached_path)
         post = self._bookmark_to_post(fav)
 
+        fetcher = self._category_fetcher_factory()
+
         async def _do():
             try:
-                await save_post_file(src, post, dest_dir, self._db)
+                await save_post_file(
+                    src, post, dest_dir, self._db,
+                    category_fetcher=fetcher,
+                )
                 self._signals.save_done.emit(fav.post_id)
             except Exception as e:
                 log.warning(f"Bookmark→library save #{fav.post_id} failed: {e}")
@@ -412,12 +431,14 @@ class BookmarksView(QWidget):
                 dest = save_file(self, "Save Image", default_name, f"Images (*{src.suffix})")
                 if dest:
                     dest_path = Path(dest)
+                    fetcher = self._category_fetcher_factory()
 
                     async def _do_save_as():
                         try:
                             await save_post_file(
                                 src, post, dest_path.parent, self._db,
                                 explicit_name=dest_path.name,
+                                category_fetcher=fetcher,
                             )
                         except Exception as e:
                             log.warning(f"Bookmark Save As #{fav.post_id} failed: {e}")

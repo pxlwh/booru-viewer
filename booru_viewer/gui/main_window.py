@@ -315,7 +315,9 @@ class BooruApp(QMainWindow):
         self._grid.nav_before_start.connect(self._search_ctrl.on_nav_before_start)
         self._stack.addWidget(self._grid)
 
-        self._bookmarks_view = BookmarksView(self._db)
+        self._bookmarks_view = BookmarksView(
+            self._db, self._get_category_fetcher,
+        )
         self._bookmarks_view.bookmark_selected.connect(self._on_bookmark_selected)
         self._bookmarks_view.bookmark_activated.connect(self._on_bookmark_activated)
         self._bookmarks_view.bookmarks_changed.connect(self._post_actions.refresh_browse_saved_dots)

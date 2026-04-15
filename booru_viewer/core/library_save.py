@@ -24,6 +24,7 @@ from .db import Database
 
 if TYPE_CHECKING:
     from .api.base import Post
+    from .api.category_fetcher import CategoryFetcher
 
 
 _CATEGORY_TOKENS = {"%artist%", "%character%", "%copyright%", "%general%", "%meta%", "%species%"}
@@ -36,7 +37,8 @@ async def save_post_file(
     db: Database,
     in_flight: set[str] | None = None,
     explicit_name: str | None = None,
-    category_fetcher=None,
+    *,
+    category_fetcher: "CategoryFetcher | None",
 ) -> Path:
     """Copy a Post's already-cached media file into `dest_dir`.
 
@@ -89,6 +91,13 @@ async def save_post_file(
         explicit_name: optional override. When set, the template is
             bypassed and this basename (already including extension)
             is used as the starting point for collision resolution.
+        category_fetcher: keyword-only, required. The CategoryFetcher
+            for the post's site, or None when the site categorises tags
+            inline (Danbooru, e621) so ``post.tag_categories`` is always
+            pre-populated. Pass ``None`` explicitly rather than omitting
+            the argument — the ``=None`` default was removed so saves
+            can't silently render templates with empty category tokens
+            just because a caller forgot to plumb the fetcher through.
 
     Returns:
         The actual `Path` the file landed at after collision
