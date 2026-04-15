@@ -814,6 +814,9 @@ class FullscreenPreview(QMainWindow):
             try:
                 self._video._mpv.pause = True
             except Exception:
+                # mpv was torn down or is mid-transition between
+                # files; pause is best-effort so a stale instance
+                # rejecting the property write isn't a real failure.
                 pass
 
     def stop_media(self) -> None:
@@ -1051,7 +1054,9 @@ class FullscreenPreview(QMainWindow):
                 from ...core.cache import _referer_for
                 referer = _referer_for(urlparse(path))
             except Exception:
-                pass
+                _fsm_log.debug(
+                    "referer derivation failed for %s", path, exc_info=True,
+                )
 
         # Dispatch + apply. The state machine produces:
         #   - LoadVideo or LoadImage (loads the media)
@@ -1609,6 +1614,9 @@ class FullscreenPreview(QMainWindow):
                     if vp and vp.get('w') and vp.get('h'):
                         content_w, content_h = vp['w'], vp['h']
                 except Exception:
+                    # mpv is mid-shutdown or between files; leave
+                    # content_w/h at 0 so the caller falls back to the
+                    # saved viewport rather than a bogus fit rect.
                     pass
         else:
             pix = self._viewer._pixmap
@@ -1786,5 +1794,7 @@ class FullscreenPreview(QMainWindow):
         try:
             self._video._gl_widget.cleanup()
         except Exception:
+            # Close path — a cleanup failure can't be recovered from
+            # here. Swallowing beats letting Qt abort mid-teardown.
             pass
         super().closeEvent(event)
