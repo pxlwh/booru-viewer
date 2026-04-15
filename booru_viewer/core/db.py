@@ -185,10 +185,6 @@ class Bookmark:
     tag_categories: dict = field(default_factory=dict)
 
 
-# Back-compat alias — will be removed in a future version.
-Favorite = Bookmark
-
-
 class Database:
     def __init__(self, path: Path | None = None) -> None:
         self._path = path or db_path()
