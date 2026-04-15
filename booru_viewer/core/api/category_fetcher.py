@@ -213,6 +213,31 @@ class CategoryFetcher:
             and bool(self._client.api_user)
         )
 
+    def _build_tag_api_params(self, chunk: list[str]) -> dict:
+        """Params dict for a tag-DAPI batch request.
+
+        The ``lstrip("&")`` and ``startswith("api_key=")`` guards
+        accommodate users who paste their credentials with a leading
+        ``&`` or as ``api_key=VALUE`` — either form gets normalised
+        to a clean name→value mapping.
+        """
+        params: dict = {
+            "page": "dapi",
+            "s": "tag",
+            "q": "index",
+            "json": "1",
+            "names": " ".join(chunk),
+            "limit": len(chunk),
+        }
+        if self._client.api_key and self._client.api_user:
+            key = self._client.api_key.strip().lstrip("&")
+            user = self._client.api_user.strip().lstrip("&")
+            if key and not key.startswith("api_key="):
+                params["api_key"] = key
+            if user and not user.startswith("user_id="):
+                params["user_id"] = user
+        return params
+
     async def fetch_via_tag_api(self, posts: list["Post"]) -> int:
         """Batch-fetch tag types via the booru's tag DAPI.
 
@@ -244,21 +269,7 @@ class CategoryFetcher:
         BATCH = 500
         for i in range(0, len(missing), BATCH):
             chunk = missing[i:i + BATCH]
-            params: dict = {
-                "page": "dapi",
-                "s": "tag",
-                "q": "index",
-                "json": "1",
-                "names": " ".join(chunk),
-                "limit": len(chunk),
-            }
-            if self._client.api_key and self._client.api_user:
-                key = self._client.api_key.strip().lstrip("&")
-                user = self._client.api_user.strip().lstrip("&")
-                if key and not key.startswith("api_key="):
-                    params["api_key"] = key
-                if user and not user.startswith("user_id="):
-                    params["user_id"] = user
+            params = self._build_tag_api_params(chunk)
             try:
                 resp = await self._client._request("GET", tag_api_url, params=params)
                 resp.raise_for_status()
@@ -480,21 +491,7 @@ class CategoryFetcher:
 
         # Send one batch request
         chunk = missing[:500]
-        params: dict = {
-            "page": "dapi",
-            "s": "tag",
-            "q": "index",
-            "json": "1",
-            "names": " ".join(chunk),
-            "limit": len(chunk),
-        }
-        if self._client.api_key and self._client.api_user:
-            key = self._client.api_key.strip().lstrip("&")
-            user = self._client.api_user.strip().lstrip("&")
-            if key and not key.startswith("api_key="):
-                params["api_key"] = key
-            if user and not user.startswith("user_id="):
-                params["user_id"] = user
+        params = self._build_tag_api_params(chunk)
 
         try:
             resp = await self._client._request("GET", tag_api_url, params=params)

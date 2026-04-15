@@ -5,6 +5,9 @@
 ### Changed
 - Thumbnail drag-start threshold raised from 10px to 30px to match the rubber band's gate — small mouse wobbles on a thumb no longer trigger a file drag
 
+### Refactored
+- `category_fetcher` batch tag-API params are now built by a shared `_build_tag_api_params` helper instead of duplicated across `fetch_via_tag_api` and `_probe_batch_api`
+
 ## v0.2.7
 
 ### Fixed
