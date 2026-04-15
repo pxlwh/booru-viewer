@@ -1,8 +1,9 @@
 # Changelog
 
-## [Unreleased]
+## v0.2.7
 
 ### Fixed
+- Popout always reopened as floating even when tiled at close — Hyprland tiled state is now persisted and restored via `settiled` on reopen
 - Video stutter on network streams — `cache_pause_initial` was blocking first frame, reverted cache_pause changes and kept larger demuxer buffer
 - Rubber band selection state getting stuck across interrupted drags
 - LIKE wildcards in `search_library_meta` not being escaped
