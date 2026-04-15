@@ -46,78 +46,77 @@ async def detect_site_type(
             limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
         )
     client = _BC._shared_client
-    if True:  # keep indent level
-        # Try Danbooru / e621 first — /posts.json is a definitive endpoint
-        try:
-            params: dict = {"limit": 1}
-            if api_key and api_user:
-                params["login"] = api_user
-                params["api_key"] = api_key
-            resp = await client.get(f"{url}/posts.json", params=params)
-            if resp.status_code == 200:
-                data = resp.json()
-                if isinstance(data, dict) and "posts" in data:
-                    # e621/e926 wraps in {"posts": [...]}, with nested file/tags dicts
-                    posts = data["posts"]
-                    if isinstance(posts, list) and posts:
-                        p = posts[0]
-                        if isinstance(p.get("file"), dict) and isinstance(p.get("tags"), dict):
-                            return "e621"
-                    return "danbooru"
-                elif isinstance(data, list) and data:
-                    # Danbooru returns a flat list of post objects
-                    if isinstance(data[0], dict) and any(
-                        k in data[0] for k in ("tag_string", "image_width", "large_file_url")
-                    ):
-                        return "danbooru"
-            elif resp.status_code in (401, 403):
-                if "e621" in url or "e926" in url:
-                    return "e621"
+    # Try Danbooru / e621 first — /posts.json is a definitive endpoint
+    try:
+        params: dict = {"limit": 1}
+        if api_key and api_user:
+            params["login"] = api_user
+            params["api_key"] = api_key
+        resp = await client.get(f"{url}/posts.json", params=params)
+        if resp.status_code == 200:
+            data = resp.json()
+            if isinstance(data, dict) and "posts" in data:
+                # e621/e926 wraps in {"posts": [...]}, with nested file/tags dicts
+                posts = data["posts"]
+                if isinstance(posts, list) and posts:
+                    p = posts[0]
+                    if isinstance(p.get("file"), dict) and isinstance(p.get("tags"), dict):
+                        return "e621"
                 return "danbooru"
-        except Exception as e:
-            log.warning("Danbooru/e621 probe failed for %s: %s: %s",
-                        url, type(e).__name__, e)
+            elif isinstance(data, list) and data:
+                # Danbooru returns a flat list of post objects
+                if isinstance(data[0], dict) and any(
+                    k in data[0] for k in ("tag_string", "image_width", "large_file_url")
+                ):
+                    return "danbooru"
+        elif resp.status_code in (401, 403):
+            if "e621" in url or "e926" in url:
+                return "e621"
+            return "danbooru"
+    except Exception as e:
+        log.warning("Danbooru/e621 probe failed for %s: %s: %s",
+                    url, type(e).__name__, e)
 
-        # Try Gelbooru — /index.php?page=dapi
-        try:
-            params = {
-                "page": "dapi", "s": "post", "q": "index", "json": "1", "limit": 1,
-            }
-            if api_key and api_user:
-                params["api_key"] = api_key
-                params["user_id"] = api_user
-            resp = await client.get(f"{url}/index.php", params=params)
-            if resp.status_code == 200:
-                data = resp.json()
-                if isinstance(data, list) and data and isinstance(data[0], dict):
-                    if any(k in data[0] for k in ("file_url", "preview_url", "directory")):
-                        return "gelbooru"
-                elif isinstance(data, dict):
-                    if "post" in data or "@attributes" in data:
-                        return "gelbooru"
-            elif resp.status_code in (401, 403):
-                if "gelbooru" in url or "safebooru.org" in url or "rule34" in url:
+    # Try Gelbooru — /index.php?page=dapi
+    try:
+        params = {
+            "page": "dapi", "s": "post", "q": "index", "json": "1", "limit": 1,
+        }
+        if api_key and api_user:
+            params["api_key"] = api_key
+            params["user_id"] = api_user
+        resp = await client.get(f"{url}/index.php", params=params)
+        if resp.status_code == 200:
+            data = resp.json()
+            if isinstance(data, list) and data and isinstance(data[0], dict):
+                if any(k in data[0] for k in ("file_url", "preview_url", "directory")):
                     return "gelbooru"
-        except Exception as e:
-            log.warning("Gelbooru probe failed for %s: %s: %s",
-                        url, type(e).__name__, e)
+            elif isinstance(data, dict):
+                if "post" in data or "@attributes" in data:
+                    return "gelbooru"
+        elif resp.status_code in (401, 403):
+            if "gelbooru" in url or "safebooru.org" in url or "rule34" in url:
+                return "gelbooru"
+    except Exception as e:
+        log.warning("Gelbooru probe failed for %s: %s: %s",
+                    url, type(e).__name__, e)
 
-        # Try Moebooru — /post.json (singular)
-        try:
-            params = {"limit": 1}
-            if api_key and api_user:
-                params["login"] = api_user
-                params["password_hash"] = api_key
-            resp = await client.get(f"{url}/post.json", params=params)
-            if resp.status_code == 200:
-                data = resp.json()
-                if isinstance(data, list) or (isinstance(data, dict) and "posts" in data):
-                    return "moebooru"
-            elif resp.status_code in (401, 403):
+    # Try Moebooru — /post.json (singular)
+    try:
+        params = {"limit": 1}
+        if api_key and api_user:
+            params["login"] = api_user
+            params["password_hash"] = api_key
+        resp = await client.get(f"{url}/post.json", params=params)
+        if resp.status_code == 200:
+            data = resp.json()
+            if isinstance(data, list) or (isinstance(data, dict) and "posts" in data):
                 return "moebooru"
-        except Exception as e:
-            log.warning("Moebooru probe failed for %s: %s: %s",
-                        url, type(e).__name__, e)
+        elif resp.status_code in (401, 403):
+            return "moebooru"
+    except Exception as e:
+        log.warning("Moebooru probe failed for %s: %s: %s",
+                    url, type(e).__name__, e)
 
     return None
 

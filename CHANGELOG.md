@@ -11,6 +11,7 @@
 
 ### Refactored
 - `category_fetcher` batch tag-API params are now built by a shared `_build_tag_api_params` helper instead of duplicated across `fetch_via_tag_api` and `_probe_batch_api`
+- `detect.detect_site_type` — removed the leftover `if True:` indent marker; no behavior change
 
 ## v0.2.7
 
