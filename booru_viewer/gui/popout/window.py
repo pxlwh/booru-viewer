@@ -350,7 +350,16 @@ class FullscreenPreview(QMainWindow):
         # F11 → fullscreen → F11 has a sensible target.
         self._windowed_geometry = None
         # Restore saved state or start fullscreen
-        if FullscreenPreview._saved_geometry and not FullscreenPreview._saved_fullscreen:
+        if FullscreenPreview._saved_tiled and not FullscreenPreview._saved_fullscreen:
+            # Was tiled at last close — let Hyprland's layout place it,
+            # then dispatch `settiled` to override the windowrule's float.
+            # Saved geometry is meaningless for a tiled window, so skip
+            # setGeometry entirely.
+            self.show()
+            QTimer.singleShot(
+                50, lambda: hyprland.settiled(self.windowTitle())
+            )
+        elif FullscreenPreview._saved_geometry and not FullscreenPreview._saved_fullscreen:
             self.setGeometry(FullscreenPreview._saved_geometry)
             self._pending_position_restore = (
                 FullscreenPreview._saved_geometry.x(),
@@ -628,6 +637,7 @@ class FullscreenPreview(QMainWindow):
 
     _saved_geometry = None  # remembers window size/position across opens
     _saved_fullscreen = False
+    _saved_tiled = False  # True if Hyprland had it tiled at last close
     _current_tags: dict[str, list[str]] = {}
     _current_tag_list: list[str] = []
 
@@ -1754,9 +1764,13 @@ class FullscreenPreview(QMainWindow):
         # Geometry is adapter-side concern, not state machine concern,
         # so the state machine doesn't see it.
         FullscreenPreview._saved_fullscreen = self.isFullScreen()
+        FullscreenPreview._saved_tiled = False
         if not self.isFullScreen():
             # On Hyprland, Qt doesn't know the real position — ask the WM
             win = hyprland.get_window(self.windowTitle())
+            if win and win.get("floating") is False:
+                # Tiled: reopen will re-tile instead of restoring geometry.
+                FullscreenPreview._saved_tiled = True
             if win and win.get("at") and win.get("size"):
                 from PySide6.QtCore import QRect
                 x, y = win["at"]

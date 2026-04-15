@@ -76,17 +76,21 @@ class PopoutController:
         from .popout.window import FullscreenPreview
         saved_geo = self._app._db.get_setting("slideshow_geometry")
         saved_fs = self._app._db.get_setting_bool("slideshow_fullscreen")
+        saved_tiled = self._app._db.get_setting_bool("slideshow_tiled")
         if saved_geo:
             parts = saved_geo.split(",")
             if len(parts) == 4:
                 from PySide6.QtCore import QRect
                 FullscreenPreview._saved_geometry = QRect(*[int(p) for p in parts])
                 FullscreenPreview._saved_fullscreen = saved_fs
+                FullscreenPreview._saved_tiled = saved_tiled
             else:
                 FullscreenPreview._saved_geometry = None
                 FullscreenPreview._saved_fullscreen = True
+                FullscreenPreview._saved_tiled = False
         else:
             FullscreenPreview._saved_fullscreen = True
+            FullscreenPreview._saved_tiled = saved_tiled
         cols = self._app._grid._flow.columns
         show_actions = self._app._stack.currentIndex() != 2
         monitor = self._app._db.get_setting("slideshow_monitor")
@@ -135,7 +139,9 @@ class PopoutController:
             from .popout.window import FullscreenPreview
             fs = FullscreenPreview._saved_fullscreen
             geo = FullscreenPreview._saved_geometry
+            tiled = FullscreenPreview._saved_tiled
             self._app._db.set_setting("slideshow_fullscreen", "1" if fs else "0")
+            self._app._db.set_setting("slideshow_tiled", "1" if tiled else "0")
             if geo:
                 self._app._db.set_setting("slideshow_geometry", f"{geo.x()},{geo.y()},{geo.width()},{geo.height()}")
         self._app._preview.show()

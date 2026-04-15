@@ -211,9 +211,35 @@ def get_monitor_available_rect(monitor_id: int | None = None) -> tuple[int, int,
         return None
 
 
+def settiled(window_title: str) -> None:
+    """Ask Hyprland to un-float the popout, restoring it to tiled layout.
+
+    Used on reopen when the popout was tiled at close — the windowrule
+    opens it floating, so we dispatch `settiled` to push it back into
+    the layout.
+
+    Gated by BOORU_VIEWER_NO_HYPR_RULES so ricers with their own rules
+    keep control.
+    """
+    if not _on_hyprland():
+        return
+    if not hypr_rules_enabled():
+        return
+    win = get_window(window_title)
+    if not win:
+        return
+    addr = win.get("address")
+    if not addr:
+        return
+    if not win.get("floating"):
+        return
+    _dispatch_batch([f"dispatch settiled address:{addr}"])
+
+
 __all__ = [
     "get_window",
     "get_monitor_available_rect",
     "resize",
     "resize_and_move",
+    "settiled",
 ]
