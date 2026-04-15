@@ -302,7 +302,7 @@ class ThumbnailWidget(QWidget):
             self.setCursor(Qt.CursorShape.PointingHandCursor if over else Qt.CursorShape.ArrowCursor)
             self.update()
         if (self._drag_start and self._cached_path
-                and (event.position().toPoint() - self._drag_start).manhattanLength() > 10):
+                and (event.position().toPoint() - self._drag_start).manhattanLength() > 30):
             drag = QDrag(self)
             mime = QMimeData()
             mime.setUrls([QUrl.fromLocalFile(self._cached_path)])
