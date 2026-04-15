@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Added
+- Settings → Cache: **Clear Tag Category Cache** button — wipes the per-site `tag_types` rows (including the `__batch_api_probe__` sentinel) so Gelbooru/Moebooru backends re-probe and re-populate tag categories from scratch. Useful when a stale cache from an earlier build leaves some category types mis-labelled or missing
+
 ### Changed
 - Thumbnail drag-start threshold raised from 10px to 30px to match the rubber band's gate — small mouse wobbles on a thumb no longer trigger a file drag
 

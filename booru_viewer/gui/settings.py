@@ -328,6 +328,20 @@ class SettingsDialog(QDialog):
 
         actions_layout.addLayout(btn_row2)
 
+        btn_row3 = QHBoxLayout()
+
+        clear_tags_btn = QPushButton("Clear Tag Category Cache")
+        clear_tags_btn.setToolTip(
+            "Wipe the per-site tag-type cache (Gelbooru/Moebooru sites). "
+            "Use this if category colors stop appearing correctly — the "
+            "app will re-fetch tag types on the next post view."
+        )
+        clear_tags_btn.clicked.connect(self._clear_tag_cache)
+        btn_row3.addWidget(clear_tags_btn)
+        btn_row3.addStretch(1)
+
+        actions_layout.addLayout(btn_row3)
+
         layout.addWidget(actions_group)
         layout.addStretch()
         return w
@@ -698,6 +712,18 @@ class SettingsDialog(QDialog):
         count = evict_oldest(max_bytes, protected)
         QMessageBox.information(self, "Done", f"Evicted {count} files.")
         self._refresh_stats()
+
+    def _clear_tag_cache(self) -> None:
+        reply = QMessageBox.question(
+            self, "Confirm",
+            "Wipe the tag category cache for every site? This also clears "
+            "the per-site batch-API probe result, so the app will re-probe "
+            "Gelbooru/Moebooru backends on next use.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            count = self._db.clear_tag_cache()
+            QMessageBox.information(self, "Done", f"Deleted {count} tag-type rows.")
 
     def _bl_export(self) -> None:
         from .dialogs import save_file
