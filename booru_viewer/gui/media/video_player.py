@@ -158,6 +158,9 @@ class VideoPlayer(QWidget):
             self._mpv['background'] = 'color'
             self._mpv['background-color'] = self._letterbox_color.name()
         except Exception:
+            # mpv not fully initialized or torn down; letterbox color
+            # is a cosmetic fallback so a property-write refusal just
+            # leaves the default black until next set.
             pass
 
     def __init__(self, parent: QWidget | None = None, embed_controls: bool = True) -> None:
@@ -440,6 +443,9 @@ class VideoPlayer(QWidget):
         try:
             m['hwdec'] = 'auto'
         except Exception:
+            # If hwdec re-arm is refused, mpv falls back to software
+            # decode silently — playback still works, just at higher
+            # CPU cost on this file.
             pass
         self._current_file = path
         self._media_ready_fired = False
@@ -481,6 +487,9 @@ class VideoPlayer(QWidget):
             try:
                 self._mpv['hwdec'] = 'no'
             except Exception:
+                # Best-effort VRAM release on stop; if mpv is mid-
+                # teardown and rejects the write, GL context destruction
+                # still drops the surface pool eventually.
                 pass
         self._time_label.setText("0:00")
         self._duration_label.setText("0:00")
@@ -527,6 +536,9 @@ class VideoPlayer(QWidget):
                 if pos is not None and dur is not None and dur > 0 and pos >= dur - 0.5:
                     self._mpv.command('seek', 0, 'absolute+exact')
             except Exception:
+                # Replay-on-end is a UX nicety; if mpv refuses the
+                # seek (stream not ready, state mid-transition) just
+                # toggle pause without rewinding.
                 pass
         self._mpv.pause = not self._mpv.pause
         self._play_btn.setIcon(self._play_icon if self._mpv.pause else self._pause_icon)
