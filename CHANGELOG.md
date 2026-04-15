@@ -5,6 +5,9 @@
 ### Changed
 - Thumbnail drag-start threshold raised from 10px to 30px to match the rubber band's gate — small mouse wobbles on a thumb no longer trigger a file drag
 
+### Fixed
+- `category_fetcher._do_ensure` no longer permanently flips `_batch_api_works` to False when a transient network error drops a tag-API request mid-call; the unprobed path now routes through `_probe_batch_api`, which distinguishes clean 200-with-zero-matches (structurally broken, flip) from timeout/HTTP-error (transient, retry next call)
+
 ### Refactored
 - `category_fetcher` batch tag-API params are now built by a shared `_build_tag_api_params` helper instead of duplicated across `fetch_via_tag_api` and `_probe_batch_api`
 

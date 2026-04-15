@@ -454,3 +454,89 @@ class TestMaps:
         assert _GELBOORU_TYPE_MAP[4] == "Character"
         assert _GELBOORU_TYPE_MAP[5] == "Meta"
         assert 2 not in _GELBOORU_TYPE_MAP  # Deprecated intentionally omitted
+
+
+# ---------------------------------------------------------------------------
+# _do_ensure dispatch — regression cover for transient-error poisoning
+# ---------------------------------------------------------------------------
+
+class TestDoEnsureProbeRouting:
+    """When _batch_api_works is None, _do_ensure must route through
+    _probe_batch_api so transient errors stay transient. The prior
+    implementation called fetch_via_tag_api directly and inferred
+    False from empty tag_categories — but fetch_via_tag_api swallows
+    per-chunk exceptions, so a network drop silently poisoned the
+    probe flag to False for the whole site."""
+
+    def test_transient_error_leaves_flag_none(self, tmp_db):
+        """All chunks fail → _batch_api_works must stay None,
+        not flip to False."""
+        client = FakeClient(
+            tag_api_url="http://example.com/tags",
+            api_key="k",
+            api_user="u",
+        )
+
+        async def raising_request(method, url, params=None):
+            raise RuntimeError("network down")
+        client._request = raising_request
+
+        fetcher = CategoryFetcher(client, tmp_db, site_id=1)
+        assert fetcher._batch_api_works is None
+        post = FakePost(tags="miku 1girl")
+
+        asyncio.new_event_loop().run_until_complete(fetcher._do_ensure(post))
+
+        assert fetcher._batch_api_works is None, (
+            "Transient error must not poison the probe flag"
+        )
+        # Persistence side: nothing was saved
+        reloaded = CategoryFetcher(FakeClient(), tmp_db, site_id=1)
+        assert reloaded._batch_api_works is None
+
+    def test_clean_200_zero_matches_flips_to_false(self, tmp_db):
+        """Clean HTTP 200 + no names matching the request → flips
+        the flag to False (structurally broken endpoint)."""
+        client = FakeClient(
+            tag_api_url="http://example.com/tags",
+            api_key="k",
+            api_user="u",
+        )
+
+        async def empty_ok_request(method, url, params=None):
+            # 200 with a valid but empty tag list
+            return FakeResponse(
+                json.dumps({"@attributes": {"count": 0}, "tag": []}),
+                status_code=200,
+            )
+        client._request = empty_ok_request
+
+        fetcher = CategoryFetcher(client, tmp_db, site_id=1)
+        post = FakePost(tags="definitely_not_a_real_tag")
+
+        asyncio.new_event_loop().run_until_complete(fetcher._do_ensure(post))
+
+        assert fetcher._batch_api_works is False, (
+            "Clean 200 with zero matches must flip flag to False"
+        )
+        reloaded = CategoryFetcher(FakeClient(), tmp_db, site_id=1)
+        assert reloaded._batch_api_works is False
+
+    def test_non_200_leaves_flag_none(self, tmp_db):
+        """500-family responses are transient, must not poison."""
+        client = FakeClient(
+            tag_api_url="http://example.com/tags",
+            api_key="k",
+            api_user="u",
+        )
+
+        async def five_hundred(method, url, params=None):
+            return FakeResponse("", status_code=503)
+        client._request = five_hundred
+
+        fetcher = CategoryFetcher(client, tmp_db, site_id=1)
+        post = FakePost(tags="miku")
+
+        asyncio.new_event_loop().run_until_complete(fetcher._do_ensure(post))
+
+        assert fetcher._batch_api_works is None

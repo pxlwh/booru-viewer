@@ -357,29 +357,41 @@ class CategoryFetcher:
     async def _do_ensure(self, post: "Post") -> None:
         """Inner dispatch for ensure_categories.
 
-        Tries the batch API when it's known to work (True) OR not yet
-        probed (None). The result doubles as an inline probe: if the
-        batch produced categories, it works (save True); if it
-        returned nothing useful, it's broken (save False). Falls
-        through to HTML scrape as the universal fallback.
+        Dispatch:
+          - ``_batch_api_works is True``: call ``fetch_via_tag_api``
+            directly. If it populates categories we're done; a
+            transient failure leaves them empty and we fall through
+            to the HTML scrape.
+          - ``_batch_api_works is None``: route through
+            ``_probe_batch_api``, which only flips the flag to
+            True/False on a clean HTTP response. Transient errors
+            leave it ``None`` so the next call retries the probe.
+            Previously this path called ``fetch_via_tag_api`` and
+            inferred the result from empty ``tag_categories`` — but
+            ``fetch_via_tag_api`` swallows per-chunk failures with
+            ``continue``, so a mid-call network drop poisoned
+            ``_batch_api_works = False`` for the site permanently.
+          - ``_batch_api_works is False`` or unavailable: straight
+            to HTML scrape.
         """
-        if self._batch_api_works is not False and self._batch_api_available():
+        if self._batch_api_works is True and self._batch_api_available():
             try:
                 await self.fetch_via_tag_api([post])
             except Exception as e:
                 log.debug("Batch API ensure failed (transient): %s", e)
-                # Leave _batch_api_works at None → retry next call
-            else:
-                if post.tag_categories:
-                    if self._batch_api_works is None:
-                        self._batch_api_works = True
-                        self._save_probe_result(True)
-                    return
-                # Batch returned nothing → broken API (Rule34) or
-                # the specific post has only unknown tags (very rare).
-                if self._batch_api_works is None:
-                    self._batch_api_works = False
-                    self._save_probe_result(False)
+            if post.tag_categories:
+                return
+        elif self._batch_api_works is None and self._batch_api_available():
+            try:
+                result = await self._probe_batch_api([post])
+            except Exception as e:
+                log.info("Batch API probe error (will retry next call): %s: %s",
+                         type(e).__name__, e)
+                result = None
+            if result is True:
+                # Probe succeeded — results cached and post composed.
+                return
+            # result is False (broken API) or None (transient) — fall through
         # HTML scrape fallback (works on Rule34/Safebooru.org/Moebooru,
         # returns empty on Gelbooru proper which is fine because the
         # batch path above covers Gelbooru)
