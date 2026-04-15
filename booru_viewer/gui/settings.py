@@ -313,6 +313,15 @@ class SettingsDialog(QDialog):
         clear_cache_btn.clicked.connect(self._clear_image_cache)
         btn_row1.addWidget(clear_cache_btn)
 
+        clear_tags_btn = QPushButton("Clear Tag Cache")
+        clear_tags_btn.setToolTip(
+            "Wipe the per-site tag-type cache (Gelbooru/Moebooru sites). "
+            "Use this if category colors stop appearing correctly — the "
+            "app will re-fetch tag types on the next post view."
+        )
+        clear_tags_btn.clicked.connect(self._clear_tag_cache)
+        btn_row1.addWidget(clear_tags_btn)
+
         actions_layout.addLayout(btn_row1)
 
         btn_row2 = QHBoxLayout()
@@ -327,20 +336,6 @@ class SettingsDialog(QDialog):
         btn_row2.addWidget(evict_btn)
 
         actions_layout.addLayout(btn_row2)
-
-        btn_row3 = QHBoxLayout()
-
-        clear_tags_btn = QPushButton("Clear Tag Category Cache")
-        clear_tags_btn.setToolTip(
-            "Wipe the per-site tag-type cache (Gelbooru/Moebooru sites). "
-            "Use this if category colors stop appearing correctly — the "
-            "app will re-fetch tag types on the next post view."
-        )
-        clear_tags_btn.clicked.connect(self._clear_tag_cache)
-        btn_row3.addWidget(clear_tags_btn)
-        btn_row3.addStretch(1)
-
-        actions_layout.addLayout(btn_row3)
 
         layout.addWidget(actions_group)
         layout.addStretch()
