@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- Thumbnail drag-start threshold raised from 10px to 30px to match the rubber band's gate — small mouse wobbles on a thumb no longer trigger a file drag
+
 ## v0.2.7
 
 ### Fixed
