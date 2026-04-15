@@ -10,9 +10,9 @@ from dataclasses import dataclass, field
 
 import httpx
 
-from ..config import USER_AGENT, DEFAULT_PAGE_SIZE
+from ..config import DEFAULT_PAGE_SIZE
 from ..cache import log_connection
-from ._safety import redact_url, validate_public_request
+from ._safety import redact_url
 
 log = logging.getLogger("booru")
 
@@ -100,21 +100,11 @@ class BooruClient(ABC):
             return c
         # Slow path: build it. Lock so two coroutines on the same loop don't
         # both construct + leak.
+        from ..http import make_client
         with BooruClient._shared_client_lock:
             c = BooruClient._shared_client
             if c is None or c.is_closed:
-                c = httpx.AsyncClient(
-                    headers={"User-Agent": USER_AGENT},
-                    follow_redirects=True,
-                    timeout=20.0,
-                    event_hooks={
-                        "request": [
-                            validate_public_request,
-                            self._log_request,
-                        ],
-                    },
-                    limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
-                )
+                c = make_client(extra_request_hooks=[self._log_request])
                 BooruClient._shared_client = c
             return c
 

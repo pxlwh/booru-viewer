@@ -4,10 +4,7 @@ from __future__ import annotations
 
 import logging
 
-import httpx
-
-from ..config import USER_AGENT
-from ._safety import validate_public_request
+from ..http import make_client
 from .danbooru import DanbooruClient
 from .gelbooru import GelbooruClient
 from .moebooru import MoebooruClient
@@ -29,22 +26,11 @@ async def detect_site_type(
     url = url.rstrip("/")
 
     from .base import BooruClient as _BC
-    # Reuse shared client for site detection. event_hooks mirrors
+    # Reuse shared client for site detection. Event hooks mirror
     # BooruClient.client so detection requests get the same SSRF
     # validation and connection logging as regular API calls.
     if _BC._shared_client is None or _BC._shared_client.is_closed:
-        _BC._shared_client = httpx.AsyncClient(
-            headers={"User-Agent": USER_AGENT},
-            follow_redirects=True,
-            timeout=20.0,
-            event_hooks={
-                "request": [
-                    validate_public_request,
-                    _BC._log_request,
-                ],
-            },
-            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
-        )
+        _BC._shared_client = make_client(extra_request_hooks=[_BC._log_request])
     client = _BC._shared_client
     # Try Danbooru / e621 first — /posts.json is a definitive endpoint
     try:

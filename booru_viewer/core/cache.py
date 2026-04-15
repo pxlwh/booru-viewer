@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 import httpx
 from PIL import Image
 
-from .config import cache_dir, thumbnails_dir, USER_AGENT
+from .config import cache_dir, thumbnails_dir
 
 log = logging.getLogger("booru")
 
@@ -77,23 +77,14 @@ def _get_shared_client(referer: str = "") -> httpx.AsyncClient:
     c = _shared_client
     if c is not None and not c.is_closed:
         return c
-    # Lazy import: core.api.base imports log_connection from this
-    # module, so a top-level `from .api._safety import ...` would
-    # circular-import through api/__init__.py during cache.py load.
-    from .api._safety import validate_public_request
+    # Lazy import: core.http imports from core.api._safety, which
+    # lives inside the api package that imports this module, so a
+    # top-level import would circular through cache.py's load.
+    from .http import make_client
     with _shared_client_lock:
         c = _shared_client
         if c is None or c.is_closed:
-            c = httpx.AsyncClient(
-                headers={
-                    "User-Agent": USER_AGENT,
-                    "Accept": "image/*,video/*,*/*",
-                },
-                follow_redirects=True,
-                timeout=60.0,
-                event_hooks={"request": [validate_public_request]},
-                limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
-            )
+            c = make_client(timeout=60.0, accept="image/*,video/*,*/*")
             _shared_client = c
         return c
 

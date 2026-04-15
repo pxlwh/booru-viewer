@@ -16,6 +16,7 @@
 ### Refactored
 - `category_fetcher` batch tag-API params are now built by a shared `_build_tag_api_params` helper instead of duplicated across `fetch_via_tag_api` and `_probe_batch_api`
 - `detect.detect_site_type` — removed the leftover `if True:` indent marker; no behavior change
+- `core.http.make_client` — single constructor for the three `httpx.AsyncClient` instances (cache download pool, API pool, detect probe). Each call site still keeps its own singleton and connection pool; only the construction is shared
 
 ## v0.2.7
 
