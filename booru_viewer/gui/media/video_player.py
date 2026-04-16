@@ -491,6 +491,11 @@ class VideoPlayer(QWidget):
                 # teardown and rejects the write, GL context destruction
                 # still drops the surface pool eventually.
                 pass
+        # Free the GL render context so its internal textures and FBOs
+        # release VRAM while no video is playing. The next play_file()
+        # call recreates the context via ensure_gl_init() (~5ms cost,
+        # swamped by the network fetch for uncached videos).
+        self._gl_widget.release_render_context()
         self._time_label.setText("0:00")
         self._duration_label.setText("0:00")
         self._seek_slider.setRange(0, 0)

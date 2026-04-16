@@ -13,6 +13,7 @@
 - Bookmark→library save and bookmark Save As now plumb the active site's `CategoryFetcher` through to the filename template, so `%artist%`/`%character%` tokens render correctly instead of silently dropping out when saving a post that wasn't previewed first
 - Info panel no longer silently drops tags that failed to land in a cached category — any tag from `post.tag_list` not rendered under a known category section now appears in an "Other" bucket, so partial cache coverage can't make individual tags invisible
 - `BooruClient._request` retries now cover `httpx.RemoteProtocolError` and `httpx.ReadError` in addition to the existing timeout/connect/network set — an overloaded booru that drops the TCP connection mid-response no longer fails the whole search on the first try
+- VRAM retained when no video is playing — `stop()` now frees the GL render context (textures + FBOs) instead of just dropping the hwdec surface pool. Context is recreated lazily on next `play_file()` via `ensure_gl_init()` (~5ms, invisible behind network fetch)
 
 ### Refactored
 - `category_fetcher` batch tag-API params are now built by a shared `_build_tag_api_params` helper instead of duplicated across `fetch_via_tag_api` and `_probe_batch_api`

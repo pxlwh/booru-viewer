@@ -111,7 +111,20 @@ class _MpvGLWidget(QWidget):
             self._gl.makeCurrent()
             self._init_gl()
 
-    def cleanup(self) -> None:
+    def release_render_context(self) -> None:
+        """Free the GL render context without terminating mpv.
+
+        Releases all GPU-side textures and FBOs that the render context
+        holds. The next ``ensure_gl_init()`` call (from ``play_file``)
+        recreates the context cheaply (~5ms). This is the difference
+        between "mpv is idle but holding VRAM" and "mpv is idle and
+        clean."
+
+        Safe to call when mpv has no active file (after
+        ``mpv.command('stop')``). After this, ``_paint_gl`` is a no-op
+        (``_ctx is None`` guard) and mpv won't fire frame-ready
+        callbacks because there's no render context to trigger them.
+        """
         if self._ctx:
             # GL context must be current so mpv can release its textures
             # and FBOs on the correct context. Without this, drivers that
@@ -123,6 +136,10 @@ class _MpvGLWidget(QWidget):
             finally:
                 self._gl.doneCurrent()
             self._ctx = None
+            self._gl_inited = False
+
+    def cleanup(self) -> None:
+        self.release_render_context()
         if self._mpv:
             self._mpv.terminate()
             self._mpv = None
