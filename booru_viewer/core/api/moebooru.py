@@ -28,7 +28,7 @@ class MoebooruClient(BooruClient):
         resp.raise_for_status()
         try:
             data = resp.json()
-        except Exception as e:
+        except ValueError as e:
             log.warning("Moebooru search JSON parse failed: %s: %s — body: %s",
                         type(e).__name__, e, resp.text[:200])
             return []
