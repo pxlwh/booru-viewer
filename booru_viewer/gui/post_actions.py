@@ -21,11 +21,7 @@ def is_batch_message(msg: str) -> bool:
     return "/" in msg and any(c.isdigit() for c in msg.split("/")[0][-2:])
 
 def is_in_library(path: Path, saved_root: Path) -> bool:
-    """Check if path is inside the library root."""
-    try:
-        return path.is_relative_to(saved_root)
-    except (TypeError, ValueError):
-        return False
+    return path.is_relative_to(saved_root)
 
 
 class PostActionsController:
