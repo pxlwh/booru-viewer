@@ -92,7 +92,7 @@ class E621Client(BooruClient):
         resp.raise_for_status()
         try:
             data = resp.json()
-        except Exception as e:
+        except ValueError as e:
             log.warning("e621 search JSON parse failed: %s: %s — body: %s",
                         type(e).__name__, e, resp.text[:200])
             return []
