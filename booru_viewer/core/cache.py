@@ -487,6 +487,8 @@ async def _do_download(
                             progress_callback(downloaded, total)
                 os.replace(tmp_path, local)
             except BaseException:
+                # BaseException on purpose: also clean up the .part file on
+                # Ctrl-C / task cancellation, not just on Exception.
                 try:
                     tmp_path.unlink(missing_ok=True)
                 except OSError:
