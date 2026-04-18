@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 
 from PySide6.QtCore import Qt, QTimer, Signal, Property, QPoint
 from PySide6.QtGui import QColor, QIcon, QPixmap, QPainter, QPen, QPolygon, QPainterPath, QFont
@@ -456,8 +457,7 @@ class VideoPlayer(QWidget):
         # treated as belonging to the previous file's stop and
         # ignored — see the long comment at __init__'s
         # `_eof_ignore_until` definition for the race trace.
-        import time as _time
-        self._eof_ignore_until = _time.monotonic() + self._eof_ignore_window_secs
+        self._eof_ignore_until = time.monotonic() + self._eof_ignore_window_secs
         self._last_video_size = None  # reset dedupe so new file fires a fit
         self._apply_loop_to_mpv()
 
@@ -617,8 +617,7 @@ class VideoPlayer(QWidget):
         reset and trigger a spurious play_next auto-advance.
         """
         if value is True:
-            import time as _time
-            if _time.monotonic() < self._eof_ignore_until:
+            if time.monotonic() < self._eof_ignore_until:
                 # Stale eof from a previous file's stop. Drop it.
                 return
             self._eof_pending = True
