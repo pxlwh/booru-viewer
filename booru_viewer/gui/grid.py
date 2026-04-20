@@ -868,8 +868,10 @@ class ThumbnailGrid(QScrollArea):
         super().resizeEvent(event)
         if self._flow:
             self._flow.resize(self.viewport().size().width(), self._flow.minimumHeight())
-            # Qt Wayland buffer goes stale after compositor-driven resize
-            # (Hyprland tiled geometry change). Thumbs reflow but paint
-            # skips until a scroll/click invalidates the viewport. Force
-            # repaint so the grid stays visible through tile resizes.
-            self.viewport().update()
+            # Column count can change on resize (splitter drag, tile/float
+            # toggle). Thumbs that were outside the keep zone had their
+            # pixmap freed by _recycle_offscreen and will paint as empty
+            # cells if the row shift moves them into view without a scroll
+            # event to refresh them. Re-run the recycle pass against the
+            # new geometry so newly-visible thumbs get their pixmap back.
+            self._recycle_offscreen()
