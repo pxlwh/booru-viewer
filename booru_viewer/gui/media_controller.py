@@ -166,9 +166,7 @@ class MediaController:
                 cn = self._app._search_ctrl._cached_names
                 if cn is not None:
                     cn.add(Path(path).name)
-                self._app._status.showMessage(
-                    f"{len(self._app._posts)} results — Loaded"
-                )
+                self._app._status.showMessage(info)
                 self.auto_evict_cache()
                 return
         if self._app._popout_ctrl.window and self._app._popout_ctrl.window.isVisible():
@@ -176,7 +174,7 @@ class MediaController:
             self._app._preview._current_path = path
         else:
             self.set_preview_media(path, info)
-        self._app._status.showMessage(f"{len(self._app._posts)} results — Loaded")
+        self._app._status.showMessage(info)
         idx = self._app._grid.selected_index
         if 0 <= idx < len(self._app._grid._thumbs):
             self._app._grid._thumbs[idx]._cached_path = path
