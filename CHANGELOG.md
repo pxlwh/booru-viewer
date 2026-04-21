@@ -3,12 +3,15 @@
 ## [Unreleased]
 
 ### Added
-- Settings → Cache: **Clear Tag Category Cache** button — wipes the per-site `tag_types` rows (including the `__batch_api_probe__` sentinel) so Gelbooru/Moebooru backends re-probe and re-populate tag categories from scratch. Useful when a stale cache from an earlier build leaves some category types mis-labelled or missing
+- Settings → Cache: **Clear Tag Cache** button — wipes the per-site `tag_types` rows (including the `__batch_api_probe__` sentinel) so Gelbooru/Moebooru backends re-probe and re-populate tag categories from scratch. Useful when a stale cache from an earlier build leaves some category types mis-labelled or missing
 
 ### Changed
 - Thumbnail drag-start threshold raised from 10px to 30px to match the rubber band's gate — small mouse wobbles on a thumb no longer trigger a file drag
+- Settings → Cache layout: Clear Tag Cache moved into row 1 alongside Clear Thumbnails and Clear Image Cache as a 3-wide non-destructive row; destructive Clear Everything + Evict stay in row 2
 
 ### Fixed
+- Grid blanked out after splitter drag or tile/float toggle until the next scroll — `ThumbnailGrid.resizeEvent` now re-runs `_recycle_offscreen` against the new geometry so thumbs whose pixmap was evicted by a column-count shift get refreshed into view. **Behavior change:** no more blank grid after resize
+- Status bar overwrote the per-post info set by `_on_post_selected` with `"N results — Loaded"` the moment the image finished downloading, hiding tag counts / post ID until the user re-clicked; `on_image_done` now preserves the incoming `info` string
 - `category_fetcher._do_ensure` no longer permanently flips `_batch_api_works` to False when a transient network error drops a tag-API request mid-call; the unprobed path now routes through `_probe_batch_api`, which distinguishes clean 200-with-zero-matches (structurally broken, flip) from timeout/HTTP-error (transient, retry next call)
 - Bookmark→library save and bookmark Save As now plumb the active site's `CategoryFetcher` through to the filename template, so `%artist%`/`%character%` tokens render correctly instead of silently dropping out when saving a post that wasn't previewed first
 - Info panel no longer silently drops tags that failed to land in a cached category — any tag from `post.tag_list` not rendered under a known category section now appears in an "Other" bucket, so partial cache coverage can't make individual tags invisible
@@ -19,6 +22,15 @@
 - `category_fetcher` batch tag-API params are now built by a shared `_build_tag_api_params` helper instead of duplicated across `fetch_via_tag_api` and `_probe_batch_api`
 - `detect.detect_site_type` — removed the leftover `if True:` indent marker; no behavior change
 - `core.http.make_client` — single constructor for the three `httpx.AsyncClient` instances (cache download pool, API pool, detect probe). Each call site still keeps its own singleton and connection pool; only the construction is shared
+- Silent `except: pass` sites in `popout/window`, `video_player`, and `window_state` now carry one-line comments naming the absorbed failure and the graceful fallback (or were downgraded to `log.debug(..., exc_info=True)`). No behavior change
+- Popout docstrings purged of in-flight-refactor commit markers (`skeleton`, `14a`, `14b`, `future commit`) that referred to now-landed state-machine extraction; load-bearing commit 14b reference kept in `_dispatch_and_apply` as it still protects against reintroducing the bug
+- `core/cache.py` tempfile cleanup: `BaseException` catch now documents why it's intentionally broader than `Exception`
+- `api/e621` and `api/moebooru` JSON parse guards narrowed from bare `except` to `ValueError`
+- `gui/media/video_player.py` — `import time` hoisted to module top
+- `gui/post_actions.is_in_library` — dead `try/except` stripped
+
+### Removed
+- Unused `Favorite` alias in `core/db.py` — callers migrated to `Bookmark` in 0.2.5, nothing referenced the fallback anymore
 
 ## v0.2.7
 
