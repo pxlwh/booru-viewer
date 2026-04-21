@@ -1,16 +1,7 @@
 # booru-viewer
+A Qt6 booru client for people who keep what they save and rice what they run. Browse, search, and archive Danbooru, e621, Gelbooru, and Moebooru on Linux and Windows. Fully themeable.
 
-[![tests](https://github.com/pxlwh/booru-viewer/actions/workflows/tests.yml/badge.svg)](https://github.com/pxlwh/booru-viewer/actions/workflows/tests.yml)
-
-A booru client for people who keep what they save and rice what they run.
-
-Qt6 desktop app for Linux and Windows. Browse, search, and archive Danbooru, e621, Gelbooru, and Moebooru. Fully themeable.
-
-## Screenshot
-
-**Linux — Styled via system Qt6 theme**
-
-<picture><img src="screenshots/linux.png" alt="Linux — System Qt6 theme" width="700"></picture>
+<img src="screenshots/linux.png" alt="Linux — System Qt6 theme" width="700">
 
 Supports custom styling via `custom.qss` — see [Theming](#theming).
 
