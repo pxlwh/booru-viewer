@@ -32,6 +32,85 @@ def _on_hyprland() -> bool:
     return bool(os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"))
 
 
+# --- dispatch dialects ------------------------------------------------
+#
+# Hyprland 0.56 replaced the string dispatch API with a Lua one. The old
+# form is now parsed as Lua and dies:
+#
+#   $ hyprctl dispatch setprop address:0x1 keep_aspect_ratio 1
+#   error: [string "return hl.dispatch(setprop address:0x1..."]:1: ')' expected
+#
+# `hyprctl` exits 0 on that error, so nothing downstream can notice by
+# return code — this silently disabled every in-code window dispatch
+# (aspect lock, resize, move, tiling) for 0.56+ users. Verified live
+# 2026_08_20 against Hyprland 0.56.2.
+#
+# Users on older builds still need the legacy strings, so pick the
+# dialect once from a side-effect-free probe rather than parsing the
+# version (git builds make version strings unreliable).
+
+_lua_dialect: bool | None = None
+
+
+def _uses_lua_dispatch() -> bool:
+    """True if this Hyprland wants Lua-form dispatchers.
+
+    Probes with `hyprctl eval`, which only exists on the Lua-era
+    builds; older ones answer "unknown request". Read-only, so it is
+    safe to run at any point. Cached for the process lifetime — the
+    compositor is not going to change under us.
+    """
+    global _lua_dialect
+    if _lua_dialect is not None:
+        return _lua_dialect
+    try:
+        r = subprocess.run(
+            ["hyprctl", "eval", "return 1"],
+            capture_output=True, text=True, timeout=1,
+        )
+        _lua_dialect = "unknown request" not in (r.stdout + r.stderr).lower()
+    except Exception:
+        _lua_dialect = False
+    return _lua_dialect
+
+
+def _setprop(addr: str, prop: str, value: int) -> str:
+    if _uses_lua_dispatch():
+        return (f"dispatch hl.dsp.window.set_prop{{ prop='{prop}', "
+                f"value={value}, window='address:{addr}' }}")
+    return f"dispatch setprop address:{addr} {prop} {value}"
+
+
+def _resize_exact(addr: str, w: int, h: int) -> str:
+    """Absolute pixel resize. `resize{x,y}` is absolute, not a delta —
+    confirmed by applying it twice and seeing the size unchanged."""
+    if _uses_lua_dispatch():
+        return (f"dispatch hl.dsp.window.resize{{ x={w}, y={h}, "
+                f"window='address:{addr}' }}")
+    return f"dispatch resizewindowpixel exact {w} {h},address:{addr}"
+
+
+def _move_exact(addr: str, x: int, y: int) -> str:
+    """Absolute pixel move, same as above."""
+    if _uses_lua_dispatch():
+        return (f"dispatch hl.dsp.window.move{{ x={x}, y={y}, "
+                f"window='address:{addr}' }}")
+    return f"dispatch movewindowpixel exact {x} {y},address:{addr}"
+
+
+def _set_tiled(addr: str) -> str:
+    """Un-float a window.
+
+    The Lua API has no force-tile: `hl.dsp.window.float` TOGGLES, and
+    an unrecognized `state=` key is silently ignored rather than
+    honored. Callers must therefore check `floating` first — every one
+    in this module already does, which is what makes the toggle safe.
+    """
+    if _uses_lua_dispatch():
+        return f"dispatch hl.dsp.window.float{{ window='address:{addr}' }}"
+    return f"dispatch settiled address:{addr}"
+
+
 def get_window(window_title: str) -> dict | None:
     """Return the Hyprland window dict whose `title` matches.
 
@@ -87,18 +166,18 @@ def resize(window_title: str, w: int, h: int, animate: bool = False) -> None:
         # Tiled — don't resize (fights the layout). Optionally set
         # aspect lock and no_anim depending on the env vars.
         if rules_on and not animate:
-            cmds.append(f"dispatch setprop address:{addr} no_anim 1")
+            cmds.append(_setprop(addr, "no_anim", 1))
         if aspect_on:
-            cmds.append(f"dispatch setprop address:{addr} keep_aspect_ratio 1")
+            cmds.append(_setprop(addr, "keep_aspect_ratio", 1))
     else:
         if rules_on and not animate:
-            cmds.append(f"dispatch setprop address:{addr} no_anim 1")
+            cmds.append(_setprop(addr, "no_anim", 1))
         if aspect_on:
-            cmds.append(f"dispatch setprop address:{addr} keep_aspect_ratio 0")
+            cmds.append(_setprop(addr, "keep_aspect_ratio", 0))
         if rules_on:
-            cmds.append(f"dispatch resizewindowpixel exact {w} {h},address:{addr}")
+            cmds.append(_resize_exact(addr, w, h))
         if aspect_on:
-            cmds.append(f"dispatch setprop address:{addr} keep_aspect_ratio 1")
+            cmds.append(_setprop(addr, "keep_aspect_ratio", 1))
     if not cmds:
         return
     _dispatch_batch(cmds)
@@ -142,14 +221,14 @@ def resize_and_move(
         return
     cmds: list[str] = []
     if rules_on and not animate:
-        cmds.append(f"dispatch setprop address:{addr} no_anim 1")
+        cmds.append(_setprop(addr, "no_anim", 1))
     if aspect_on:
-        cmds.append(f"dispatch setprop address:{addr} keep_aspect_ratio 0")
+        cmds.append(_setprop(addr, "keep_aspect_ratio", 0))
     if rules_on:
-        cmds.append(f"dispatch resizewindowpixel exact {w} {h},address:{addr}")
-        cmds.append(f"dispatch movewindowpixel exact {x} {y},address:{addr}")
+        cmds.append(_resize_exact(addr, w, h))
+        cmds.append(_move_exact(addr, x, y))
     if aspect_on:
-        cmds.append(f"dispatch setprop address:{addr} keep_aspect_ratio 1")
+        cmds.append(_setprop(addr, "keep_aspect_ratio", 1))
     if not cmds:
         return
     _dispatch_batch(cmds)
@@ -233,7 +312,7 @@ def settiled(window_title: str) -> None:
         return
     if not win.get("floating"):
         return
-    _dispatch_batch([f"dispatch settiled address:{addr}"])
+    _dispatch_batch([_set_tiled(addr)])
 
 
 __all__ = [

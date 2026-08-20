@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- Every in-code Hyprland dispatch was a no-op on Hyprland 0.56+, which replaced the string dispatch API with a Lua one — the popout's aspect lock, resize, move, and un-float-on-reopen all silently stopped working, indistinguishable from running with both opt-out env vars permanently set. `hyprctl` exits 0 on the resulting Lua parse error, so nothing could detect it by return code. The app now probes the compositor once with a read-only `hyprctl eval` and emits whichever dialect it speaks; pre-0.56 builds keep the legacy strings. **Behavior change:** popout geometry and aspect lock work again on current Hyprland
+
 ## v0.2.9
 
 ### Fixed
