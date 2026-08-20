@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- Sites whose `__batch_api_probe__` sentinel was poisoned to `false` by a pre-0.2.8 transient network error now recover automatically. v0.2.8 stopped new poisoning but left existing rows stuck — `CategoryFetcher._do_ensure` sends a `False` straight to the HTML scrape and never re-probes, so Settings → Clear Tag Cache was a required manual step on upgrade that users had no way to know about. A one-shot migration (`PRAGMA user_version` 0 → 1) drops only the `false` sentinels; confirmed-working `true` rows are kept. Gated rather than unconditional because a bare `DELETE` would make a genuinely broken tag API re-probe on every launch
+
 ## v0.2.8
 
 ### Added

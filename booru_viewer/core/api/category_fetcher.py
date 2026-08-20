@@ -149,7 +149,9 @@ class CategoryFetcher:
 
     # ----- probe result persistence -----
 
-    _PROBE_KEY = "__batch_api_probe__"  # sentinel name in tag_types
+    # Sentinel name in tag_types. Shared with db.py, which drops
+    # poisoned "false" rows in its user_version 1 migration.
+    from ..db import BATCH_API_PROBE_KEY as _PROBE_KEY
 
     def _load_probe_result(self) -> bool | None:
         """Read the persisted probe result from the DB, or None."""

@@ -13,6 +13,12 @@ from pathlib import Path
 
 from .config import IS_WINDOWS, db_path
 
+# Sentinel row name in ``tag_types`` holding the batch-tag-API probe
+# result for a site ("true"/"false" in the ``label`` column).
+# Defined here rather than in CategoryFetcher so the schema migration
+# below and the fetcher agree on one spelling.
+BATCH_API_PROBE_KEY = "__batch_api_probe__"
+
 
 def _validate_folder_name(name: str) -> str:
     """Reject folder names that could break out of the saved-images dir.
@@ -295,6 +301,34 @@ class Database:
                         PRIMARY KEY (site_id, name)
                     )
                 """)
+
+                # One-shot: clear poisoned batch-API probe negatives.
+                #
+                # Before v0.2.8, a transient network error mid tag-API
+                # call could persist this sentinel as "false" for a
+                # site permanently, because the failure was inferred
+                # from empty tag_categories rather than from a clean
+                # HTTP response. v0.2.8 stopped NEW poisoning but left
+                # existing rows stuck: the dispatch in
+                # CategoryFetcher._do_ensure sends a False straight to
+                # the HTML scrape and never re-probes. That made
+                # Settings > Clear Tag Cache a required manual step for
+                # anyone upgrading, which they had no way to know.
+                #
+                # Only the negatives go. A persisted "true" is correct
+                # and costs nothing to keep.
+                #
+                # Gated on user_version because, unlike the
+                # add-column-if-missing ALTERs above, a DELETE is not
+                # idempotent against its own effect: run unconditionally,
+                # a genuinely broken tag API would re-probe on every
+                # single launch (delete, probe, write "false", delete).
+                if self._conn.execute("PRAGMA user_version").fetchone()[0] < 1:
+                    self._conn.execute(
+                        "DELETE FROM tag_types WHERE name = ? AND label = 'false'",
+                        (BATCH_API_PROBE_KEY,),
+                    )
+                    self._conn.execute("PRAGMA user_version = 1")
 
     def close(self) -> None:
         if self._conn:
