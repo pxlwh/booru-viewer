@@ -20,6 +20,24 @@ jobs:
           python -m pip install --upgrade pip
           pip install "httpx[http2]>=0.27,<1.0" "Pillow>=10.0,<12.0" "PySide6>=6.6,<7.0" "python-mpv>=1.0,<2.0" pyinstaller
 
+      - name: Fetch libmpv
+        shell: pwsh
+        # libmpv-2.dll is ~99 MB and gitignored (*.dll), so it is not in the
+        # checkout — the spec bundles it into the installer at build time.
+        # LGPL variant on purpose: booru-viewer only decodes, never encodes,
+        # so the GPL x264/x265 encoders in the default build are dead weight
+        # this MIT-licensed app should not be shipping. Pinned + checksummed;
+        # bump both together when refreshing.
+        run: |
+          $url = 'https://github.com/zhongfly/mpv-winbuild/releases/download/2026-08-19-e7191f2a65/mpv-dev-lgpl-x86_64-20260819-git-e7191f2a65.7z'
+          $want = '0ed132b89f565d5172de0423abdcd9c0f72eba80004ffdf2bff8ab3970070737'
+          Invoke-WebRequest -Uri $url -OutFile mpv-dev.7z
+          $got = (Get-FileHash mpv-dev.7z -Algorithm SHA256).Hash.ToLower()
+          if ($got -ne $want) { throw "libmpv checksum mismatch: got $got, want $want" }
+          7z x -y mpv-dev.7z libmpv-2.dll
+          if (-not (Test-Path libmpv-2.dll)) { throw "libmpv-2.dll missing after extract" }
+          Write-Host "libmpv-2.dll: $((Get-Item libmpv-2.dll).Length) bytes"
+
       - name: Build onedir bundle
         run: pyinstaller --noconfirm booru-viewer.spec
 
