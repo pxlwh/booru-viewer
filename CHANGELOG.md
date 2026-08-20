@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## v0.2.8
+
 ### Added
 - Settings → Cache: **Clear Tag Cache** button — wipes the per-site `tag_types` rows (including the `__batch_api_probe__` sentinel) so Gelbooru/Moebooru backends re-probe and re-populate tag categories from scratch. Useful when a stale cache from an earlier build leaves some category types mis-labelled or missing
 
