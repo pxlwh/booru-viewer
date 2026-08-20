@@ -154,4 +154,14 @@ If you find this useful, consider buying me a coffee:
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE). The source tree is MIT throughout and vendors no
+third-party binaries.
+
+The **Windows installer** additionally bundles `libmpv-2.dll`, an LGPL v2.1-or-later
+build of [mpv](https://mpv.io) containing no GPL-only components. It is loaded
+dynamically at run time, so it can be replaced with any binary-compatible libmpv 2
+without rebuilding anything. Full terms, build provenance, and the source locations
+ship with the installer under `licenses\` and live here in
+[`licenses/`](licenses/).
+
+**Linux** packages link against the system mpv and bundle nothing.
