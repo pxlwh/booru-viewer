@@ -23,9 +23,31 @@ jobs:
       - name: Build onedir bundle
         run: pyinstaller --noconfirm booru-viewer.spec
 
+      - name: Locate or install Inno Setup
+        shell: pwsh
+        run: |
+          $iscc = Get-Command iscc -ErrorAction SilentlyContinue
+          if ($iscc) { $path = $iscc.Source }
+          else {
+            $candidates = @(
+              "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+              "${env:ProgramFiles}\Inno Setup 6\ISCC.exe",
+              "${env:LOCALAPPDATA}\Programs\Inno Setup 6\ISCC.exe"
+            )
+            $path = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          }
+          if (-not $path) {
+            # The runner image ships Inno Setup but does not guarantee PATH,
+            # and windows-2025 only picked it up recently. Install as fallback.
+            choco install innosetup --no-progress -y
+            $path = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          }
+          Write-Host "ISCC: $path"
+          "ISCC=$path" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Build installer
-        # ISCC is preinstalled on the windows-latest image (Inno Setup 6.x)
-        run: iscc installer.iss
+        shell: pwsh
+        run: & "$env:ISCC" installer.iss
 
       - uses: actions/upload-artifact@v4
         with:
