@@ -6,7 +6,7 @@ import logging
 
 from ..config import DEFAULT_PAGE_SIZE
 from ._safety import redact_params
-from .base import BooruClient, Post, _parse_date
+from .base import BooruAuthError, BooruClient, Post, _parse_date
 
 log = logging.getLogger("booru")
 
@@ -58,10 +58,7 @@ class GelbooruClient(BooruClient):
             return []
         log.debug(f"  json type: {type(data).__name__}, keys: {list(data.keys()) if isinstance(data, dict) else f'list[{len(data)}]'}")
         # Gelbooru wraps posts in {"post": [...]} or returns {"post": []}
-        if isinstance(data, dict):
-            data = data.get("post", [])
-        if not isinstance(data, list):
-            return []
+        data = self._unwrap(data)
 
         posts = []
         for item in data:
@@ -96,6 +93,28 @@ class GelbooruClient(BooruClient):
             asyncio.create_task(self.category_fetcher.prefetch_batch(posts))
         return posts
 
+    def _unwrap(self, data) -> list:
+        """Normalize a Gelbooru-shape response body into a list of posts.
+
+        A bare JSON *string* is not a payload, it is a refusal —
+        rule34.xxx answers 200 with "Missing authentication. Go to
+        api.rule34.xxx for more information" when the api_key/user_id
+        pair is absent or rejected. Returning [] here would report that
+        to the user as a search with no results.
+        """
+        if isinstance(data, str):
+            log.warning("%s refused the request at HTTP 200: %r",
+                        self.base_url, data[:200])
+            raise BooruAuthError(
+                "The site refused the request — check the API key and "
+                "API user for this site."
+            )
+        if isinstance(data, dict):
+            data = data.get("post", [])
+        if not isinstance(data, list):
+            return []
+        return data
+
     @staticmethod
     def _decode_tags(tags: str) -> str:
         from html import unescape
@@ -117,9 +136,7 @@ class GelbooruClient(BooruClient):
         if resp.status_code == 404:
             return None
         resp.raise_for_status()
-        data = resp.json()
-        if isinstance(data, dict):
-            data = data.get("post", [])
+        data = self._unwrap(resp.json())
         if not data:
             return None
         item = data[0]

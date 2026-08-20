@@ -14,6 +14,18 @@ from .base import BooruClient
 log = logging.getLogger("booru")
 
 
+def _looks_json(resp) -> bool:
+    """True if the response body is actually JSON.
+
+    A 401/403 from a real API comes back as a JSON error object. A
+    401/403 from a WAF or a generic error page comes back as HTML —
+    rule34.xxx serves a 77 KB HTML block page for /posts.json. Without
+    this check every WAF-guarded Gelbooru-family host is misdetected
+    as Danbooru, because 403 reads as "endpoint exists, needs auth".
+    """
+    return "json" in resp.headers.get("content-type", "").lower()
+
+
 async def detect_site_type(
     url: str,
     api_key: str | None = None,
@@ -55,7 +67,7 @@ async def detect_site_type(
                     k in data[0] for k in ("tag_string", "image_width", "large_file_url")
                 ):
                     return "danbooru"
-        elif resp.status_code in (401, 403):
+        elif resp.status_code in (401, 403) and _looks_json(resp):
             if "e621" in url or "e926" in url:
                 return "e621"
             return "danbooru"
@@ -80,6 +92,14 @@ async def detect_site_type(
             elif isinstance(data, dict):
                 if "post" in data or "@attributes" in data:
                     return "gelbooru"
+            elif isinstance(data, str):
+                # Gelbooru-shape APIs answer 200 with a bare JSON string
+                # when credentials are missing or rejected, e.g. rule34's
+                # "Missing authentication. Go to api.rule34.xxx ...".
+                # Shape is still diagnostic: only this family does that.
+                log.info("Gelbooru probe for %s answered 200 with a string: %r",
+                         url, data[:120])
+                return "gelbooru"
         elif resp.status_code in (401, 403):
             if "gelbooru" in url or "safebooru.org" in url or "rule34" in url:
                 return "gelbooru"
@@ -98,7 +118,7 @@ async def detect_site_type(
             data = resp.json()
             if isinstance(data, list) or (isinstance(data, dict) and "posts" in data):
                 return "moebooru"
-        elif resp.status_code in (401, 403):
+        elif resp.status_code in (401, 403) and _looks_json(resp):
             return "moebooru"
     except Exception as e:
         log.warning("Moebooru probe failed for %s: %s: %s",

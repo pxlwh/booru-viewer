@@ -17,6 +17,19 @@ from ._safety import redact_url
 log = logging.getLogger("booru")
 
 
+class BooruAuthError(Exception):
+    """The API answered 200 but refused to serve results.
+
+    Gelbooru-shape sites signal missing or rejected credentials in the
+    body at HTTP 200, so ``raise_for_status()`` never fires. Without a
+    dedicated error the shape guards downstream turn that into an empty
+    result list and the UI reports "no posts" for an auth failure.
+
+    The message is fixed on purpose — the server body is logged, never
+    echoed into UI text (see ``test_connection``).
+    """
+
+
 @dataclass
 class Post:
     id: int
