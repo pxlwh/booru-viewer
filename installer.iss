@@ -17,6 +17,7 @@ PrivilegesRequired=lowest
 
 [Files]
 Source: "dist\booru-viewer\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
+Source: "licenses\*"; DestDir: "{app}\licenses"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\booru-viewer"; Filename: "{app}\booru-viewer.exe"

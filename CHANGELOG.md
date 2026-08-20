@@ -8,6 +8,7 @@
 - Settings → Cache: **Clear Tag Cache** button — wipes the per-site `tag_types` rows (including the `__batch_api_probe__` sentinel) so Gelbooru/Moebooru backends re-probe and re-populate tag categories from scratch. Useful when a stale cache from an earlier build leaves some category types mis-labelled or missing
 
 ### Changed
+- Windows installer now ships `licenses\LGPL-2.1.txt` and `licenses\THIRD-PARTY-NOTICES.txt` alongside the app, naming the exact libmpv build, its source and checksum, and how to swap the DLL — the attribution and relink terms LGPL section 6 asks for when redistributing the library
 - Windows installer now bundles the **LGPL** build of libmpv instead of the GPL build. booru-viewer decodes video and never encodes it, so the GPL-only x264/x265 encoders were unused weight in an MIT-licensed app; H.264/HEVC/AV1/VP9 decoding is unaffected
 - Thumbnail drag-start threshold raised from 10px to 30px to match the rubber band's gate — small mouse wobbles on a thumb no longer trigger a file drag
 - Settings → Cache layout: Clear Tag Cache moved into row 1 alongside Clear Thumbnails and Clear Image Cache as a 3-wide non-destructive row; destructive Clear Everything + Evict stay in row 2
