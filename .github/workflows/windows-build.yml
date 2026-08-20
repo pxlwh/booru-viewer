@@ -47,7 +47,8 @@ jobs:
 
       - name: Build installer
         shell: pwsh
-        run: & "$env:ISCC" installer.iss
+        run: |
+          & "$env:ISCC" installer.iss
 
       - uses: actions/upload-artifact@v4
         with:
