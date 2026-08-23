@@ -144,3 +144,63 @@ def test_existing_backup_is_not_overwritten(tmp_path):
 def test_fresh_database_is_at_version_2(tmp_path):
     db = Database(tmp_path / "new.db")
     assert db.conn.execute("PRAGMA user_version").fetchone()[0] >= 2
+
+
+def test_backup_survives_a_v0_to_v2_upgrade(tmp_path):
+    """user_version 0: the v1 block's DELETE opens the deferred
+    transaction; the backup must run before it, or VACUUM INTO
+    fails and is silently swallowed."""
+    p = tmp_path / "v0.db"
+    c = sqlite3.connect(str(p))
+    c.execute("""
+        CREATE TABLE library_meta (
+            post_id        INTEGER PRIMARY KEY,
+            tags           TEXT NOT NULL DEFAULT '',
+            tag_categories TEXT DEFAULT '',
+            score          INTEGER DEFAULT 0,
+            rating         TEXT,
+            source         TEXT,
+            file_url       TEXT,
+            saved_at       TEXT,
+            filename       TEXT NOT NULL DEFAULT ''
+        )
+    """)
+    c.execute("""
+        CREATE TABLE sites (
+            id INTEGER PRIMARY KEY, name TEXT, url TEXT, api_type TEXT,
+            api_key TEXT, api_user TEXT, added_at TEXT
+        )
+    """)
+    c.execute("""
+        CREATE TABLE tag_types (
+            site_id    INTEGER NOT NULL,
+            name       TEXT NOT NULL,
+            label      TEXT NOT NULL,
+            fetched_at TEXT NOT NULL,
+            PRIMARY KEY (site_id, name)
+        )
+    """)
+    for sid, name, url in SITES:
+        c.execute("INSERT INTO sites (id, name, url, api_type) VALUES (?,?,?,'gelbooru')",
+                  (sid, name, url))
+    c.execute(
+        "INSERT INTO library_meta (post_id, file_url, tags, score, saved_at, filename) "
+        "VALUES (?,?,?,?,?,?)",
+        (1, "https://img2.gelbooru.com/a.jpg", "cat", 7, "2026-01-01T00:00:00Z", "1.jpg"),
+    )
+    # A poisoned batch-API probe negative, so the v1 block's DELETE has
+    # a row to touch and opens a deferred transaction.
+    c.execute(
+        "INSERT INTO tag_types (site_id, name, label, fetched_at) VALUES (?,?,?,?)",
+        (5, "__batch_api_probe__", "false", "2026-01-01T00:00:00Z"),
+    )
+    c.execute("PRAGMA user_version = 0")
+    c.commit()
+    c.close()
+
+    db = Database(p)
+    conn = db.conn  # triggers _migrate() via the lazy conn property
+    assert (tmp_path / "v0.db.pre-v2.bak").exists()
+    assert conn.execute("PRAGMA user_version").fetchone()[0] >= 2
+    row = conn.execute("SELECT site_id, post_id FROM library_meta").fetchone()
+    assert (row["site_id"], row["post_id"]) == (5, 1)

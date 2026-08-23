@@ -261,6 +261,13 @@ class Database:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.execute("PRAGMA foreign_keys=ON")
             self._conn.executescript(_SCHEMA)
+            # Must run before _migrate(): the v1 block's DELETE opens a
+            # deferred transaction, and VACUUM INTO cannot run inside one.
+            # Calling this here, before any DML has touched the connection,
+            # guarantees autocommit mode regardless of what a migration
+            # block does later.
+            if self._conn.execute("PRAGMA user_version").fetchone()[0] < 2:
+                self._backup_before_v2()
             self._migrate()
             self._restrict_perms()
         return self._conn
@@ -399,7 +406,8 @@ class Database:
                                 "PRAGMA table_info(library_meta)").fetchall()
                         }
                         if "site_id" not in cols:
-                            self._backup_before_v2()
+                            # Backup already ran in the conn property, before
+                            # _migrate() opened a transaction (see there).
                             sites = [
                                 (r[0], r[1]) for r in self._conn.execute(
                                     "SELECT id, url FROM sites").fetchall()
@@ -452,8 +460,14 @@ class Database:
 
         Never overwrites an existing backup — a retry after a failed
         upgrade must not clobber the good copy. Failures are swallowed:
-        the migration runs in a transaction and rolls back on its own, so
-        an unwritable directory should not block startup.
+        an unwritable directory should not block startup, and _migrate()
+        rolls its own transaction back on error regardless.
+
+        Called from the `conn` property before `_migrate()` runs, not
+        from inside the v2 migration block itself: VACUUM INTO cannot
+        execute inside a transaction, and on an upgrade from
+        user_version 0 the v1 block's DELETE opens one before the v2
+        block would otherwise get a chance to back up.
         """
         bak = Path(str(self._path) + ".pre-v2.bak")
         if bak.exists():
