@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
 import json
@@ -12,6 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .config import IS_WINDOWS, db_path
+
+log = logging.getLogger("booru")
 
 # Sentinel row name in ``tag_types`` holding the batch-tag-API probe
 # result for a site ("true"/"false" in the ``label`` column).
@@ -97,7 +100,8 @@ CREATE TABLE IF NOT EXISTS blacklisted_posts (
 );
 
 CREATE TABLE IF NOT EXISTS library_meta (
-    post_id        INTEGER PRIMARY KEY,
+    site_id        INTEGER NOT NULL DEFAULT 0,
+    post_id        INTEGER NOT NULL,
     tags           TEXT NOT NULL DEFAULT '',
     tag_categories TEXT DEFAULT '',
     score          INTEGER DEFAULT 0,
@@ -105,7 +109,8 @@ CREATE TABLE IF NOT EXISTS library_meta (
     source         TEXT,
     file_url       TEXT,
     saved_at       TEXT,
-    filename       TEXT NOT NULL DEFAULT ''
+    filename       TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (site_id, post_id)
 );
 -- The idx_library_meta_filename index is created in _migrate(), not here.
 -- _SCHEMA runs before _migrate against legacy databases that don't yet have
@@ -374,6 +379,89 @@ class Database:
                         (BATCH_API_PROBE_KEY,),
                     )
                     self._conn.execute("PRAGMA user_version = 1")
+
+                # --- user_version 2: library_meta gains site_id ---------
+                #
+                # post_id is unique only within one booru, so a post_id-keyed
+                # library means (a) the saved-dot matches across sites and
+                # (b) a same-id save from a second site is taken for a
+                # re-save and silently dropped. SQLite cannot ALTER a primary
+                # key, so this is a table rebuild.
+                if self._conn.execute("PRAGMA user_version").fetchone()[0] < 2:
+                    tables = {
+                        r[0] for r in self._conn.execute(
+                            "SELECT name FROM sqlite_master WHERE type='table'"
+                        ).fetchall()
+                    }
+                    if "library_meta" in tables:
+                        cols = {
+                            r[1] for r in self._conn.execute(
+                                "PRAGMA table_info(library_meta)").fetchall()
+                        }
+                        if "site_id" not in cols:
+                            self._backup_before_v2()
+                            sites = [
+                                (r[0], r[1]) for r in self._conn.execute(
+                                    "SELECT id, url FROM sites").fetchall()
+                            ] if "sites" in tables else []
+                            self._conn.execute("""
+                                CREATE TABLE library_meta_new (
+                                    site_id        INTEGER NOT NULL DEFAULT 0,
+                                    post_id        INTEGER NOT NULL,
+                                    tags           TEXT NOT NULL DEFAULT '',
+                                    tag_categories TEXT DEFAULT '',
+                                    score          INTEGER DEFAULT 0,
+                                    rating         TEXT,
+                                    source         TEXT,
+                                    file_url       TEXT,
+                                    saved_at       TEXT,
+                                    filename       TEXT NOT NULL DEFAULT '',
+                                    PRIMARY KEY (site_id, post_id)
+                                )
+                            """)
+                            old = self._conn.execute(
+                                "SELECT post_id, tags, tag_categories, score, rating, "
+                                "source, file_url, saved_at, filename FROM library_meta"
+                            ).fetchall()
+                            for r in old:
+                                self._conn.execute(
+                                    "INSERT OR IGNORE INTO library_meta_new "
+                                    "(site_id, post_id, tags, tag_categories, score, "
+                                    " rating, source, file_url, saved_at, filename) "
+                                    "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                                    (resolve_site_id(r["file_url"], sites), r["post_id"],
+                                     r["tags"], r["tag_categories"], r["score"],
+                                     r["rating"], r["source"], r["file_url"],
+                                     r["saved_at"], r["filename"]),
+                                )
+                            self._conn.execute("DROP TABLE library_meta")
+                            self._conn.execute(
+                                "ALTER TABLE library_meta_new RENAME TO library_meta")
+                            self._conn.execute(
+                                "CREATE INDEX IF NOT EXISTS idx_library_meta_filename "
+                                "ON library_meta(filename)")
+                    self._conn.execute("PRAGMA user_version = 2")
+
+    def _backup_before_v2(self) -> None:
+        """Snapshot the database before the library_meta rebuild.
+
+        VACUUM INTO, not a file copy: the connection runs in WAL mode, so
+        committed data can still live in the -wal sidecar and `cp` can
+        produce a backup that silently lacks recent writes. VACUUM INTO
+        takes a consistent snapshot atomically.
+
+        Never overwrites an existing backup — a retry after a failed
+        upgrade must not clobber the good copy. Failures are swallowed:
+        the migration runs in a transaction and rolls back on its own, so
+        an unwritable directory should not block startup.
+        """
+        bak = Path(str(self._path) + ".pre-v2.bak")
+        if bak.exists():
+            return
+        try:
+            self._conn.execute("VACUUM INTO ?", (str(bak),))
+        except Exception as e:
+            log.warning("pre-v2 backup failed (continuing): %s", e)
 
     def close(self) -> None:
         if self._conn:
