@@ -108,6 +108,28 @@ def should_backfill(collected_count: int, limit: int, last_batch_size: int) -> b
     return collected_count < limit and last_batch_size >= limit
 
 
+def interleave(batches: list[list], limit: int) -> list:
+    """Round-robin across per-site batches, skipping exhausted ones.
+
+    Round *k* takes index *k* from every batch still long enough to have
+    one, in the order the batches were given (which is selector order).
+    A batch that runs out drops out and the rest keep cycling — without
+    that, three results from one site would cap the whole grid at three
+    rounds.
+    """
+    if not batches or limit <= 0:
+        return []
+    out: list = []
+    longest = max(len(b) for b in batches)
+    for k in range(longest):
+        for b in batches:
+            if k < len(b):
+                out.append(b[k])
+                if len(out) >= limit:
+                    return out
+    return out
+
+
 # -- Controller --
 
 
