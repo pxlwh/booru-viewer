@@ -23,6 +23,7 @@ class _Post(NamedTuple):
     id: int
     tag_list: list
     file_url: str
+    site_id: int | None = None
 
 
 def _post(pid: int, tags: str = "", url: str = "") -> _Post:
@@ -137,14 +138,11 @@ def test_removes_blacklisted_posts_by_url():
 
 
 def test_deduplicates_across_batches():
-    """Dedup works against seen_ids accumulated from prior batches.
-    Within a single batch, the list comprehension fires before the
-    update, so same-id posts in one batch both survive -- cross-batch
-    dedup catches them on the next call."""
+    """Dedup works against seen_ids accumulated from prior batches."""
     posts_batch1 = [_post(1)]
     seen: set = set()
     filter_posts(posts_batch1, bl_tags=set(), bl_posts=set(), seen_ids=seen)
-    assert 1 in seen
+    assert (None, 1) in seen
     # Second batch with same id is deduped
     posts_batch2 = [_post(1), _post(2)]
     filtered, drops = filter_posts(posts_batch2, bl_tags=set(), bl_posts=set(), seen_ids=seen)
@@ -155,7 +153,7 @@ def test_deduplicates_across_batches():
 
 def test_respects_previously_seen_ids():
     posts = [_post(1), _post(2)]
-    seen: set = {1}
+    seen: set = {(None, 1)}
     filtered, drops = filter_posts(posts, bl_tags=set(), bl_posts=set(), seen_ids=seen)
     assert len(filtered) == 1
     assert filtered[0].id == 2
@@ -165,7 +163,7 @@ def test_respects_previously_seen_ids():
 def test_all_three_interact():
     """bl_tags, bl_posts, and cross-batch dedup all apply in sequence."""
     # Seed seen_ids so post 3 is already known
-    seen: set = {3}
+    seen: set = {(None, 3)}
     posts = [
         _post(1, tags="bad", url="http://a.jpg"),  # hit by bl_tags
         _post(2, url="http://blocked.jpg"),          # hit by bl_posts
@@ -194,7 +192,7 @@ def test_filter_posts_mutates_seen_ids():
     posts = [_post(10), _post(20)]
     seen: set = set()
     filter_posts(posts, bl_tags=set(), bl_posts=set(), seen_ids=seen)
-    assert seen == {10, 20}
+    assert seen == {(None, 10), (None, 20)}
 
 
 # ======================================================================

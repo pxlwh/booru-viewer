@@ -82,7 +82,9 @@ def filter_posts(
 ) -> tuple[list, dict]:
     """Filter posts by blacklisted tags/URLs and dedup against *seen_ids*.
 
-    Mutates *seen_ids* in place (adds surviving post IDs).
+    *seen_ids* holds ``(site_id, post_id)`` tuples — post ids are unique
+    only within one booru, so the site has to be part of the key.
+    Mutates *seen_ids* in place (adds surviving keys).
     Returns ``(filtered_posts, drop_counts)`` where *drop_counts* has keys
     ``bl_tags``, ``bl_posts``, ``dedup``.
     """
@@ -96,10 +98,16 @@ def filter_posts(
         posts = [p for p in posts if p.file_url not in bl_posts]
     n2 = len(posts)
     drops["bl_posts"] = n1 - n2
-    posts = [p for p in posts if p.id not in seen_ids]
+    deduped = []
+    for p in posts:
+        key = (p.site_id, p.id)
+        if key in seen_ids:
+            continue
+        seen_ids.add(key)
+        deduped.append(p)
+    posts = deduped
     n3 = len(posts)
     drops["dedup"] = n2 - n3
-    seen_ids.update(p.id for p in posts)
     return posts, drops
 
 
@@ -317,7 +325,7 @@ class SearchController:
         self._app._page_label.setText(f"Page {self._current_page}")
         self._app._posts = posts
         ss = self._search
-        ss.shown_post_ids.update(p.id for p in posts)
+        ss.shown_post_ids.update((p.site_id, p.id) for p in posts)
         ss.page_cache[self._current_page] = posts
         if not self._infinite_scroll and len(ss.page_cache) > 10:
             oldest = min(ss.page_cache.keys())
@@ -481,7 +489,7 @@ class SearchController:
             return
         if ss.infinite_last_page > self._current_page:
             self._current_page = ss.infinite_last_page
-        ss.shown_post_ids.update(p.id for p in posts)
+        ss.shown_post_ids.update((p.site_id, p.id) for p in posts)
         ss.append_queue.extend(posts)
         self._drain_append_queue()
 
