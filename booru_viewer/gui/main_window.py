@@ -703,8 +703,16 @@ class BooruApp(QMainWindow):
                 source=meta.get("source"), tag_categories=meta.get("tag_categories", {}),
             )
             self._info_panel.set_post(p)
-            info = f"#{p.id}  score:{p.score}  [{p.rating}]  {Path(path).suffix.lstrip('.').upper()}" + (f"  {p.created_at}" if p.created_at else "")
+            from .post_info import format_post_info
+            site_name = self._site_name_for(getattr(p, "site_id", None))
+            info = format_post_info(p, Path(path).suffix.lstrip("."), site_name)
             self._status.showMessage(info)
+
+    def _site_name_for(self, site_id: int | None) -> str:
+        """Display name for a site id, or "" when unknown."""
+        if not site_id:
+            return ""
+        return next((s.name for s in self._db.get_sites(enabled_only=False) if s.id == site_id), "")
 
     def _on_library_selected(self, path: str) -> None:
         self._show_library_post(path)
