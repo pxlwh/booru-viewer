@@ -10,6 +10,11 @@
 ### Added
 - `%site%` filename template token, alongside `%artist%`, `%character%`, `%copyright%`, `%general%`, `%meta%`, `%species%`
 - The preview info panel shows which site a post came from
+- Multi-site search: a Multi tickbox turns the site selector into a
+  checkable list; results from the ticked sites interleave round-robin,
+  the info panel names each post's source site, and a failing site is
+  dropped for that page and named in the status bar instead of sinking
+  the whole search.
 
 ## v0.2.9
 
