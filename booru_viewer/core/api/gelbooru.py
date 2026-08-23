@@ -91,7 +91,7 @@ class GelbooruClient(BooruClient):
         ):
             import asyncio
             asyncio.create_task(self.category_fetcher.prefetch_batch(posts))
-        return posts
+        return self._stamp(posts)
 
     def _unwrap(self, data) -> list:
         """Normalize a Gelbooru-shape response body into a list of posts.
@@ -155,6 +155,7 @@ class GelbooruClient(BooruClient):
             height=item.get("height", 0),
             created_at=_parse_date(item.get("created_at")),
         )
+        post.site_id = self.site_id
         if self.category_fetcher is not None:
             await self.category_fetcher.prefetch_batch([post])
         return post

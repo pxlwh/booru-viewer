@@ -158,6 +158,7 @@ def client_for_type(
     if cls is None:
         raise ValueError(f"Unknown API type: {api_type}")
     client = cls(base_url, api_key=api_key, api_user=api_user)
+    client.site_id = site_id
     if db is not None and site_id is not None and api_type in ("gelbooru", "moebooru"):
         from .category_fetcher import CategoryFetcher
         client.category_fetcher = CategoryFetcher(client, db, site_id)

@@ -61,7 +61,7 @@ class DanbooruClient(BooruClient):
                     tag_categories=self._extract_tag_categories(item),
                 )
             )
-        return posts
+        return self._stamp(posts)
 
     async def get_post(self, post_id: int) -> Post | None:
         params: dict = {}
@@ -79,7 +79,7 @@ class DanbooruClient(BooruClient):
         file_url = item.get("file_url") or item.get("large_file_url") or ""
         if not file_url:
             return None
-        return Post(
+        post = Post(
             id=item["id"],
             file_url=file_url,
             preview_url=item.get("preview_file_url") or item.get("preview_url"),
@@ -92,6 +92,8 @@ class DanbooruClient(BooruClient):
             created_at=_parse_date(item.get("created_at")),
             tag_categories=self._extract_tag_categories(item),
         )
+        post.site_id = self.site_id
+        return post
 
     async def autocomplete(self, query: str, limit: int = 10) -> list[str]:
         try:

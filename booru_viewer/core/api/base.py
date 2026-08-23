@@ -43,6 +43,7 @@ class Post:
     height: int = 0
     created_at: str = ""  # YYYY-MM-DD
     tag_categories: dict[str, list[str]] = field(default_factory=dict)
+    site_id: int | None = None
 
     @property
     def tag_list(self) -> list[str]:
@@ -104,6 +105,19 @@ class BooruClient(ABC):
         # populate post.tag_categories via HTML scrape / batch API.
         # Danbooru and e621 leave it None (inline categorization).
         self.category_fetcher = None  # CategoryFetcher | None
+        self.site_id: int | None = None
+
+    def _stamp(self, posts: list[Post]) -> list[Post]:
+        """Tag every post with this client's site id, in place.
+
+        `Post.id` is only unique within one booru. Without this, two
+        sites' post 12345 are indistinguishable downstream — the dedup
+        set collides and the popout fetches tags from the wrong site.
+        Returns the same list so call sites can `return self._stamp(...)`.
+        """
+        for p in posts:
+            p.site_id = self.site_id
+        return posts
 
     @property
     def client(self) -> httpx.AsyncClient:

@@ -56,7 +56,7 @@ class MoebooruClient(BooruClient):
                     created_at=_parse_date(item.get("created_at")),
                 )
             )
-        return posts
+        return self._stamp(posts)
 
     async def get_post(self, post_id: int) -> Post | None:
         params: dict = {"tags": f"id:{post_id}"}
@@ -89,6 +89,7 @@ class MoebooruClient(BooruClient):
             height=item.get("height", 0),
             created_at=_parse_date(item.get("created_at")),
         )
+        post.site_id = self.site_id
         if self.category_fetcher is not None:
             await self.category_fetcher.prefetch_batch([post])
         return post
