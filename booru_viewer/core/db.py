@@ -797,16 +797,16 @@ class Database:
 
     # -- Library Metadata --
 
-    def save_library_meta(self, post_id: int, tags: str = "", tag_categories: dict = None,
+    def save_library_meta(self, site_id: int, post_id: int, tags: str = "", tag_categories: dict = None,
                           score: int = 0, rating: str = None, source: str = None,
                           file_url: str = None, filename: str = "") -> None:
         cats_json = json.dumps(tag_categories) if tag_categories else ""
         with self._write():
             self.conn.execute(
                 "INSERT OR REPLACE INTO library_meta "
-                "(post_id, tags, tag_categories, score, rating, source, file_url, saved_at, filename) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (post_id, tags, cats_json, score, rating, source, file_url,
+                "(site_id, post_id, tags, tag_categories, score, rating, source, file_url, saved_at, filename) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (site_id, post_id, tags, cats_json, score, rating, source, file_url,
                  datetime.now(timezone.utc).isoformat(), filename),
             )
 
@@ -857,27 +857,32 @@ class Database:
         for f in on_disk_files:
             if not f.stem.isdigit():
                 row = self.conn.execute(
-                    "SELECT post_id FROM library_meta WHERE filename = ? LIMIT 1",
+                    "SELECT site_id, post_id FROM library_meta WHERE filename = ? LIMIT 1",
                     (f.name,),
                 ).fetchone()
                 if row is not None:
                     present_post_ids.add(row["post_id"])
 
-        all_meta_ids = self.get_saved_post_ids()
-        stale = all_meta_ids - present_post_ids
+        # Fetch every row's key so the DELETE below can carry site_id —
+        # present_post_ids stays post_id-only (the digit-stem branch has
+        # no site info to give it), so a row is stale iff its post_id
+        # isn't in that set.
+        all_meta_rows = self.conn.execute(
+            "SELECT site_id, post_id, filename FROM library_meta"
+        ).fetchall()
+        stale = {
+            (r["site_id"], r["post_id"])
+            for r in all_meta_rows
+            if r["post_id"] not in present_post_ids
+        }
         if not stale:
             return 0
 
         with self._write():
-            BATCH = 500
-            stale_list = list(stale)
-            for i in range(0, len(stale_list), BATCH):
-                chunk = stale_list[i:i + BATCH]
-                placeholders = ",".join("?" * len(chunk))
-                self.conn.execute(
-                    f"DELETE FROM library_meta WHERE post_id IN ({placeholders})",
-                    chunk,
-                )
+            self.conn.executemany(
+                "DELETE FROM library_meta WHERE site_id = ? AND post_id = ?",
+                list(stale),
+            )
         return len(stale)
 
     def is_post_in_library(self, post_id: int) -> bool:
@@ -912,14 +917,13 @@ class Database:
         ).fetchall()
         return {r["post_id"] for r in rows}
 
-    def get_library_post_id_by_filename(self, filename: str) -> int | None:
-        """Look up which post a saved-library file belongs to, by basename.
+    def get_library_key_by_filename(self, filename: str) -> tuple[int, int] | None:
+        """Look up which (site, post) a saved-library file belongs to.
 
-        Returns the post_id if a `library_meta` row exists with that
-        filename, or None if no row matches. Used by the unified save
-        flow's same-post-on-disk check to make re-saves idempotent and
-        to apply sequential `_1`, `_2`, ... suffixes only when a name
-        collides with a *different* post.
+        Returns the key if a `library_meta` row has that basename, else
+        None. Used by the save flow's same-post-on-disk check: a filename
+        alone cannot identify a post, because two boorus can both have a
+        post 12345 and both want to write 12345.jpg.
 
         Empty-string filenames (the legacy v0.2.3 sentinel) deliberately
         do not match — callers fall back to the digit-stem heuristic for
@@ -928,13 +932,16 @@ class Database:
         if not filename:
             return None
         row = self.conn.execute(
-            "SELECT post_id FROM library_meta WHERE filename = ? LIMIT 1",
+            "SELECT site_id, post_id FROM library_meta WHERE filename = ? LIMIT 1",
             (filename,),
         ).fetchone()
-        return row["post_id"] if row else None
+        return (row["site_id"], row["post_id"]) if row else None
 
-    def get_library_meta(self, post_id: int) -> dict | None:
-        row = self.conn.execute("SELECT * FROM library_meta WHERE post_id = ?", (post_id,)).fetchone()
+    def get_library_meta(self, site_id: int, post_id: int) -> dict | None:
+        row = self.conn.execute(
+            "SELECT * FROM library_meta WHERE site_id = ? AND post_id = ?",
+            (site_id, post_id),
+        ).fetchone()
         if not row:
             return None
         d = dict(row)
@@ -942,22 +949,25 @@ class Database:
         d["tag_categories"] = json.loads(cats) if cats else {}
         return d
 
-    def search_library_meta(self, query: str) -> set[int]:
-        """Search library metadata by tags. Returns matching post IDs."""
+    def search_library_meta(self, query: str) -> set[tuple[int, int]]:
+        """Search library metadata by tags. Returns matching (site_id, post_id) keys."""
         escaped = (
             query.replace("\\", "\\\\")
                  .replace("%", "\\%")
                  .replace("_", "\\_")
         )
         rows = self.conn.execute(
-            "SELECT post_id FROM library_meta WHERE tags LIKE ? ESCAPE '\\'",
+            "SELECT site_id, post_id FROM library_meta WHERE tags LIKE ? ESCAPE '\\'",
             (f"%{escaped}%",),
         ).fetchall()
-        return {r["post_id"] for r in rows}
+        return {(r["site_id"], r["post_id"]) for r in rows}
 
-    def remove_library_meta(self, post_id: int) -> None:
+    def remove_library_meta(self, site_id: int, post_id: int) -> None:
         with self._write():
-            self.conn.execute("DELETE FROM library_meta WHERE post_id = ?", (post_id,))
+            self.conn.execute(
+                "DELETE FROM library_meta WHERE site_id = ? AND post_id = ?",
+                (site_id, post_id),
+            )
 
     # -- Tag-type cache --
 

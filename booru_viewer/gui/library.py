@@ -156,16 +156,19 @@ class LibraryView(QWidget):
         # Filter by tag search if query entered
         query = self._search_input.text().strip()
         if query and self._db:
-            matching_ids = self._db.search_library_meta(query)
-            if matching_ids:
+            matching_keys = self._db.search_library_meta(query)
+            if matching_keys:
                 def _file_matches(f: Path) -> bool:
-                    # Templated filenames: look up post_id via library_meta.filename
-                    pid = self._db.get_library_post_id_by_filename(f.name)
-                    if pid is not None:
-                        return pid in matching_ids
-                    # Legacy digit-stem fallback
+                    # Templated filenames: look up the (site_id, post_id)
+                    # key via library_meta.filename
+                    key = self._db.get_library_key_by_filename(f.name)
+                    if key is not None:
+                        return key in matching_keys
+                    # Legacy digit-stem fallback: no site in the filename,
+                    # so match on post_id alone against any site.
                     if f.stem.isdigit():
-                        return int(f.stem) in matching_ids
+                        pid = int(f.stem)
+                        return any(p == pid for _, p in matching_keys)
                     return False
                 self._files = [f for f in self._files if _file_matches(f)]
             else:
@@ -194,7 +197,8 @@ class LibraryView(QWidget):
             # like artist_12345.jpg find their thumbnail correctly.
             thumb_name = filepath.stem  # default: digit-stem fallback
             if self._db:
-                pid = self._db.get_library_post_id_by_filename(filepath.name)
+                key = self._db.get_library_key_by_filename(filepath.name)
+                pid = key[1] if key is not None else None
                 if pid is not None:
                     thumb_name = str(pid)
                 elif filepath.stem.isdigit():
@@ -281,7 +285,8 @@ class LibraryView(QWidget):
             # without a resolvable post_id sorts to the end alphabetically.
             def _key(p: Path) -> tuple:
                 if self._db:
-                    pid = self._db.get_library_post_id_by_filename(p.name)
+                    key = self._db.get_library_key_by_filename(p.name)
+                    pid = key[1] if key is not None else None
                     if pid is not None:
                         return (0, pid)
                 if p.stem.isdigit():
@@ -556,15 +561,19 @@ class LibraryView(QWidget):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
             if reply == QMessageBox.StandardButton.Yes:
-                post_id = self._db.get_library_post_id_by_filename(filepath.name)
-                if post_id is None and filepath.stem.isdigit():
-                    post_id = int(filepath.stem)
+                key = self._db.get_library_key_by_filename(filepath.name)
+                if key is not None:
+                    site_id, post_id = key
+                elif filepath.stem.isdigit():
+                    site_id, post_id = 0, int(filepath.stem)
+                else:
+                    site_id, post_id = None, None
                 filepath.unlink(missing_ok=True)
                 thumb_key = str(post_id) if post_id is not None else filepath.stem
                 lib_thumb = thumbnails_dir() / "library" / f"{thumb_key}.jpg"
                 lib_thumb.unlink(missing_ok=True)
                 if post_id is not None:
-                    self._db.remove_library_meta(post_id)
+                    self._db.remove_library_meta(site_id, post_id)
                 self.refresh()
                 if post_id is not None:
                     self.files_deleted.emit([post_id])
@@ -612,15 +621,19 @@ class LibraryView(QWidget):
             if reply == QMessageBox.StandardButton.Yes:
                 deleted_ids = []
                 for f in files:
-                    post_id = self._db.get_library_post_id_by_filename(f.name)
-                    if post_id is None and f.stem.isdigit():
-                        post_id = int(f.stem)
+                    key = self._db.get_library_key_by_filename(f.name)
+                    if key is not None:
+                        site_id, post_id = key
+                    elif f.stem.isdigit():
+                        site_id, post_id = 0, int(f.stem)
+                    else:
+                        site_id, post_id = None, None
                     f.unlink(missing_ok=True)
                     thumb_key = str(post_id) if post_id is not None else f.stem
                     lib_thumb = thumbnails_dir() / "library" / f"{thumb_key}.jpg"
                     lib_thumb.unlink(missing_ok=True)
                     if post_id is not None:
-                        self._db.remove_library_meta(post_id)
+                        self._db.remove_library_meta(site_id, post_id)
                         deleted_ids.append(post_id)
                 self.refresh()
                 if deleted_ids:

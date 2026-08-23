@@ -39,6 +39,7 @@ async def save_post_file(
     explicit_name: str | None = None,
     *,
     category_fetcher: "CategoryFetcher | None",
+    site_id: int = 0,
 ) -> Path:
     """Copy a Post's already-cached media file into `dest_dir`.
 
@@ -98,6 +99,10 @@ async def save_post_file(
             the argument — the ``=None`` default was removed so saves
             can't silently render templates with empty category tokens
             just because a caller forgot to plumb the fetcher through.
+        site_id: keyword-only. The site the Post came from, written into
+            the `library_meta` row alongside `post.id` so the same post
+            id from two different boorus doesn't collide. Defaults to 0
+            (the unknown-site sentinel) for callers that don't have one.
 
     Returns:
         The actual `Path` the file landed at after collision
@@ -144,6 +149,7 @@ async def save_post_file(
 
     if _is_in_library(dest):
         db.save_library_meta(
+            site_id=site_id,
             post_id=post.id,
             tags=post.tags,
             tag_categories=post.tag_categories,
@@ -182,7 +188,12 @@ def _same_post_on_disk(db: Database, path: Path, post_id: int) -> bool:
     except ValueError:
         return False
 
-    existing_id = db.get_library_post_id_by_filename(path.name)
+    # Site-blind shim: get_library_key_by_filename now returns
+    # (site_id, post_id), but this check is not yet site-aware — take
+    # [1] and compare post_id only, same as before the accessor grew a
+    # site_id column. Task 4 rewrites this to compare the full key.
+    existing_key = db.get_library_key_by_filename(path.name)
+    existing_id = existing_key[1] if existing_key is not None else None
     if existing_id is not None:
         return existing_id == post_id
 

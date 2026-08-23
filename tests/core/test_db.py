@@ -186,8 +186,8 @@ def test_delete_site_does_not_affect_other_sites(tmp_db):
 def test_reconcile_library_meta_removes_orphans(tmp_db, tmp_library):
     """Rows whose files are missing on disk are deleted; present files kept."""
     (tmp_library / "12345.jpg").write_bytes(b"\xff")
-    tmp_db.save_library_meta(post_id=12345, tags="test", filename="12345.jpg")
-    tmp_db.save_library_meta(post_id=99999, tags="orphan", filename="99999.jpg")
+    tmp_db.save_library_meta(site_id=5, post_id=12345, tags="test", filename="12345.jpg")
+    tmp_db.save_library_meta(site_id=5, post_id=99999, tags="orphan", filename="99999.jpg")
 
     removed = tmp_db.reconcile_library_meta()
 
@@ -199,7 +199,7 @@ def test_reconcile_library_meta_removes_orphans(tmp_db, tmp_library):
 def test_reconcile_library_meta_skips_empty_dir(tmp_db, tmp_library):
     """An empty library dir signals a possible unmounted drive — refuse to
     reconcile and leave orphan rows intact."""
-    tmp_db.save_library_meta(post_id=12345, tags="test", filename="12345.jpg")
+    tmp_db.save_library_meta(site_id=5, post_id=12345, tags="test", filename="12345.jpg")
 
     removed = tmp_db.reconcile_library_meta()
 

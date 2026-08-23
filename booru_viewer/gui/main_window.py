@@ -673,21 +673,27 @@ class BooruApp(QMainWindow):
                 self._media_ctrl.on_post_activated(index)
 
 
-    def _post_id_from_library_path(self, path: Path) -> int | None:
-        """Resolve a library file path back to its post_id."""
-        pid = self._db.get_library_post_id_by_filename(path.name)
-        if pid is not None:
-            return pid
+    def _library_key_from_path(self, path: Path) -> tuple[int, int] | None:
+        """Resolve a library file path back to its (site_id, post_id) key.
+
+        Legacy digit-stem files (pre-0.2.3, no filename row) carry no
+        site info, so they resolve to site 0 — the unknown-site
+        sentinel `resolve_site_id` also uses.
+        """
+        key = self._db.get_library_key_by_filename(path.name)
+        if key is not None:
+            return key
         if path.stem.isdigit():
-            return int(path.stem)
+            return (0, int(path.stem))
         return None
 
     def _set_library_info(self, path: str) -> None:
         """Update info panel with library metadata for the given file."""
-        post_id = self._post_id_from_library_path(Path(path))
-        if post_id is None:
+        key = self._library_key_from_path(Path(path))
+        if key is None:
             return
-        meta = self._db.get_library_meta(post_id)
+        site_id, post_id = key
+        meta = self._db.get_library_meta(site_id, post_id)
         if meta:
             from ..core.api.base import Post
             p = Post(
@@ -718,10 +724,11 @@ class BooruApp(QMainWindow):
         # legacy digit-stem files use int(stem).
         # width/height come from the file itself (library_meta doesn't
         # store them) so the popout can pre-fit and set keep_aspect_ratio.
-        post_id = self._post_id_from_library_path(Path(path))
-        if post_id is not None:
+        key = self._library_key_from_path(Path(path))
+        if key is not None:
+            site_id, post_id = key
             from ..core.api.base import Post
-            meta = self._db.get_library_meta(post_id) or {}
+            meta = self._db.get_library_meta(site_id, post_id) or {}
             post = Post(
                 id=post_id, file_url=meta.get("file_url", ""),
                 preview_url=None, tags=meta.get("tags", ""),
@@ -731,7 +738,11 @@ class BooruApp(QMainWindow):
                 width=img_w, height=img_h,
             )
             self._preview._current_post = post
-            self._preview._current_site_id = self._site_combo.currentData()
+            # The post's real site, not the search tab's current
+            # selection — a library file can outlive/outlast the site
+            # combo's current tab, and toolbar actions (unsave, etc.)
+            # read _current_site_id to key library_meta correctly.
+            self._preview._current_site_id = site_id or self._site_combo.currentData()
             self._preview.update_save_state(True)
             self._preview.set_post_tags(post.tag_categories, post.tag_list)
         else:
@@ -747,7 +758,7 @@ class BooruApp(QMainWindow):
         from ..core.api.base import Post
         cats = fav.tag_categories or {}
         if not cats:
-            meta = self._db.get_library_meta(fav.post_id)
+            meta = self._db.get_library_meta(fav.site_id, fav.post_id)
             cats = meta.get("tag_categories", {}) if meta else {}
         p = Post(
             id=fav.post_id, file_url=fav.file_url or "",

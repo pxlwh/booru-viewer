@@ -174,7 +174,12 @@ class PostActionsController:
         # db so templated filenames also get unlinked AND the meta row
         # gets cleaned up.
         from ..core.cache import delete_from_library
-        deleted = delete_from_library(post.id, db=self._app._db)
+        site_id = (
+            self._app._preview._current_site_id
+            or self._app._site_combo.currentData()
+            or 0
+        )
+        deleted = delete_from_library(post.id, db=self._app._db, site_id=site_id)
         if deleted:
             self._app._status.showMessage(f"Removed #{post.id} from library")
             self._app._preview.update_save_state(False)
@@ -320,13 +325,21 @@ class PostActionsController:
             return
 
         in_flight: set[str] = set()
+        site_id = (
+            self._app._preview._current_site_id
+            or self._app._site_combo.currentData()
+            or 0
+        )
 
         async def _do():
             fetcher = self._app._get_category_fetcher()
             for i, (idx, post) in enumerate(zip(indices, posts)):
                 try:
                     src = Path(await download_image(post.file_url))
-                    await save_post_file(src, post, dest_dir, self._app._db, in_flight, category_fetcher=fetcher)
+                    await save_post_file(
+                        src, post, dest_dir, self._app._db, in_flight,
+                        category_fetcher=fetcher, site_id=site_id,
+                    )
                     self.copy_library_thumb(post)
                     self._app._signals.bookmark_done.emit(idx, f"Saved {i+1}/{len(posts)} to {where}")
                     self._maybe_unbookmark(post)
@@ -348,8 +361,13 @@ class PostActionsController:
         is already not-saved.
         """
         from ..core.cache import delete_from_library
+        site_id = (
+            self._app._preview._current_site_id
+            or self._app._site_combo.currentData()
+            or 0
+        )
         for post in posts:
-            delete_from_library(post.id, db=self._app._db)
+            delete_from_library(post.id, db=self._app._db, site_id=site_id)
         for idx in indices:
             if 0 <= idx < len(self._app._grid._thumbs):
                 self._app._grid._thumbs[idx].set_saved_locally(False)
@@ -407,13 +425,21 @@ class PostActionsController:
         self._batch_dest = dest_dir
         self._app._status.showMessage(f"Downloading {len(posts)} images...")
         in_flight: set[str] = set()
+        site_id = (
+            self._app._preview._current_site_id
+            or self._app._site_combo.currentData()
+            or 0
+        )
 
         async def _batch():
             fetcher = self._app._get_category_fetcher()
             for i, post in enumerate(posts):
                 try:
                     src = Path(await download_image(post.file_url))
-                    await save_post_file(src, post, dest_dir, self._app._db, in_flight, category_fetcher=fetcher)
+                    await save_post_file(
+                        src, post, dest_dir, self._app._db, in_flight,
+                        category_fetcher=fetcher, site_id=site_id,
+                    )
                     self._app._signals.batch_progress.emit(i + 1, len(posts), post.id)
                     self._maybe_unbookmark(post)
                 except Exception as e:
@@ -476,10 +502,20 @@ class PostActionsController:
             self._app._status.showMessage(f"Invalid folder name: {e}")
             return
 
+        site_id = (
+            self._app._preview._current_site_id
+            or self._app._site_combo.currentData()
+            or 0
+        )
+
         async def _save():
             try:
                 src = Path(await download_image(post.file_url))
-                await save_post_file(src, post, dest_dir, self._app._db, category_fetcher=self._app._get_category_fetcher())
+                await save_post_file(
+                    src, post, dest_dir, self._app._db,
+                    category_fetcher=self._app._get_category_fetcher(),
+                    site_id=site_id,
+                )
                 self.copy_library_thumb(post)
                 where = folder or "Unfiled"
                 self._app._signals.bookmark_done.emit(
@@ -518,6 +554,11 @@ class PostActionsController:
         if not dest:
             return
         dest_path = Path(dest)
+        site_id = (
+            self._app._preview._current_site_id
+            or self._app._site_combo.currentData()
+            or 0
+        )
 
         async def _do_save():
             try:
@@ -525,6 +566,7 @@ class PostActionsController:
                     src, post, dest_path.parent, self._app._db,
                     explicit_name=dest_path.name,
                     category_fetcher=self._app._get_category_fetcher(),
+                    site_id=site_id,
                 )
                 self._app._signals.bookmark_done.emit(
                     self._app._grid.selected_index,

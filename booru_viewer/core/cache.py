@@ -530,7 +530,7 @@ def is_cached(url: str, dest_dir: Path | None = None) -> bool:
     return cached_path_for(url, dest_dir).exists()
 
 
-def delete_from_library(post_id: int, folder: str | None = None, db=None) -> bool:
+def delete_from_library(post_id: int, folder: str | None = None, db=None, site_id: int = 0) -> bool:
     """Delete every saved copy of `post_id` from the library.
 
     Returns True if at least one file was deleted.
@@ -548,6 +548,10 @@ def delete_from_library(post_id: int, folder: str | None = None, db=None) -> boo
     found and the meta row stays — that's the old broken behavior,
     preserved as a fallback for callers that don't have a Database
     handle.
+
+    `site_id` identifies which booru's row to delete (library_meta is
+    keyed on (site_id, post_id)). Defaults to 0, the unknown-site
+    sentinel, for callers that don't have one.
     """
     from .config import find_library_files
     matches = find_library_files(post_id, db=db)
@@ -571,7 +575,7 @@ def delete_from_library(post_id: int, folder: str | None = None, db=None) -> boo
     # copies were on disk.
     if db is not None:
         try:
-            db.remove_library_meta(post_id)
+            db.remove_library_meta(site_id, post_id)
         except Exception:
             pass
     return deleted

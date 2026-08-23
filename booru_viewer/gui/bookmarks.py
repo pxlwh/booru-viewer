@@ -317,6 +317,7 @@ class BookmarksView(QWidget):
                 await save_post_file(
                     src, post, dest_dir, self._db,
                     category_fetcher=fetcher,
+                    site_id=fav.site_id,
                 )
                 self._signals.save_done.emit(fav.post_id)
             except Exception as e:
@@ -439,6 +440,7 @@ class BookmarksView(QWidget):
                                 src, post, dest_path.parent, self._db,
                                 explicit_name=dest_path.name,
                                 category_fetcher=fetcher,
+                                site_id=fav.site_id,
                             )
                         except Exception as e:
                             log.warning(f"Bookmark Save As #{fav.post_id} failed: {e}")
@@ -446,7 +448,7 @@ class BookmarksView(QWidget):
                     run_on_app_loop(_do_save_as())
         elif action == unsave_lib:
             from ..core.cache import delete_from_library
-            delete_from_library(fav.post_id, db=self._db)
+            delete_from_library(fav.post_id, db=self._db, site_id=fav.site_id)
             for i, f in enumerate(self._bookmarks):
                 if f.post_id == fav.post_id and i < len(self._grid._thumbs):
                     self._grid._thumbs[i].set_saved_locally(False)
@@ -563,7 +565,7 @@ class BookmarksView(QWidget):
             from ..core.cache import delete_from_library
             unsaved_ids = set()
             for fav in favs:
-                delete_from_library(fav.post_id, db=self._db)
+                delete_from_library(fav.post_id, db=self._db, site_id=fav.site_id)
                 unsaved_ids.add(fav.post_id)
             for i, fav in enumerate(self._bookmarks):
                 if fav.post_id in unsaved_ids and i < len(self._grid._thumbs):
