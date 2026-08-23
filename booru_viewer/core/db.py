@@ -191,6 +191,51 @@ class Bookmark:
     tag_categories: dict = field(default_factory=dict)
 
 
+def _registrable(host: str) -> str:
+    """The last two labels of a hostname.
+
+    Deliberately not a public-suffix-list lookup. Every booru in play is
+    .com / .us / .xxx / .net, so two labels is correct for all of them,
+    and a PSL dependency is not worth carrying for a booru client. This
+    IS wrong for multi-part suffixes like .co.uk — accepted limitation.
+    """
+    parts = host.lower().split(".")
+    return ".".join(parts[-2:]) if len(parts) >= 2 else host.lower()
+
+
+def resolve_site_id(file_url: str | None, sites: list[tuple[int, str]]) -> int:
+    """Map a saved file's URL back to the site it came from.
+
+    Matching is on the registrable domain rather than the exact host,
+    because CDNs do not live at the site hostname: img2.gelbooru.com
+    serves gelbooru.com, and cdn.donmai.us serves danbooru.donmai.us
+    where neither host is a subdomain of the other.
+
+    Several matches means the sites are siblings sharing a CDN, which
+    means they share a database and therefore share post ids — both
+    candidates name the same image. Ties break to the lowest id so the
+    result is reproducible.
+
+    Returns 0 (the unknown sentinel) when nothing matches.
+    """
+    from urllib.parse import urlparse
+
+    if not file_url:
+        return 0
+    try:
+        host = urlparse(file_url).netloc
+    except Exception:
+        return 0
+    if not host:
+        return 0
+    target = _registrable(host)
+    matches = [
+        sid for sid, surl in sites
+        if surl and _registrable(urlparse(surl).netloc) == target
+    ]
+    return min(matches) if matches else 0
+
+
 class Database:
     def __init__(self, path: Path | None = None) -> None:
         self._path = path or db_path()
