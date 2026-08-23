@@ -125,7 +125,13 @@ async def save_post_file(
             and any(tok in template for tok in _CATEGORY_TOKENS)
         ):
             await category_fetcher.ensure_categories(post)
-        basename = render_filename_template(template, post, src.suffix)
+        site_name = ""
+        if template and "%site%" in template:
+            site_name = next(
+                (s.name for s in db.get_sites(enabled_only=False) if s.id == site_id),
+                "",
+            )
+        basename = render_filename_template(template, post, src.suffix, site_name)
 
     in_flight_set: set[str] = in_flight if in_flight is not None else set()
     final_basename = _resolve_collision(

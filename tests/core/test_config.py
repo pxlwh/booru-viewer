@@ -143,3 +143,39 @@ def test_render_filename_template_reserved_with_extension_in_template():
     out = config.render_filename_template("%artist%.%ext%", post, ext=".jpg")
     assert not out.startswith("con")
     assert out.startswith("_con")
+
+
+def test_site_token_expands_to_the_site_name():
+    from booru_viewer.core.api.base import Post
+    from booru_viewer.core.config import render_filename_template
+    p = Post(id=42, file_url="https://x/a.jpg", preview_url=None, tags="",
+             score=0, rating=None, source=None)
+    assert render_filename_template("%site%_%id%", p, ".jpg", "Gelbooru") == "Gelbooru_42.jpg"
+
+
+def test_site_token_is_sanitized():
+    from booru_viewer.core.api.base import Post
+    from booru_viewer.core.config import render_filename_template
+    p = Post(id=42, file_url="https://x/a.jpg", preview_url=None, tags="",
+             score=0, rating=None, source=None)
+    out = render_filename_template("%site%_%id%", p, ".jpg", "we/ird:name")
+    assert "/" not in out and ":" not in out
+    assert out.endswith("42.jpg")
+
+
+def test_site_token_with_no_site_name_degrades():
+    """An unknown site must not raise or produce a stray separator."""
+    from booru_viewer.core.api.base import Post
+    from booru_viewer.core.config import render_filename_template
+    p = Post(id=42, file_url="https://x/a.jpg", preview_url=None, tags="",
+             score=0, rating=None, source=None)
+    out = render_filename_template("%site%_%id%", p, ".jpg", "")
+    assert out.endswith("42.jpg")
+
+
+def test_templates_without_the_token_are_unchanged():
+    from booru_viewer.core.api.base import Post
+    from booru_viewer.core.config import render_filename_template
+    p = Post(id=42, file_url="https://x/a.jpg", preview_url=None, tags="",
+             score=0, rating=None, source=None)
+    assert render_filename_template("%id%", p, ".jpg", "Gelbooru") == "42.jpg"

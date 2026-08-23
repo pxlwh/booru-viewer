@@ -212,11 +212,13 @@ def find_library_files(post_id: int, db=None) -> list[Path]:
     return matches
 
 
-def render_filename_template(template: str, post: "Post", ext: str) -> str:
+def render_filename_template(template: str, post: "Post", ext: str,
+                              site_name: str = "") -> str:
     """Render a filename template against a Post into a filesystem-safe basename.
 
     Tokens supported:
         %id%        post id
+        %site%      site name passed in by the caller (empty if unknown)
         %md5%       md5 hash extracted from file_url (empty if URL doesn't carry one)
         %ext%       extension without the leading dot
         %rating%    post.rating or empty
@@ -272,6 +274,7 @@ def render_filename_template(template: str, post: "Post", ext: str) -> str:
     has_ext_token = "%ext%" in template
     replacements = {
         "%id%": str(post.id),
+        "%site%": site_name,
         "%md5%": md5,
         "%ext%": ext.lstrip("."),
         "%rating%": post.rating or "",
