@@ -901,8 +901,8 @@ class Database:
         ).fetchone()
         return row is not None
 
-    def get_saved_post_ids(self) -> set[int]:
-        """Return every post_id that has a library_meta row.
+    def get_saved_post_ids(self) -> set[tuple[int, int]]:
+        """Return every (site_id, post_id) that has a library_meta row.
 
         Used for batch saved-locally dot population on grids — load
         the set once, do per-thumb membership checks against it.
@@ -910,12 +910,14 @@ class Database:
         per-grid filesystem walks. Format-agnostic: handles both
         templated and digit-stem filenames as long as the file's
         save flow wrote a meta row (every save site does after the
-        unified save_post_file refactor).
+        unified save_post_file refactor). Post ids are unique only
+        within a booru, so the site has to be part of the key or a
+        save on one site marks the same id on every other.
         """
         rows = self.conn.execute(
-            "SELECT post_id FROM library_meta"
+            "SELECT site_id, post_id FROM library_meta"
         ).fetchall()
-        return {r["post_id"] for r in rows}
+        return {(r["site_id"], r["post_id"]) for r in rows}
 
     def get_library_key_by_filename(self, filename: str) -> tuple[int, int] | None:
         """Look up which (site, post) a saved-library file belongs to.

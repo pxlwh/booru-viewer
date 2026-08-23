@@ -220,7 +220,7 @@ class BookmarksView(QWidget):
         saved_ids = self._db.get_saved_post_ids()
         for i, (fav, thumb) in enumerate(zip(self._bookmarks, thumbs)):
             thumb.set_bookmarked(True)
-            thumb.set_saved_locally(fav.post_id in saved_ids)
+            thumb.set_saved_locally((fav.site_id, fav.post_id) in saved_ids)
             # Set cached path for drag-and-drop and copy
             if fav.cached_path and Path(fav.cached_path).exists():
                 thumb._cached_path = fav.cached_path
