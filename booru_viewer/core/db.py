@@ -885,7 +885,7 @@ class Database:
             )
         return len(stale)
 
-    def is_post_in_library(self, post_id: int) -> bool:
+    def is_post_in_library(self, post_id: int, site_id: int | None = None) -> bool:
         """True iff a `library_meta` row exists for `post_id`.
 
         Cheap, indexed lookup. Use this instead of walking the
@@ -894,12 +894,34 @@ class Database:
         visibility check, or the bookmark→library copy's existence
         guard. Replaces digit-stem matching, which can't see
         templated filenames.
+
+        With *site_id*, only that site's row counts — post ids are
+        unique per booru, so an id-only match lights the saved dot on
+        the wrong site's post under multi-search. Legacy sentinel-0
+        rows (site unknown) count for any site, matching pre-multi
+        behaviour.
         """
-        row = self.conn.execute(
-            "SELECT 1 FROM library_meta WHERE post_id = ? LIMIT 1",
-            (post_id,),
-        ).fetchone()
+        if site_id is None:
+            row = self.conn.execute(
+                "SELECT 1 FROM library_meta WHERE post_id = ? LIMIT 1",
+                (post_id,),
+            ).fetchone()
+        else:
+            row = self.conn.execute(
+                "SELECT 1 FROM library_meta WHERE post_id = ? AND site_id IN (?, 0) LIMIT 1",
+                (post_id, site_id),
+            ).fetchone()
         return row is not None
+
+    def get_bookmarked_keys(self) -> set[tuple[int, int]]:
+        """Every (site_id, post_id) in favorites — for grid dot lookups.
+
+        One SELECT for batch membership checks, same shape and reason
+        as `get_saved_post_ids`. Unlike `get_bookmarks` this has no
+        LIMIT: dots on a 400-thumb grid need the whole set.
+        """
+        rows = self.conn.execute("SELECT site_id, post_id FROM favorites").fetchall()
+        return {(r[0], r[1]) for r in rows}
 
     def get_saved_post_ids(self) -> set[tuple[int, int]]:
         """Return every (site_id, post_id) that has a library_meta row.

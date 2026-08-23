@@ -38,3 +38,14 @@ def summarize_selection(names: list[str]) -> str:
     if len(names) <= 3:
         return ", ".join(names)
     return f"{len(names)} sites"
+
+
+def effective_site_id(post, fallback):
+    """The site a post belongs to, preferring the post's own stamp.
+
+    Falls back to *fallback* (usually the site combo's current id) for
+    unstamped posts — bookmark-tab and library-built Posts, or any
+    construction path that predates stamping. Uses ``or`` rather than
+    an ``is None`` check so the library's 0 sentinel also falls back.
+    """
+    return getattr(post, "site_id", None) or fallback

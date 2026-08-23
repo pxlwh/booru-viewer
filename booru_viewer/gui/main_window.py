@@ -730,7 +730,7 @@ class BooruApp(QMainWindow):
                 bool(site_id and self._db.is_bookmarked(site_id, post.id))
             )
             self._preview.update_save_state(
-                is_library or self._post_actions.is_post_saved(post.id)
+                is_library or self._post_actions.is_post_saved(post.id, site_id)
             )
         else:
             self._preview.update_bookmark_state(False)
@@ -914,7 +914,7 @@ class BooruApp(QMainWindow):
         self._preview.update_bookmark_state(
             bool(self._db.is_bookmarked(fav.site_id, post.id))
         )
-        self._preview.update_save_state(self._post_actions.is_post_saved(post.id))
+        self._preview.update_save_state(self._post_actions.is_post_saved(post.id, fav.site_id))
         info = f"Bookmark #{fav.post_id}"
 
         def _set_dims_from_file(filepath: str) -> None:

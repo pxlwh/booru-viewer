@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtWidgets import QApplication, QMenu
 
+from .site_selection import effective_site_id
+
 if TYPE_CHECKING:
     from .main_window import BooruApp
 
@@ -42,7 +44,7 @@ class ContextMenuHandler:
         save_lib_new = None
         save_lib_folders = {}
         unsave_lib = None
-        if self._app._post_actions.is_post_saved(post.id):
+        if self._app._post_actions.is_post_saved(post.id, effective_site_id(post, self._app._site_combo.currentData())):
             unsave_lib = menu.addAction("Unsave from Library")
         else:
             save_lib_menu = menu.addMenu("Save to Library")
@@ -161,11 +163,19 @@ class ContextMenuHandler:
             return
         count = len(posts)
 
-        site_id = self._app._site_combo.currentData()
-        any_bookmarked = bool(site_id) and any(self._app._db.is_bookmarked(site_id, p.id) for p in posts)
-        any_unbookmarked = bool(site_id) and any(not self._app._db.is_bookmarked(site_id, p.id) for p in posts)
-        any_saved = any(self._app._post_actions.is_post_saved(p.id) for p in posts)
-        any_unsaved = any(not self._app._post_actions.is_post_saved(p.id) for p in posts)
+        fallback = self._app._site_combo.currentData()
+
+        def _sid(p):
+            return effective_site_id(p, fallback)
+
+        any_bookmarked = any(
+            _sid(p) and self._app._db.is_bookmarked(_sid(p), p.id) for p in posts
+        )
+        any_unbookmarked = any(
+            _sid(p) and not self._app._db.is_bookmarked(_sid(p), p.id) for p in posts
+        )
+        any_saved = any(self._app._post_actions.is_post_saved(p.id, _sid(p)) for p in posts)
+        any_unsaved = any(not self._app._post_actions.is_post_saved(p.id, _sid(p)) for p in posts)
 
         menu = QMenu(self._app)
 
@@ -232,16 +242,17 @@ class ContextMenuHandler:
             if dest:
                 self._app._post_actions.batch_download_posts(posts, dest)
         elif unfav_all is not None and action == unfav_all:
-            if site_id:
-                for post in posts:
-                    self._app._db.remove_bookmark(site_id, post.id)
-                for idx in indices:
-                    if 0 <= idx < len(self._app._grid._thumbs):
-                        self._app._grid._thumbs[idx].set_bookmarked(False)
-                self._app._grid._clear_multi()
-                self._app._status.showMessage(f"Removed {count} bookmarks")
-                if self._app._stack.currentIndex() == 1:
-                    self._app._bookmarks_view.refresh()
+            for post in posts:
+                sid = _sid(post)
+                if sid:
+                    self._app._db.remove_bookmark(sid, post.id)
+            for idx in indices:
+                if 0 <= idx < len(self._app._grid._thumbs):
+                    self._app._grid._thumbs[idx].set_bookmarked(False)
+            self._app._grid._clear_multi()
+            self._app._status.showMessage(f"Removed {count} bookmarks")
+            if self._app._stack.currentIndex() == 1:
+                self._app._bookmarks_view.refresh()
         elif action == copy_urls:
             urls = "\n".join(p.file_url for p in posts)
             QApplication.clipboard().setText(urls)

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..core.cache import download_image
+from .site_selection import effective_site_id
 
 if TYPE_CHECKING:
     from .main_window import BooruApp
@@ -32,8 +33,8 @@ class PostActionsController:
     def on_bookmark_error(self, e: str) -> None:
         self._app._status.showMessage(f"Error: {e}")
 
-    def is_post_saved(self, post_id: int) -> bool:
-        return self._app._db.is_post_in_library(post_id)
+    def is_post_saved(self, post_id: int, site_id: int | None = None) -> bool:
+        return self._app._db.is_post_in_library(post_id, site_id=site_id)
 
     def _maybe_unbookmark(self, post) -> None:
         """Remove the bookmark for *post* if the unbookmark-on-save setting is on.
@@ -44,9 +45,8 @@ class PostActionsController:
         """
         if not self._app._db.get_setting_bool("unbookmark_on_save"):
             return
-        site_id = (
-            self._app._preview._current_site_id
-            or self._app._site_combo.currentData()
+        site_id = effective_site_id(
+            post, self._app._preview._current_site_id or self._app._site_combo.currentData()
         )
         if not site_id or not self._app._db.is_bookmarked(site_id, post.id):
             return
@@ -160,7 +160,7 @@ class PostActionsController:
         post, _ = self.get_preview_post()
         if not post:
             return
-        if self.is_post_saved(post.id):
+        if self.is_post_saved(post.id, effective_site_id(post, self._app._preview._current_site_id or self._app._site_combo.currentData())):
             self.unsave_from_preview()
         else:
             self.save_from_preview("")
@@ -242,7 +242,7 @@ class PostActionsController:
         moot if the bookmark itself is going away.
         """
         post = self._app._posts[index]
-        site_id = self._app._site_combo.currentData()
+        site_id = effective_site_id(post, self._app._site_combo.currentData())
         if not site_id:
             return
 
@@ -280,13 +280,16 @@ class PostActionsController:
             self._app._run_async(_fav)
 
     def bulk_bookmark(self, indices: list[int], posts: list) -> None:
-        site_id = self._app._site_combo.currentData()
-        if not site_id:
+        fallback = self._app._site_combo.currentData()
+        if not fallback and not any(getattr(p, "site_id", None) for p in posts):
             return
         self._app._status.showMessage(f"Bookmarking {len(posts)}...")
 
         async def _do():
             for i, (idx, post) in enumerate(zip(indices, posts)):
+                site_id = effective_site_id(post, fallback)
+                if not site_id:
+                    continue
                 if self._app._db.is_bookmarked(site_id, post.id):
                     continue
                 try:
@@ -325,16 +328,13 @@ class PostActionsController:
             return
 
         in_flight: set[str] = set()
-        site_id = (
-            self._app._preview._current_site_id
-            or self._app._site_combo.currentData()
-            or 0
-        )
+        fallback = self._app._preview._current_site_id or self._app._site_combo.currentData()
 
         async def _do():
             fetcher = self._app._get_category_fetcher()
             for i, (idx, post) in enumerate(zip(indices, posts)):
                 try:
+                    site_id = effective_site_id(post, fallback) or 0
                     src = Path(await download_image(post.file_url))
                     await save_post_file(
                         src, post, dest_dir, self._app._db, in_flight,
@@ -361,12 +361,9 @@ class PostActionsController:
         is already not-saved.
         """
         from ..core.cache import delete_from_library
-        site_id = (
-            self._app._preview._current_site_id
-            or self._app._site_combo.currentData()
-            or 0
-        )
+        fallback = self._app._preview._current_site_id or self._app._site_combo.currentData()
         for post in posts:
+            site_id = effective_site_id(post, fallback) or 0
             delete_from_library(post.id, db=self._app._db, site_id=site_id)
         for idx in indices:
             if 0 <= idx < len(self._app._grid._thumbs):
@@ -379,7 +376,7 @@ class PostActionsController:
 
     def ensure_bookmarked(self, post) -> None:
         """Bookmark a post if not already bookmarked."""
-        site_id = self._app._site_combo.currentData()
+        site_id = effective_site_id(post, self._app._site_combo.currentData())
         if not site_id or self._app._db.is_bookmarked(site_id, post.id):
             return
 
@@ -425,16 +422,13 @@ class PostActionsController:
         self._batch_dest = dest_dir
         self._app._status.showMessage(f"Downloading {len(posts)} images...")
         in_flight: set[str] = set()
-        site_id = (
-            self._app._preview._current_site_id
-            or self._app._site_combo.currentData()
-            or 0
-        )
+        fallback = self._app._preview._current_site_id or self._app._site_combo.currentData()
 
         async def _batch():
             fetcher = self._app._get_category_fetcher()
             for i, post in enumerate(posts):
                 try:
+                    site_id = effective_site_id(post, fallback) or 0
                     src = Path(await download_image(post.file_url))
                     await save_post_file(
                         src, post, dest_dir, self._app._db, in_flight,
@@ -459,10 +453,13 @@ class PostActionsController:
         self.batch_download_to(list(self._app._posts), Path(dest))
 
     def is_current_bookmarked(self, index: int) -> bool:
-        site_id = self._app._site_combo.currentData()
-        if not site_id or index < 0 or index >= len(self._app._posts):
+        if index < 0 or index >= len(self._app._posts):
             return False
-        return self._app._db.is_bookmarked(site_id, self._app._posts[index].id)
+        post = self._app._posts[index]
+        site_id = effective_site_id(post, self._app._site_combo.currentData())
+        if not site_id:
+            return False
+        return self._app._db.is_bookmarked(site_id, post.id)
 
     def copy_library_thumb(self, post) -> None:
         """Copy a post's browse thumbnail into the library thumbnail
@@ -502,11 +499,9 @@ class PostActionsController:
             self._app._status.showMessage(f"Invalid folder name: {e}")
             return
 
-        site_id = (
-            self._app._preview._current_site_id
-            or self._app._site_combo.currentData()
-            or 0
-        )
+        site_id = effective_site_id(
+            post, self._app._preview._current_site_id or self._app._site_combo.currentData()
+        ) or 0
 
         async def _save():
             try:
@@ -554,11 +549,9 @@ class PostActionsController:
         if not dest:
             return
         dest_path = Path(dest)
-        site_id = (
-            self._app._preview._current_site_id
-            or self._app._site_combo.currentData()
-            or 0
-        )
+        site_id = effective_site_id(
+            post, self._app._preview._current_site_id or self._app._site_combo.currentData()
+        ) or 0
 
         async def _do_save():
             try:
@@ -641,8 +634,8 @@ class PostActionsController:
         """Bookmarks changed -- rescan saved state for all visible browse grid posts."""
         for i, p in enumerate(self._app._posts):
             if i < len(self._app._grid._thumbs):
-                self._app._grid._thumbs[i].set_saved_locally(self.is_post_saved(p.id))
-                site_id = self._app._site_combo.currentData()
+                site_id = effective_site_id(p, self._app._site_combo.currentData())
+                self._app._grid._thumbs[i].set_saved_locally(self.is_post_saved(p.id, site_id))
                 self._app._grid._thumbs[i].set_bookmarked(
                     bool(site_id and self._app._db.is_bookmarked(site_id, p.id))
                 )

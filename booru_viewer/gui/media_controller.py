@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..core.cache import download_image, cache_size_bytes, evict_oldest, evict_oldest_thumbnails
+from .site_selection import effective_site_id
 
 if TYPE_CHECKING:
     from .main_window import BooruApp
@@ -90,14 +91,14 @@ class MediaController:
             except Exception:
                 pass
             self._app._preview._current_post = post
-            self._app._preview._current_site_id = self._app._site_combo.currentData()
+            self._app._preview._current_site_id = effective_site_id(post, self._app._site_combo.currentData())
             self._app._preview.set_post_tags(post.tag_categories, post.tag_list)
             self._app._ensure_post_categories_async(post)
             site_id = self._app._preview._current_site_id
             self._app._preview.update_bookmark_state(
                 bool(site_id and self._app._db.is_bookmarked(site_id, post.id))
             )
-            self._app._preview.update_save_state(self._app._post_actions.is_post_saved(post.id))
+            self._app._preview.update_save_state(self._app._post_actions.is_post_saved(post.id, self._app._preview._current_site_id))
             self._app._status.showMessage(f"Loading #{post.id}...")
             preview_hidden = not (
                 self._app._preview.isVisible() and self._app._preview.width() > 0

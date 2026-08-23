@@ -367,7 +367,7 @@ class BookmarksView(QWidget):
         save_lib_new = None
         save_lib_folders = {}
         unsave_lib = None
-        if self._db.is_post_in_library(fav.post_id):
+        if self._db.is_post_in_library(fav.post_id, site_id=fav.site_id):
             unsave_lib = menu.addAction("Unsave from Library")
         else:
             save_lib_menu = menu.addMenu("Save to Library")
@@ -503,8 +503,8 @@ class BookmarksView(QWidget):
 
         menu = QMenu(self)
 
-        any_unsaved = any(not self._db.is_post_in_library(f.post_id) for f in favs)
-        any_saved = any(self._db.is_post_in_library(f.post_id) for f in favs)
+        any_unsaved = any(not self._db.is_post_in_library(f.post_id, site_id=f.site_id) for f in favs)
+        any_saved = any(self._db.is_post_in_library(f.post_id, site_id=f.site_id) for f in favs)
 
         save_lib_menu = None
         save_lib_unsorted = None
