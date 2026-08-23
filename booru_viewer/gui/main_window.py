@@ -759,7 +759,7 @@ class BooruApp(QMainWindow):
 
     # (_scroll_next_page, _scroll_prev_page moved to search_controller.py)
 
-    # (_build_search_tags through _on_autocomplete_done moved to search_controller.py)
+    # (search and autocomplete handlers moved to search_controller.py)
     # -- Post selection / preview --
 
     def _on_post_selected(self, index: int) -> None:

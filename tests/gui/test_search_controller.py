@@ -12,7 +12,6 @@ import pytest
 from booru_viewer.gui.search_controller import (
     build_search_tags,
     filter_posts,
-    should_backfill,
 )
 
 
@@ -193,24 +192,3 @@ def test_filter_posts_mutates_seen_ids():
     seen: set = set()
     filter_posts(posts, bl_tags=set(), bl_posts=set(), seen_ids=seen)
     assert seen == {(None, 10), (None, 20)}
-
-
-# ======================================================================
-# should_backfill
-# ======================================================================
-
-
-def test_backfill_yes_when_under_limit_and_api_not_short():
-    assert should_backfill(collected_count=10, limit=40, last_batch_size=40) is True
-
-
-def test_backfill_no_when_collected_meets_limit():
-    assert should_backfill(collected_count=40, limit=40, last_batch_size=40) is False
-
-
-def test_backfill_no_when_api_returned_short():
-    assert should_backfill(collected_count=10, limit=40, last_batch_size=20) is False
-
-
-def test_backfill_no_when_both_met():
-    assert should_backfill(collected_count=40, limit=40, last_batch_size=20) is False

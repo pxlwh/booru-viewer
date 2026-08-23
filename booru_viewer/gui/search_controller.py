@@ -112,11 +112,6 @@ def filter_posts(
     return posts, drops
 
 
-def should_backfill(collected_count: int, limit: int, last_batch_size: int) -> bool:
-    """Return True if another backfill page should be fetched."""
-    return collected_count < limit and last_batch_size >= limit
-
-
 def interleave(batches: list[list], limit: int) -> list:
     """Round-robin across per-site batches, skipping exhausted ones.
 
@@ -358,18 +353,6 @@ class SearchController:
             return
         self._current_page -= 1
         self.do_search()
-
-    # -- Tag building --
-
-    def _build_search_tags(self) -> str:
-        api_type = self._app._current_site.api_type if self._app._current_site else None
-        return build_search_tags(
-            self._current_tags,
-            self._current_rating,
-            api_type,
-            self._min_score,
-            self._app._media_filter.currentText(),
-        )
 
     # -- Core search --
 
