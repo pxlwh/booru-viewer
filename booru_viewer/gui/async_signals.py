@@ -7,7 +7,7 @@ from PySide6.QtCore import QObject, Signal
 
 class AsyncSignals(QObject):
     """Signals for async worker results."""
-    search_done = Signal(list)
+    search_done = Signal(list, list)  # posts, [(site_name, error), ...]
     search_append = Signal(list)
     search_error = Signal(str)
     thumb_done = Signal(int, str)

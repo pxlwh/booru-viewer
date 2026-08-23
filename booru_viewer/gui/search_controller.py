@@ -138,6 +138,119 @@ def interleave(batches: list[list], limit: int) -> list:
     return out
 
 
+async def fetch_site_page(
+    client,
+    search_tags: str,
+    page: int,
+    limit: int,
+    bl_tags: set,
+    bl_posts: set,
+    seen: set,
+    backfill_delay: float = 0.3,
+) -> tuple[list, int, bool, dict]:
+    """Fetch one logical page from one site, backfilling short results.
+
+    Fetches *page*, filters it, and while the filtered yield is short of
+    *limit* and the API is still returning full batches, fetches up to
+    nine more pages with *backfill_delay* between them. This is the one
+    fetch loop behind both paged search and infinite scroll; it used to
+    exist twice, drifting.
+
+    *seen* may be shared between concurrently running calls: keys are
+    ``(site_id, post_id)`` tuples so sites cannot collide, and
+    `filter_posts` runs synchronously between awaits on one event loop.
+
+    Returns ``(posts, last_page, api_exhausted, drops)`` — *last_page*
+    is the last page actually consumed (backfill advances it),
+    *api_exhausted* means the API returned a short batch (no more
+    pages), *drops* counts removals as in `filter_posts`.
+    """
+    collected: list = []
+    drops = {"bl_tags": 0, "bl_posts": 0, "dedup": 0}
+    current_page = page
+    last_page = page
+    batch = await client.search(tags=search_tags, page=current_page, limit=limit)
+    filtered, batch_drops = filter_posts(batch, bl_tags, bl_posts, seen)
+    for k in drops:
+        drops[k] += batch_drops[k]
+    collected.extend(filtered)
+    api_exhausted = len(batch) < limit
+    for _ in range(9):
+        if api_exhausted or len(collected) >= limit:
+            break
+        await asyncio.sleep(backfill_delay)
+        current_page += 1
+        batch = await client.search(tags=search_tags, page=current_page, limit=limit)
+        last_page = current_page
+        filtered, batch_drops = filter_posts(batch, bl_tags, bl_posts, seen)
+        for k in drops:
+            drops[k] += batch_drops[k]
+        collected.extend(filtered)
+        if len(batch) < limit:
+            api_exhausted = True
+    return collected, last_page, api_exhausted, drops
+
+
+def partition_results(names: list[str], results: list) -> tuple[list, list[tuple[str, str]]]:
+    """Split `asyncio.gather(..., return_exceptions=True)` output.
+
+    Returns ``(successes, errors)`` where each error is a
+    ``(name, message)`` pair for an entry that came back as an
+    exception. Order is preserved within each list, so batch order
+    still follows selector order.
+    """
+    successes: list = []
+    errors: list[tuple[str, str]] = []
+    for name, res in zip(names, results):
+        if isinstance(res, BaseException):
+            errors.append((name, str(res)))
+        else:
+            successes.append(res)
+    return successes, errors
+
+
+def build_tags_for_sites(
+    tags: str,
+    rating: str,
+    api_types: list,
+    min_score: int,
+    media_filter: str,
+) -> list[str]:
+    """One search string per site — rating syntax differs per backend.
+
+    danbooru wants ``rating:e`` where gelbooru wants ``rating:explicit``;
+    building the string once from the first site's api_type would send
+    one backend's syntax to all of them, and a gelbooru receiving
+    ``rating:e`` returns wrong or empty results with no error.
+    """
+    return [
+        build_search_tags(tags, rating, t, min_score, media_filter)
+        for t in api_types
+    ]
+
+
+def format_search_status(
+    n_posts: int,
+    total_sites: int,
+    errors: list,
+    at_end: bool,
+) -> str:
+    """Status-bar line for a finished search page.
+
+    With no errors this is the existing single-site message, byte for
+    byte. Failed sites are named with their error text so a missing
+    API key explains itself instead of reading as an empty result.
+    """
+    msg = f"{n_posts} results"
+    if at_end:
+        msg += " (end)"
+    if errors:
+        ok = max(total_sites - len(errors), 0)
+        detail = "; ".join(f"{name}: {err}" for name, err in errors)
+        msg = f"{msg} — showing {ok} of {total_sites} sites — {detail}"
+    return msg
+
+
 # -- Controller --
 
 
@@ -207,7 +320,7 @@ class SearchController:
         if self._current_page > 1:
             self._current_page -= 1
             if self._current_page in self._search.page_cache:
-                self._app._signals.search_done.emit(self._search.page_cache[self._current_page])
+                self._app._signals.search_done.emit(self._search.page_cache[self._current_page], [])
             else:
                 self.do_search()
 
@@ -216,7 +329,7 @@ class SearchController:
             return
         self._current_page += 1
         if self._current_page in self._search.page_cache:
-            self._app._signals.search_done.emit(self._search.page_cache[self._current_page])
+            self._app._signals.search_done.emit(self._search.page_cache[self._current_page], [])
             return
         self.do_search()
 
@@ -260,15 +373,23 @@ class SearchController:
     # -- Core search --
 
     def do_search(self) -> None:
-        if not self._app._current_site:
+        sites = self._app._selected_sites()
+        if not sites:
             self._app._status.showMessage("No site selected")
             return
         self._loading = True
         self._app._page_label.setText(f"Page {self._current_page}")
         self._app._status.showMessage("Searching...")
 
-        search_tags = self._build_search_tags()
-        log.info(f"Search: tags='{search_tags}' rating={self._current_rating}")
+        site_names = [s.name for s in sites]
+        tags_by_site = build_tags_for_sites(
+            self._current_tags,
+            self._current_rating,
+            [s.api_type for s in sites],
+            self._min_score,
+            self._app._media_filter.currentText(),
+        )
+        log.info(f"Search: sites={site_names} tags={tags_by_site} rating={self._current_rating}")
         page = self._current_page
         limit = self._app._db.get_setting_int("page_size") or 40
 
@@ -276,52 +397,45 @@ class SearchController:
         if self._app._db.get_setting_bool("blacklist_enabled"):
             bl_tags = set(self._app._db.get_blacklisted_tags())
         bl_posts = self._app._db.get_blacklisted_posts()
-        shown_ids = self._search.shown_post_ids.copy()
-        seen = shown_ids.copy()
-
-        total_drops = {"bl_tags": 0, "bl_posts": 0, "dedup": 0}
+        seen = self._search.shown_post_ids.copy()
 
         async def _search():
-            client = self._app._make_client()
+            clients = [self._app._client_for_site(s) for s in sites]
             try:
-                collected = []
-                raw_total = 0
-                current_page = page
-                batch = await client.search(tags=search_tags, page=current_page, limit=limit)
-                raw_total += len(batch)
-                filtered, batch_drops = filter_posts(batch, bl_tags, bl_posts, seen)
-                for k in total_drops:
-                    total_drops[k] += batch_drops[k]
-                collected.extend(filtered)
-                if should_backfill(len(collected), limit, len(batch)):
-                    for _ in range(9):
-                        await asyncio.sleep(0.3)
-                        current_page += 1
-                        batch = await client.search(tags=search_tags, page=current_page, limit=limit)
-                        raw_total += len(batch)
-                        filtered, batch_drops = filter_posts(batch, bl_tags, bl_posts, seen)
-                        for k in total_drops:
-                            total_drops[k] += batch_drops[k]
-                        collected.extend(filtered)
-                        log.debug(f"Backfill: page={current_page} batch={len(batch)} filtered={len(filtered)} total={len(collected)}/{limit}")
-                        if not should_backfill(len(collected), limit, len(batch)):
-                            break
-                log.debug(
-                    f"do_search: limit={limit} api_returned_total={raw_total} kept={len(collected[:limit])} "
-                    f"drops_bl_tags={total_drops['bl_tags']} drops_bl_posts={total_drops['bl_posts']} drops_dedup={total_drops['dedup']} "
-                    f"last_batch_size={len(batch)} api_short_signal={len(batch) < limit}"
+                results = await asyncio.gather(
+                    *(
+                        fetch_site_page(c, t, page, limit, bl_tags, bl_posts, seen)
+                        for c, t in zip(clients, tags_by_site)
+                    ),
+                    return_exceptions=True,
                 )
-                self._app._signals.search_done.emit(collected[:limit])
+                oks, errors = partition_results(site_names, results)
+                if errors and not oks:
+                    self._app._signals.search_error.emit(
+                        "; ".join(f"{n}: {m}" for n, m in errors)
+                    )
+                    return
+                merged = interleave([r[0] for r in oks], limit)
+                log.debug(
+                    f"do_search: sites={site_names} limit={limit} kept={len(merged)} "
+                    f"errors={[n for n, _ in errors]}"
+                )
+                self._app._signals.search_done.emit(merged, errors)
             except Exception as e:
                 self._app._signals.search_error.emit(str(e))
             finally:
-                await client.close()
+                for c in clients:
+                    try:
+                        await c.close()
+                    except Exception:
+                        pass
 
         self._app._run_async(_search)
 
     # -- Search results --
 
-    def on_search_done(self, posts: list) -> None:
+    def on_search_done(self, posts: list, errors: list | None = None) -> None:
+        errors = errors or []
         self._app._page_label.setText(f"Page {self._current_page}")
         self._app._posts = posts
         ss = self._search
@@ -333,10 +447,10 @@ class SearchController:
         limit = self._app._db.get_setting_int("page_size") or 40
         at_end = len(posts) < limit
         log.debug(f"on_search_done: displayed_count={len(posts)} limit={limit} at_end={at_end}")
-        if at_end:
-            self._app._status.showMessage(f"{len(posts)} results (end)")
-        else:
-            self._app._status.showMessage(f"{len(posts)} results")
+        total_sites = len(self._app._selected_sites()) or 1
+        self._app._status.showMessage(
+            format_search_status(len(posts), total_sites, errors, at_end)
+        )
         self._app._prev_page_btn.setVisible(self._current_page > 1)
         self._app._next_page_btn.setVisible(not at_end)
         thumbs = self._app._grid.set_posts(len(posts))
@@ -391,10 +505,20 @@ class SearchController:
     def on_reached_bottom(self) -> None:
         if not self._infinite_scroll or self._loading or self._search.infinite_exhausted:
             return
+        sites = self._app._selected_sites()
+        if not sites:
+            return
         self._loading = True
         self._current_page += 1
 
-        search_tags = self._build_search_tags()
+        site_names = [s.name for s in sites]
+        tags_by_site = build_tags_for_sites(
+            self._current_tags,
+            self._current_rating,
+            [s.api_type for s in sites],
+            self._min_score,
+            self._app._media_filter.currentText(),
+        )
         page = self._current_page
         limit = self._app._db.get_setting_int("page_size") or 40
 
@@ -402,56 +526,50 @@ class SearchController:
         if self._app._db.get_setting_bool("blacklist_enabled"):
             bl_tags = set(self._app._db.get_blacklisted_tags())
         bl_posts = self._app._db.get_blacklisted_posts()
-        shown_ids = self._search.shown_post_ids.copy()
-        seen = shown_ids.copy()
-
-        total_drops = {"bl_tags": 0, "bl_posts": 0, "dedup": 0}
+        seen = self._search.shown_post_ids.copy()
 
         async def _search():
-            client = self._app._make_client()
-            collected = []
-            raw_total = 0
+            clients = [self._app._client_for_site(s) for s in sites]
+            collected: list = []
             last_page = page
             api_exhausted = False
             try:
-                current_page = page
-                batch = await client.search(tags=search_tags, page=current_page, limit=limit)
-                raw_total += len(batch)
-                last_page = current_page
-                filtered, batch_drops = filter_posts(batch, bl_tags, bl_posts, seen)
-                for k in total_drops:
-                    total_drops[k] += batch_drops[k]
-                collected.extend(filtered)
-                if len(batch) < limit:
-                    api_exhausted = True
-                elif len(collected) < limit:
-                    for _ in range(9):
-                        await asyncio.sleep(0.3)
-                        current_page += 1
-                        batch = await client.search(tags=search_tags, page=current_page, limit=limit)
-                        raw_total += len(batch)
-                        last_page = current_page
-                        filtered, batch_drops = filter_posts(batch, bl_tags, bl_posts, seen)
-                        for k in total_drops:
-                            total_drops[k] += batch_drops[k]
-                        collected.extend(filtered)
-                        if len(batch) < limit:
-                            api_exhausted = True
-                            break
-                        if len(collected) >= limit:
-                            break
+                results = await asyncio.gather(
+                    *(
+                        fetch_site_page(c, t, page, limit, bl_tags, bl_posts, seen)
+                        for c, t in zip(clients, tags_by_site)
+                    ),
+                    return_exceptions=True,
+                )
+                oks, errors = partition_results(site_names, results)
+                if oks:
+                    collected = interleave([r[0] for r in oks], limit)
+                    # One page number drives every site (paging model 1),
+                    # but backfill may consume further on one site than
+                    # another. Taking the furthest cursor would skip pages
+                    # on the slower sites and lose their posts for good;
+                    # the minimum only re-fetches pages whose posts dedup
+                    # away against shown_post_ids. When a site errored,
+                    # don't advance at all — its next chance is this page.
+                    last_page = page if errors else min(r[1] for r in oks)
+                    api_exhausted = not errors and all(r[2] for r in oks)
+                for name, err in errors:
+                    log.warning(f"Infinite scroll fetch failed for {name}: {err}")
             except Exception as e:
                 log.warning(f"Infinite scroll fetch failed: {e}")
             finally:
                 self._search.infinite_last_page = last_page
                 self._search.infinite_api_exhausted = api_exhausted
                 log.debug(
-                    f"on_reached_bottom: limit={limit} api_returned_total={raw_total} kept={len(collected[:limit])} "
-                    f"drops_bl_tags={total_drops['bl_tags']} drops_bl_posts={total_drops['bl_posts']} drops_dedup={total_drops['dedup']} "
-                    f"api_exhausted={api_exhausted} last_page={last_page}"
+                    f"on_reached_bottom: sites={site_names} limit={limit} "
+                    f"kept={len(collected)} api_exhausted={api_exhausted} last_page={last_page}"
                 )
-                self._app._signals.search_append.emit(collected[:limit])
-                await client.close()
+                self._app._signals.search_append.emit(collected)
+                for c in clients:
+                    try:
+                        await c.close()
+                    except Exception:
+                        pass
 
         self._app._run_async(_search)
 

@@ -547,14 +547,25 @@ class BooruApp(QMainWindow):
             if idx >= 0:
                 self._site_combo.setCurrentIndex(idx)
 
+    def _client_for_site(self, site: Site) -> BooruClient:
+        return client_for_type(
+            site.api_type, site.url, site.api_key, site.api_user,
+            db=self._db, site_id=site.id,
+        )
+
     def _make_client(self) -> BooruClient | None:
         if not self._current_site:
             return None
-        s = self._current_site
-        return client_for_type(
-            s.api_type, s.url, s.api_key, s.api_user,
-            db=self._db, site_id=s.id,
-        )
+        return self._client_for_site(self._current_site)
+
+    def _selected_sites(self) -> list[Site]:
+        """Sites the next search should hit, in selector order.
+
+        Single-site body for now; the Multi UI task replaces it with
+        the checked-sites list. Search code consumes the plural form
+        from day one so n=1 and n>1 are the same code path.
+        """
+        return [self._current_site] if self._current_site else []
 
     def _on_site_changed(self, index: int) -> None:
         if index < 0:
