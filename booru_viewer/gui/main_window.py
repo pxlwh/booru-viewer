@@ -7,7 +7,7 @@ import logging
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, Signal, QUrl
+from PySide6.QtCore import Qt, QTimer, Signal, QUrl, QEvent, QObject
 from PySide6.QtGui import QPixmap, QAction, QKeySequence, QDesktopServices, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QStackedWidget,
     QComboBox,
+    QCheckBox,
     QLabel,
     QPushButton,
     QStatusBar,
@@ -49,11 +50,44 @@ from .media_controller import MediaController
 from .popout_controller import PopoutController
 from .post_actions import PostActionsController
 from .context_menus import ContextMenuHandler
+from .site_selection import parse_multi_site_ids, serialize_site_ids, summarize_selection
 
 log = logging.getLogger("booru")
 
 
 # -- Main App --
+
+class _MultiPopupFilter(QObject):
+    """Popup behaviour for the checkable site combo in Multi mode.
+
+    On the popup list: toggles the clicked item's check state and eats
+    the event so the popup stays open — a multi-select is useless if
+    the first click closes it. On the combo's read-only line edit:
+    opens the popup, which otherwise swallows clicks.
+    """
+
+    def __init__(self, combo, on_change) -> None:
+        super().__init__(combo)
+        self._combo = combo
+        self._on_change = on_change
+
+    def eventFilter(self, obj, event):
+        if event.type() != QEvent.Type.MouseButtonRelease:
+            return False
+        if obj is self._combo.lineEdit():
+            self._combo.showPopup()
+            return True
+        idx = self._combo.view().indexAt(event.position().toPoint())
+        if idx.isValid():
+            item = self._combo.model().itemFromIndex(idx)
+            item.setCheckState(
+                Qt.CheckState.Unchecked
+                if item.checkState() == Qt.CheckState.Checked
+                else Qt.CheckState.Checked
+            )
+            self._on_change()
+        return True
+
 
 class BooruApp(QMainWindow):
     def __init__(self) -> None:
@@ -112,6 +146,7 @@ class BooruApp(QMainWindow):
         self._setup_ui()
         self._setup_menu()
         self._load_sites()
+        self._multi_check.setChecked(self._db.get_setting_bool("multi_enabled"))
         # One-shot orphan cleanup — must run after DB + library dir are
         # configured, before the library tab is first populated.
         orphans = self._db.reconcile_library_meta()
@@ -231,6 +266,12 @@ class BooruApp(QMainWindow):
         self._site_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
         self._site_combo.currentIndexChanged.connect(self._on_site_changed)
         top.addWidget(self._site_combo)
+
+        self._multi_filter: _MultiPopupFilter | None = None
+        self._multi_check = QCheckBox("Multi")
+        self._multi_check.setToolTip("Search several sites at once")
+        self._multi_check.toggled.connect(self._on_multi_toggled)
+        top.addWidget(self._multi_check)
 
         # Rating filter
         self._rating_combo = QComboBox()
@@ -546,6 +587,7 @@ class BooruApp(QMainWindow):
             idx = self._site_combo.findData(default_id)
             if idx >= 0:
                 self._site_combo.setCurrentIndex(idx)
+        self._apply_multi_mode()
 
     def _client_for_site(self, site: Site) -> BooruClient:
         return client_for_type(
@@ -559,13 +601,82 @@ class BooruApp(QMainWindow):
         return self._client_for_site(self._current_site)
 
     def _selected_sites(self) -> list[Site]:
-        """Sites the next search should hit, in selector order.
-
-        Single-site body for now; the Multi UI task replaces it with
-        the checked-sites list. Search code consumes the plural form
-        from day one so n=1 and n>1 are the same code path.
-        """
+        """Sites the next search should hit, in selector order."""
+        if self._multi_check.isChecked():
+            return self._checked_sites()
         return [self._current_site] if self._current_site else []
+
+    def _on_multi_toggled(self, checked: bool) -> None:
+        self._db.set_setting("multi_enabled", "1" if checked else "0")
+        self._apply_multi_mode()
+        self._search_ctrl.reset()
+
+    def _apply_multi_mode(self) -> None:
+        """(Re)apply the Multi state to the site combo.
+
+        Called on toggle and at the end of every `_load_sites` —
+        repopulating the combo rebuilds its items, which wipes
+        checkability, so the state must be reapplied after each reload.
+        """
+        combo = self._site_combo
+        model = combo.model()
+        if self._multi_check.isChecked():
+            saved = parse_multi_site_ids(
+                self._db.get_setting("multi_site_ids"), self._db.get_sites()
+            )
+            checked_ids = {s.id for s in saved}
+            if not checked_ids and self._current_site:
+                checked_ids = {self._current_site.id}
+            for i in range(combo.count()):
+                item = model.item(i)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                item.setCheckState(
+                    Qt.CheckState.Checked if combo.itemData(i) in checked_ids
+                    else Qt.CheckState.Unchecked
+                )
+            combo.setEditable(True)
+            combo.lineEdit().setReadOnly(True)
+            if self._multi_filter is None:
+                self._multi_filter = _MultiPopupFilter(combo, self._on_multi_selection_changed)
+            # remove-then-install: removing a filter that isn't installed
+            # is a no-op, and this guarantees no duplicate installs when
+            # _load_sites reapplies the mode.
+            combo.view().viewport().removeEventFilter(self._multi_filter)
+            combo.view().viewport().installEventFilter(self._multi_filter)
+            combo.lineEdit().removeEventFilter(self._multi_filter)
+            combo.lineEdit().installEventFilter(self._multi_filter)
+            self._refresh_multi_summary()
+        else:
+            if self._multi_filter is not None:
+                combo.view().viewport().removeEventFilter(self._multi_filter)
+            for i in range(combo.count()):
+                item = model.item(i)
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+                item.setData(None, Qt.ItemDataRole.CheckStateRole)
+            combo.setEditable(False)
+
+    def _checked_sites(self) -> list[Site]:
+        model = self._site_combo.model()
+        by_id = {s.id: s for s in self._db.get_sites()}
+        out: list[Site] = []
+        for i in range(self._site_combo.count()):
+            if model.item(i).checkState() == Qt.CheckState.Checked:
+                site = by_id.get(self._site_combo.itemData(i))
+                if site:
+                    out.append(site)
+        return out
+
+    def _on_multi_selection_changed(self) -> None:
+        sites = self._checked_sites()
+        self._db.set_setting("multi_site_ids", serialize_site_ids([s.id for s in sites]))
+        self._refresh_multi_summary()
+        self._search_ctrl.reset()
+
+    def _refresh_multi_summary(self) -> None:
+        if self._site_combo.lineEdit() is not None:
+            self._site_combo.lineEdit().setText(
+                summarize_selection([s.name for s in self._checked_sites()])
+            )
 
     def _on_site_changed(self, index: int) -> None:
         if index < 0:
