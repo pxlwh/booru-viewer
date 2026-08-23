@@ -133,7 +133,7 @@ async def save_post_file(
         basename,
         post.id,
         in_flight_set,
-        lambda path, pid: _same_post_on_disk(db, path, pid),
+        lambda path, pid: _same_post_on_disk(db, path, pid, site_id),
     )
 
     dest_dir.mkdir(parents=True, exist_ok=True)
@@ -173,8 +173,8 @@ def _is_in_library(path: Path) -> bool:
         return False
 
 
-def _same_post_on_disk(db: Database, path: Path, post_id: int) -> bool:
-    """True if `path` is already a saved copy of `post_id`.
+def _same_post_on_disk(db: Database, path: Path, post_id: int, site_id: int) -> bool:
+    """True if `path` is already a saved copy of `(site_id, post_id)`.
 
     Looks up the path's basename in `library_meta` first; if no row,
     falls back to the legacy v0.2.3 digit-stem heuristic (a file named
@@ -188,20 +188,19 @@ def _same_post_on_disk(db: Database, path: Path, post_id: int) -> bool:
     except ValueError:
         return False
 
-    # Site-blind shim: get_library_key_by_filename now returns
-    # (site_id, post_id), but this check is not yet site-aware — take
-    # [1] and compare post_id only, same as before the accessor grew a
-    # site_id column. Task 4 rewrites this to compare the full key.
-    existing_key = db.get_library_key_by_filename(path.name)
-    existing_id = existing_key[1] if existing_key is not None else None
-    if existing_id is not None:
-        return existing_id == post_id
+    existing = db.get_library_key_by_filename(path.name)
+    if existing is not None:
+        return existing == (site_id, post_id)
 
-    # Legacy v0.2.3 fallback: rows whose filename column is empty
-    # belong to digit-stem files. Mirrors the digit-stem checks in
-    # gui/library.py.
-    if path.stem.isdigit():
-        return int(path.stem) == post_id
+    # Legacy v0.2.3 fallback: rows whose filename column is empty belong
+    # to digit-stem files. The filename carries no site, so ask the DB
+    # which sites have a filename-less row for this id. Exactly one match
+    # that agrees with our site is the same post; anything else is
+    # "different", which sends the caller to _resolve_collision and
+    # writes a new file instead of dropping one.
+    if path.stem.isdigit() and int(path.stem) == post_id:
+        candidates = db.legacy_library_sites_for_post(post_id)
+        return candidates == [site_id]
 
     return False
 

@@ -937,6 +937,20 @@ class Database:
         ).fetchone()
         return (row["site_id"], row["post_id"]) if row else None
 
+    def legacy_library_sites_for_post(self, post_id: int) -> list[int]:
+        """Site ids of pre-0.2.3 rows (empty filename) for a post id.
+
+        A bare `12345.jpg` on disk carries no site, so the digit-stem
+        fallback cannot identify one from the filename. It asks which
+        sites have a filename-less row for that id instead; exactly one
+        answer is usable, more than one is ambiguous.
+        """
+        rows = self.conn.execute(
+            "SELECT site_id FROM library_meta WHERE post_id = ? AND filename = ''",
+            (post_id,),
+        ).fetchall()
+        return [r["site_id"] for r in rows]
+
     def get_library_meta(self, site_id: int, post_id: int) -> dict | None:
         row = self.conn.execute(
             "SELECT * FROM library_meta WHERE site_id = ? AND post_id = ?",
