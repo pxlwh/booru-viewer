@@ -57,13 +57,40 @@ log = logging.getLogger("booru")
 
 # -- Main App --
 
+class _SiteCombo(QComboBox):
+    """QComboBox that can display an override label (the Multi summary).
+
+    Multi mode must NOT use setEditable(): an editable combo is drawn as
+    a line-edit frame whose outline Fusion derives by darkening the
+    palette's window color — on a near-black theme that outline is
+    black-on-black, i.e. the border visually disappears. Painting the
+    label ourselves keeps the native non-editable rendering (same frame,
+    same arrow) in both modes on every style and palette.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.display_text_override: str | None = None
+
+    def paintEvent(self, event) -> None:
+        if self.display_text_override is None:
+            super().paintEvent(event)
+            return
+        from PySide6.QtWidgets import QStylePainter, QStyleOptionComboBox, QStyle
+        painter = QStylePainter(self)
+        opt = QStyleOptionComboBox()
+        self.initStyleOption(opt)
+        opt.currentText = self.display_text_override
+        painter.drawComplexControl(QStyle.ComplexControl.CC_ComboBox, opt)
+        painter.drawControl(QStyle.ControlElement.CE_ComboBoxLabel, opt)
+
+
 class _MultiPopupFilter(QObject):
     """Popup behaviour for the checkable site combo in Multi mode.
 
-    On the popup list: toggles the clicked item's check state and eats
-    the event so the popup stays open — a multi-select is useless if
-    the first click closes it. On the combo's read-only line edit:
-    opens the popup, which otherwise swallows clicks.
+    Toggles the clicked item's check state and eats the event so the
+    popup stays open — a multi-select is useless if the first click
+    closes it.
     """
 
     def __init__(self, combo, on_change) -> None:
@@ -74,9 +101,6 @@ class _MultiPopupFilter(QObject):
     def eventFilter(self, obj, event):
         if event.type() != QEvent.Type.MouseButtonRelease:
             return False
-        if obj is self._combo.lineEdit():
-            self._combo.showPopup()
-            return True
         idx = self._combo.view().indexAt(event.position().toPoint())
         if idx.isValid():
             item = self._combo.model().itemFromIndex(idx)
@@ -260,17 +284,17 @@ class BooruApp(QMainWindow):
         top.setContentsMargins(0, 0, 0, 0)
         top.setSpacing(3)
 
-        self._site_combo = QComboBox()
-        self._site_combo.setMinimumWidth(80)
-        self._site_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
-        self._site_combo.currentIndexChanged.connect(self._on_site_changed)
-        top.addWidget(self._site_combo)
-
         self._multi_filter: _MultiPopupFilter | None = None
         self._multi_check = QCheckBox("Multi")
         self._multi_check.setToolTip("Search several sites at once")
         self._multi_check.toggled.connect(self._on_multi_toggled)
         top.addWidget(self._multi_check)
+
+        self._site_combo = _SiteCombo()
+        self._site_combo.setMinimumWidth(80)
+        self._site_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self._site_combo.currentIndexChanged.connect(self._on_site_changed)
+        top.addWidget(self._site_combo)
 
         # Rating filter
         self._rating_combo = QComboBox()
@@ -636,14 +660,6 @@ class BooruApp(QMainWindow):
                     Qt.CheckState.Checked if combo.itemData(i) in checked_ids
                     else Qt.CheckState.Unchecked
                 )
-            combo.setEditable(True)
-            combo.lineEdit().setReadOnly(True)
-            # An editable combo embeds a QLineEdit that inherits the
-            # app/theme QLineEdit rules (border, background), repainting
-            # the combo's chrome so it looks like a different widget.
-            # Widget-level styles outrank theme QSS, so this keeps the
-            # combo's own frame identical in both modes on every theme.
-            combo.lineEdit().setStyleSheet("border: none; background: transparent; padding: 0;")
             if self._multi_filter is None:
                 self._multi_filter = _MultiPopupFilter(combo, self._on_multi_selection_changed)
             # remove-then-install: removing a filter that isn't installed
@@ -651,8 +667,6 @@ class BooruApp(QMainWindow):
             # _load_sites reapplies the mode.
             combo.view().viewport().removeEventFilter(self._multi_filter)
             combo.view().viewport().installEventFilter(self._multi_filter)
-            combo.lineEdit().removeEventFilter(self._multi_filter)
-            combo.lineEdit().installEventFilter(self._multi_filter)
             self._refresh_multi_summary()
         else:
             if self._multi_filter is not None:
@@ -661,7 +675,9 @@ class BooruApp(QMainWindow):
                 item = model.item(i)
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
                 item.setData(None, Qt.ItemDataRole.CheckStateRole)
-            combo.setEditable(False)
+            combo.display_text_override = None
+            combo.setToolTip("")
+            combo.update()
 
     def _checked_sites(self) -> list[Site]:
         model = self._site_combo.model()
@@ -681,10 +697,11 @@ class BooruApp(QMainWindow):
         self._search_ctrl.reset()
 
     def _refresh_multi_summary(self) -> None:
-        if self._site_combo.lineEdit() is not None:
-            self._site_combo.lineEdit().setText(
-                summarize_selection([s.name for s in self._checked_sites()])
-            )
+        names = [s.name for s in self._checked_sites()]
+        self._site_combo.display_text_override = summarize_selection(names)
+        # The summary can say just "3 sites"; the tooltip carries the list.
+        self._site_combo.setToolTip(", ".join(names))
+        self._site_combo.update()
 
     def _on_site_changed(self, index: int) -> None:
         if index < 0:

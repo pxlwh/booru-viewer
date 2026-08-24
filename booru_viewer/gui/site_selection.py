@@ -32,11 +32,16 @@ def serialize_site_ids(site_ids: list[int]) -> str:
 
 
 def summarize_selection(names: list[str]) -> str:
-    """Combo display text while Multi is on."""
+    """Combo display text while Multi is on.
+
+    Two or more names collapse to a count: the combo is sized to fit
+    site names, so a joined list clips mid-word. The caller puts the
+    full list in the combo's tooltip instead.
+    """
     if not names:
         return "No sites"
-    if len(names) <= 3:
-        return ", ".join(names)
+    if len(names) == 1:
+        return names[0]
     return f"{len(names)} sites"
 
 

@@ -56,9 +56,8 @@ def test_summary_one_site_is_just_the_name():
     assert summarize_selection(["gelbooru"]) == "gelbooru"
 
 
-def test_summary_up_to_three_names_listed():
-    assert summarize_selection(["a", "b", "c"]) == "a, b, c"
-
-
-def test_summary_four_or_more_collapses_to_a_count():
+def test_summary_two_or_more_collapses_to_a_count():
+    """The combo is sized for single site names; joined lists clip
+    mid-word, so anything plural is a count (tooltip carries the list)."""
+    assert summarize_selection(["a", "b"]) == "2 sites"
     assert summarize_selection(["a", "b", "c", "d"]) == "4 sites"
