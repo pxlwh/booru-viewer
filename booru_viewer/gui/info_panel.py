@@ -82,6 +82,10 @@ class InfoPanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._categories_pending = False
+        # Resolves a post's site_id to a display name. The panel can't
+        # reach the DB itself; main_window points this at _site_name_for
+        # after construction. Default keeps the Site row hidden.
+        self.site_name_for = lambda site_id: ""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
 
@@ -118,11 +122,14 @@ class InfoPanel(QWidget):
         self._title.setText(f"Post #{post.id}")
         filetype = Path(post.file_url.split("?")[0]).suffix.lstrip(".").upper() if post.file_url else "unknown"
         source_html = build_source_html(post.source)
+        site_name = self.site_name_for(getattr(post, "site_id", None))
+        site_html = f"Site: {escape(site_name)}<br>" if site_name else ""
         self._details.setTextFormat(Qt.TextFormat.RichText)
         self._details.setText(
             f"Score: {post.score}<br>"
             f"Rating: {escape(post.rating or 'unknown')}<br>"
             f"Filetype: {escape(filetype)}<br>"
+            f"{site_html}"
             f"Source: {source_html}"
         )
         self._details.setOpenExternalLinks(True)

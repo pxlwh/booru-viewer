@@ -412,6 +412,7 @@ class BooruApp(QMainWindow):
         right.addWidget(self._dl_progress)
 
         self._info_panel = InfoPanel()
+        self._info_panel.site_name_for = self._site_name_for
         self._info_panel.tag_clicked.connect(self._on_tag_clicked)
         self._info_panel.setMinimumHeight(100)
         self._info_panel.hide()
@@ -636,6 +637,12 @@ class BooruApp(QMainWindow):
                 )
             combo.setEditable(True)
             combo.lineEdit().setReadOnly(True)
+            # An editable combo embeds a QLineEdit that inherits the
+            # app/theme QLineEdit rules (border, background), repainting
+            # the combo's chrome so it looks like a different widget.
+            # Widget-level styles outrank theme QSS, so this keeps the
+            # combo's own frame identical in both modes on every theme.
+            combo.lineEdit().setStyleSheet("border: none; background: transparent; padding: 0;")
             if self._multi_filter is None:
                 self._multi_filter = _MultiPopupFilter(combo, self._on_multi_selection_changed)
             # remove-then-install: removing a filter that isn't installed
@@ -823,6 +830,7 @@ class BooruApp(QMainWindow):
                 preview_url=None, tags=meta.get("tags", ""),
                 score=meta.get("score", 0), rating=meta.get("rating"),
                 source=meta.get("source"), tag_categories=meta.get("tag_categories", {}),
+                site_id=site_id or None,
             )
             self._info_panel.set_post(p)
             from .post_info import format_post_info
@@ -866,6 +874,7 @@ class BooruApp(QMainWindow):
                 source=meta.get("source"),
                 tag_categories=meta.get("tag_categories", {}),
                 width=img_w, height=img_h,
+                site_id=site_id or None,
             )
             self._preview._current_post = post
             # The post's real site, not the search tab's current
@@ -895,6 +904,7 @@ class BooruApp(QMainWindow):
             preview_url=fav.preview_url, tags=fav.tags or "",
             score=fav.score or 0, rating=fav.rating,
             source=fav.source, tag_categories=cats,
+            site_id=fav.site_id,
         )
         self._info_panel.set_post(p)
         self._on_bookmark_activated(fav)
@@ -907,6 +917,7 @@ class BooruApp(QMainWindow):
             preview_url=fav.preview_url, tags=fav.tags or "",
             score=fav.score or 0, rating=fav.rating,
             source=fav.source, tag_categories=cats,
+            site_id=fav.site_id,
         )
         self._preview._current_post = post
         self._preview._current_site_id = fav.site_id
