@@ -285,6 +285,8 @@ class BooruApp(QMainWindow):
         top.setSpacing(3)
 
         self._multi_filter: _MultiPopupFilter | None = None
+        self._multi_delegate = None
+        self._single_delegate = None
         self._multi_check = QCheckBox("Multi")
         self._multi_check.setToolTip("Search several sites at once")
         self._multi_check.toggled.connect(self._on_multi_toggled)
@@ -667,6 +669,16 @@ class BooruApp(QMainWindow):
             # _load_sites reapplies the mode.
             combo.view().viewport().removeEventFilter(self._multi_filter)
             combo.view().viewport().installEventFilter(self._multi_filter)
+            # The combo's default delegate draws popup rows as MENU items:
+            # the check indicator gets its own column outside the row's
+            # highlight fill, so a hovered checked row looks lopsided.
+            # QStyledItemDelegate paints plain list rows — highlight spans
+            # the full row with the check glyph inside it.
+            if self._multi_delegate is None:
+                from PySide6.QtWidgets import QStyledItemDelegate
+                self._single_delegate = combo.itemDelegate()
+                self._multi_delegate = QStyledItemDelegate(combo)
+            combo.setItemDelegate(self._multi_delegate)
             self._refresh_multi_summary()
         else:
             if self._multi_filter is not None:
@@ -675,6 +687,8 @@ class BooruApp(QMainWindow):
                 item = model.item(i)
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
                 item.setData(None, Qt.ItemDataRole.CheckStateRole)
+            if self._single_delegate is not None:
+                combo.setItemDelegate(self._single_delegate)
             combo.display_text_override = None
             combo.setToolTip("")
             combo.update()
