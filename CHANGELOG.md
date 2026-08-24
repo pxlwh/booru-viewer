@@ -10,6 +10,8 @@
 ### Added
 - `%site%` filename template token, alongside `%artist%`, `%character%`, `%copyright%`, `%general%`, `%meta%`, `%species%`
 - The preview info panel shows which site a post came from
+- Right-click menu on info-panel tags: Search this tag, Add this tag
+  to search, Blacklist this tag
 - Multi-site search: a Multi tickbox turns the site selector into a
   checkable list; results from the ticked sites interleave round-robin,
   the info panel names each post's source site, and a failing site is

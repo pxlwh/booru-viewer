@@ -157,6 +157,35 @@ class ContextMenuHandler:
             self._app._status.showMessage(f"Post #{post.id} blacklisted")
             self._app._search_ctrl.do_search()
 
+    def show_tag(self, tag: str, global_pos) -> None:
+        """Context menu for a tag button in the info panel."""
+        menu = QMenu(self._app)
+        search_action = menu.addAction("Search this tag")
+        add_action = menu.addAction("Add this tag to search")
+        bl_action = menu.addAction("Blacklist this tag")
+        action = menu.exec(global_pos)
+        if action is None:
+            return
+
+        if action == search_action:
+            self._app._on_tag_clicked(tag)
+        elif action == add_action:
+            from .search_controller import add_tag_to_query
+            query = add_tag_to_query(self._app._search_bar.text(), tag)
+            self._app._on_tag_clicked(query)
+        elif action == bl_action:
+            self._app._db.add_blacklisted_tag(tag)
+            self._app._db.set_setting("blacklist_enabled", "1")
+            # The info panel shows the previewed post, so blacklisting one
+            # of its tags means the preview itself is now blacklisted.
+            post = self._app._preview._current_post
+            if post is not None and tag in post.tag_list:
+                self._app._preview.clear()
+                if self._app._popout_ctrl.window and self._app._popout_ctrl.window.isVisible():
+                    self._app._popout_ctrl.window.stop_media()
+            self._app._status.showMessage(f"Blacklisted: {tag}")
+            self._app._search_ctrl.remove_blacklisted_from_grid(tag=tag)
+
     def show_multi(self, indices: list, pos) -> None:
         posts = [self._app._posts[i] for i in indices if 0 <= i < len(self._app._posts)]
         if not posts:

@@ -75,6 +75,18 @@ def build_search_tags(
     return " ".join(parts)
 
 
+def add_tag_to_query(query: str, tag: str) -> str:
+    """Append *tag* to a search query unless it is already a token.
+
+    Whole-token comparison, not substring — "cat" must not be seen as
+    already present in "cat_girl". Also normalizes stray whitespace.
+    """
+    tokens = query.split()
+    if tag not in tokens:
+        tokens.append(tag)
+    return " ".join(tokens)
+
+
 def filter_posts(
     posts: list,
     bl_tags: set,

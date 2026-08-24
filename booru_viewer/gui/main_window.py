@@ -492,6 +492,7 @@ class BooruApp(QMainWindow):
         self._info_panel = InfoPanel()
         self._info_panel.site_name_for = self._site_name_for
         self._info_panel.tag_clicked.connect(self._on_tag_clicked)
+        self._info_panel.tag_context_requested.connect(self._context.show_tag)
         self._info_panel.setMinimumHeight(100)
         self._info_panel.hide()
         right.addWidget(self._info_panel)

@@ -24,6 +24,9 @@ class InfoPanel(QWidget):
     """Toggleable panel showing post details."""
 
     tag_clicked = Signal(str)
+    # (tag, global QPoint) — right-click on a tag button. The menu itself
+    # lives in ContextMenuHandler; the panel only reports where and what.
+    tag_context_requested = Signal(str, object)
 
     # Tag category colors. Defaults follow the booru convention (Danbooru,
     # Gelbooru, etc.) so the panel reads naturally to anyone coming from a
@@ -154,16 +157,7 @@ class InfoPanel(QWidget):
                 self._tags_flow.addWidget(header)
                 for tag in tags:
                     rendered.add(tag)
-                    btn = QPushButton(tag)
-                    btn.setFlat(True)
-                    btn.setCursor(Qt.CursorShape.PointingHandCursor)
-                    style = "QPushButton { text-align: left; padding: 1px 4px; border: none;"
-                    if color:
-                        style += f" color: {color};"
-                    style += " }"
-                    btn.setStyleSheet(style)
-                    btn.clicked.connect(lambda checked, t=tag: self.tag_clicked.emit(t))
-                    self._tags_flow.addWidget(btn)
+                    self._tags_flow.addWidget(self._make_tag_button(tag, color))
             # Safety net: any tag in post.tag_list that didn't land in
             # a cached category (batch tag API returned partial results,
             # HTML scrape fell short, cache stale, etc.) is still shown
@@ -177,29 +171,31 @@ class InfoPanel(QWidget):
                 )
                 self._tags_flow.addWidget(header)
                 for tag in leftover:
-                    btn = QPushButton(tag)
-                    btn.setFlat(True)
-                    btn.setCursor(Qt.CursorShape.PointingHandCursor)
-                    btn.setStyleSheet(
-                        "QPushButton { text-align: left; padding: 1px 4px; border: none; }"
-                    )
-                    btn.clicked.connect(lambda checked, t=tag: self.tag_clicked.emit(t))
-                    self._tags_flow.addWidget(btn)
+                    self._tags_flow.addWidget(self._make_tag_button(tag))
         elif not self._categories_pending:
             # Flat tag fallback — only when no category fetch is
             # in-flight. When a fetch IS pending, leaving the tags
             # area empty avoids the flat→categorized re-layout hitch
             # (categories arrive ~200ms later and render in one pass).
             for tag in post.tag_list:
-                btn = QPushButton(tag)
-                btn.setFlat(True)
-                btn.setCursor(Qt.CursorShape.PointingHandCursor)
-                btn.setStyleSheet(
-                    "QPushButton { text-align: left; padding: 1px 4px; border: none; }"
-                )
-                btn.clicked.connect(lambda checked, t=tag: self.tag_clicked.emit(t))
-                self._tags_flow.addWidget(btn)
+                self._tags_flow.addWidget(self._make_tag_button(tag))
         self._tags_flow.addStretch()
+
+    def _make_tag_button(self, tag: str, color: str | None = None) -> QPushButton:
+        btn = QPushButton(tag)
+        btn.setFlat(True)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        style = "QPushButton { text-align: left; padding: 1px 4px; border: none;"
+        if color:
+            style += f" color: {color};"
+        style += " }"
+        btn.setStyleSheet(style)
+        btn.clicked.connect(lambda checked, t=tag: self.tag_clicked.emit(t))
+        btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        btn.customContextMenuRequested.connect(
+            lambda pos, t=tag, b=btn: self.tag_context_requested.emit(t, b.mapToGlobal(pos))
+        )
+        return btn
 
     def clear(self) -> None:
         self._title.setText("No post selected")

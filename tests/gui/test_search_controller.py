@@ -192,3 +192,26 @@ def test_filter_posts_mutates_seen_ids():
     seen: set = set()
     filter_posts(posts, bl_tags=set(), bl_posts=set(), seen_ids=seen)
     assert seen == {(None, 10), (None, 20)}
+
+
+# add_tag_to_query
+
+def test_add_tag_to_empty_query():
+    from booru_viewer.gui.search_controller import add_tag_to_query
+    assert add_tag_to_query("", "cat_girl") == "cat_girl"
+
+
+def test_add_tag_appends_to_existing_query():
+    from booru_viewer.gui.search_controller import add_tag_to_query
+    assert add_tag_to_query("sword rating:g", "cat_girl") == "sword rating:g cat_girl"
+
+
+def test_add_tag_already_present_is_a_noop():
+    from booru_viewer.gui.search_controller import add_tag_to_query
+    assert add_tag_to_query("cat_girl sword", "cat_girl") == "cat_girl sword"
+
+
+def test_add_tag_is_whole_token_not_substring():
+    """"cat" inside "cat_girl" must not count as already present."""
+    from booru_viewer.gui.search_controller import add_tag_to_query
+    assert add_tag_to_query("cat_girl", "cat") == "cat_girl cat"
