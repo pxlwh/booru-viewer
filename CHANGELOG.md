@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## v0.3.0
+
 ### Fixed
 - Every in-code Hyprland dispatch was a no-op on Hyprland 0.56+, which replaced the string dispatch API with a Lua one — the popout's aspect lock, resize, move, and un-float-on-reopen all silently stopped working, indistinguishable from running with both opt-out env vars permanently set. `hyprctl` exits 0 on the resulting Lua parse error, so nothing could detect it by return code. The app now probes the compositor once with a read-only `hyprctl eval` and emits whichever dialect it speaks; pre-0.56 builds keep the legacy strings. **Behavior change:** popout geometry and aspect lock work again on current Hyprland
 - The saved-locally dot was cross-site wrong: `library_meta` was keyed on `post_id` alone, so a post saved from one booru showed as saved on any other booru with the same post id. The library is now keyed on `(site_id, post_id)`, and a `user_version` 2 migration recovers each existing row's site offline from its `file_url` host. **Behavior change:** the saved-dot is per site
