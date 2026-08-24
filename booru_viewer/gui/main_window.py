@@ -146,7 +146,6 @@ class BooruApp(QMainWindow):
         self._setup_ui()
         self._setup_menu()
         self._load_sites()
-        self._multi_check.setChecked(self._db.get_setting_bool("multi_enabled"))
         # One-shot orphan cleanup — must run after DB + library dir are
         # configured, before the library tab is first populated.
         orphans = self._db.reconcile_library_meta()
@@ -608,7 +607,9 @@ class BooruApp(QMainWindow):
         return [self._current_site] if self._current_site else []
 
     def _on_multi_toggled(self, checked: bool) -> None:
-        self._db.set_setting("multi_enabled", "1" if checked else "0")
+        # Deliberately not persisted: Multi is a per-session mode, so the
+        # app always launches single-site on the Settings panel's Default
+        # Site. Only the ticked set (multi_site_ids) survives restarts.
         self._apply_multi_mode()
         self._search_ctrl.reset()
 
