@@ -7,8 +7,8 @@ import logging
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, Signal, QUrl, QEvent, QObject
-from PySide6.QtGui import QPixmap, QAction, QKeySequence, QDesktopServices, QShortcut
+from PySide6.QtCore import Qt, QTimer, Signal, QUrl, QEvent, QObject, QRect
+from PySide6.QtGui import QPixmap, QAction, QKeySequence, QDesktopServices, QShortcut, QPalette, QFontMetrics
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -25,6 +25,9 @@ from PySide6.QtWidgets import (
     QTextEdit,
     QSpinBox,
     QProgressBar,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
+    QStyle,
 )
 
 from ..core.db import Database, Site
@@ -83,6 +86,56 @@ class _SiteCombo(QComboBox):
         opt.currentText = self.display_text_override
         painter.drawComplexControl(QStyle.ComplexControl.CC_ComboBox, opt)
         painter.drawControl(QStyle.ControlElement.CE_ComboBoxLabel, opt)
+
+
+class _CheckRowDelegate(QStyledItemDelegate):
+    """Multi-popup rows: full-row highlight, row-height checkmark.
+
+    The stock delegates both fall short here: the combo's menu-item
+    delegate puts the check in its own column outside the highlight
+    fill, and QStyledItemDelegate draws a small indicator BOX whose
+    panel background clashes with the fill. So the row is painted in
+    two strokes — the styled panel across the full rect, then a bare
+    glyph checkmark in a square column exactly one row tall.
+    """
+
+    def paint(self, painter, option, index) -> None:
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        text = opt.text
+        # Stroke 1: the native panel (hover/selection fill) over the
+        # whole row, with the text and indicator suppressed.
+        opt.text = ""
+        opt.features &= ~QStyleOptionViewItem.ViewItemFeature.HasCheckIndicator
+        style = opt.widget.style() if opt.widget else QApplication.style()
+        style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, opt.widget)
+        # Stroke 2: glyph + label, colored for the fill state.
+        h = opt.rect.height()
+        selected = bool(opt.state & QStyle.StateFlag.State_Selected)
+        role = QPalette.ColorRole.HighlightedText if selected else QPalette.ColorRole.Text
+        painter.save()
+        painter.setPen(opt.palette.color(QPalette.ColorGroup.Normal, role))
+        state = index.data(Qt.ItemDataRole.CheckStateRole)
+        if state in (Qt.CheckState.Checked, Qt.CheckState.Checked.value):
+            f = painter.font()
+            f.setPixelSize(max(int(h * 0.85), 8))
+            painter.setFont(f)
+            painter.drawText(
+                QRect(opt.rect.left(), opt.rect.top(), h, h),
+                Qt.AlignmentFlag.AlignCenter, "✓",
+            )
+        painter.setFont(option.font)
+        text_rect = QRect(opt.rect.left() + h + 2, opt.rect.top(),
+                          opt.rect.width() - h - 2, h)
+        elided = QFontMetrics(option.font).elidedText(
+            text, Qt.TextElideMode.ElideRight, text_rect.width()
+        )
+        painter.drawText(
+            text_rect,
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+            elided,
+        )
+        painter.restore()
 
 
 class _MultiPopupFilter(QObject):
@@ -669,15 +722,9 @@ class BooruApp(QMainWindow):
             # _load_sites reapplies the mode.
             combo.view().viewport().removeEventFilter(self._multi_filter)
             combo.view().viewport().installEventFilter(self._multi_filter)
-            # The combo's default delegate draws popup rows as MENU items:
-            # the check indicator gets its own column outside the row's
-            # highlight fill, so a hovered checked row looks lopsided.
-            # QStyledItemDelegate paints plain list rows — highlight spans
-            # the full row with the check glyph inside it.
             if self._multi_delegate is None:
-                from PySide6.QtWidgets import QStyledItemDelegate
                 self._single_delegate = combo.itemDelegate()
-                self._multi_delegate = QStyledItemDelegate(combo)
+                self._multi_delegate = _CheckRowDelegate(combo)
             combo.setItemDelegate(self._multi_delegate)
             self._refresh_multi_summary()
         else:
