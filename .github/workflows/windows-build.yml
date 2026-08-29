@@ -29,8 +29,8 @@ jobs:
         # this MIT-licensed app should not be shipping. Pinned + checksummed;
         # bump both together when refreshing.
         run: |
-          $url = 'https://github.com/zhongfly/mpv-winbuild/releases/download/2026-08-23-654e9382c0/mpv-dev-lgpl-x86_64-20260823-git-654e9382c0.7z'
-          $want = '78fa666d12f9cc0419e523a9421855f28a7d3864b2cb731abb263ce875fbdbbb'
+          $url = 'https://github.com/zhongfly/mpv-winbuild/releases/download/2026-08-28-e8673660ab/mpv-dev-lgpl-x86_64-20260828-git-e8673660ab.7z'
+          $want = '470437b5dc9f8c74092fdfab668e89bedf7b1a6385a53ffadf241a6a7a4c6ffb'
           Invoke-WebRequest -Uri $url -OutFile mpv-dev.7z
           $got = (Get-FileHash mpv-dev.7z -Algorithm SHA256).Hash.ToLower()
           if ($got -ne $want) { throw "libmpv checksum mismatch: got $got, want $want" }
