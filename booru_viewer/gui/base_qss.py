@@ -26,10 +26,14 @@ _BASE_POPOUT_OVERLAY_QSS = """
    would beat the bare attribute rule (0-1-1); ID + attribute + type
    (1-1-1) wins. One font size for both toolbars so the glyphs match.
    Geometry is pinned here rather than left to setFixedSize: QSS
-   min-*/max-* are written straight onto the widget's minimum/maximum
-   size (content-box relative), so a theme's `min-height: 17px` on
-   QPushButton, or a `min-width: 0` here, silently replaces the 24px
-   minimum and the layout shrinks each button to its glyph width. */
+   min-width, min-height, max-width and max-height are written straight
+   onto the widget's own minimum and maximum size (content-box relative),
+   so a theme's `min-height: 17px` on QPushButton, or a `min-width: 0`
+   here, silently replaces the 24px minimum and the layout shrinks each
+   button to its glyph width.
+   Never write the sequence star-slash inside this comment: it closes the
+   CSS comment early, Qt then rejects the whole application stylesheet,
+   and every custom.qss user silently loses their theme (2026_08_28). */
 QPushButton[iconBtn="true"],
 QWidget#_slideshow_toolbar QPushButton[iconBtn="true"],
 QWidget#_slideshow_controls QPushButton[iconBtn="true"],

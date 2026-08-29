@@ -28,6 +28,19 @@ def test_base_qss_zeroes_padding_for_icon_buttons():
     assert re.search(r"font-size\s*:\s*\d+px\s*;", body)
 
 
+def test_base_qss_comments_are_balanced():
+    """A stray `*/` inside a comment (it happened: `min-*/max-*` in prose)
+    closes the comment early, Qt rejects the WHOLE application stylesheet,
+    and every custom.qss user silently loses their theme. Qt-free guard:
+    comment openers and closers must pair up, and nothing comment-like may
+    survive outside a comment."""
+    from booru_viewer.gui.base_qss import _BASE_POPOUT_OVERLAY_QSS as qss
+    assert qss.count("/*") == qss.count("*/"), "unbalanced CSS comment markers"
+    stripped = re.sub(r"/\*.*?\*/", "", qss, flags=re.S)
+    assert "*/" not in stripped and "/*" not in stripped
+    assert stripped.count("{") == stripped.count("}")
+
+
 def test_icon_button_rule_outranks_theme_overlay_rules():
     """Themes use `QWidget#_slideshow_toolbar QPushButton` (1-0-1). The base
     rule must include an ID + attribute variant (1-1-1) for each overlay
