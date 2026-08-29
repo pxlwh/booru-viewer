@@ -103,6 +103,32 @@ def _apply_windows_dark_mode(app: QApplication) -> None:
 # a packaged theme keeps the themed overlay; anyone with a stripped-down
 # custom.qss still gets a usable overlay instead of bare letterbox.
 _BASE_POPOUT_OVERLAY_QSS = """
+/* 24x24 glyph buttons (preview + popout toolbars) opt in via the
+   iconBtn dynamic property. Theme QPushButton padding (2px 6px + 1px
+   border) would leave a 10px content box and clip the glyph. An
+   attribute selector outranks a bare type selector on QSS specificity,
+   so this holds no matter what a custom.qss sets on QPushButton. The
+   overlay containers get their own variant because themes style
+   `QWidget#_slideshow_toolbar QPushButton` (ID + type, 1-0-1), which
+   would beat the bare attribute rule (0-1-1); ID + attribute + type
+   (1-1-1) wins. One font size for both toolbars so the glyphs match.
+   Geometry is pinned here rather than left to setFixedSize: QSS
+   min-*/max-* are written straight onto the widget's minimum/maximum
+   size (content-box relative), so a theme's `min-height: 17px` on
+   QPushButton, or a `min-width: 0` here, silently replaces the 24px
+   minimum and the layout shrinks each button to its glyph width. */
+QPushButton[iconBtn="true"],
+QWidget#_slideshow_toolbar QPushButton[iconBtn="true"],
+QWidget#_slideshow_controls QPushButton[iconBtn="true"],
+QWidget#_preview_controls QPushButton[iconBtn="true"] {
+    padding: 0;
+    min-width: 22px;
+    max-width: 22px;
+    min-height: 22px;
+    max-height: 22px;
+    font-size: 14px;
+    font-weight: normal;
+}
 QWidget#_slideshow_toolbar,
 QWidget#_slideshow_controls {
     background: rgba(0, 0, 0, 160);

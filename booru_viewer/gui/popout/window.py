@@ -194,6 +194,9 @@ class FullscreenPreview(QMainWindow):
             btn = QPushButton(text)
             btn.setObjectName(name)
             btn.setFixedSize(_tb_sz, _tb_sz)
+            # Matches QPushButton[iconBtn="true"] in the base QSS: zero
+            # padding so the glyph isn't clipped by theme button padding.
+            btn.setProperty("iconBtn", True)
             btn.setToolTip(tip)
             return btn
 

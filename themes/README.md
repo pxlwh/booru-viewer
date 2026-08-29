@@ -64,6 +64,17 @@ slots that the body actually uses need to be defined.
 | `warning` | Warning color (also Artist tag default) |
 | `overlay_bg` | Translucent background for the popout's floating top toolbar and bottom transport controls. Should be `rgba(...)` so video shows through. |
 
+### Icon buttons
+
+The 24x24 glyph buttons on the preview and popout toolbars (bookmark, save,
+blacklist, popout) carry the dynamic property `iconBtn="true"`. The app's base
+stylesheet gives them `padding: 0` so your `QPushButton` padding does not
+clip the glyph. To restyle them, target the property, not the type:
+
+```css
+QPushButton[iconBtn="true"] { color: ${accent}; }
+```
+
 ## Included Themes
 
 Each theme ships in two corner-radius variants:
