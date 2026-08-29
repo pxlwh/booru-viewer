@@ -36,6 +36,44 @@ def format_geometry(x: int, y: int, w: int, h: int) -> str:
     return f"{x},{y},{w},{h}"
 
 
+Rect = tuple[int, int, int, int]
+
+
+def geometry_fits_screens(geo: Rect, screens: list[Rect]) -> bool:
+    """True when *geo* is a sane window rect for one of *screens*.
+
+    The top-left corner must lie on some screen's available area and the
+    size must fit inside that same screen. Anything else (a title bar
+    pushed above the screen edge, a rect larger than the display, a
+    monitor that is no longer attached) is discarded by the caller in
+    favour of the default placement, so a corrupted saved geometry heals
+    on the next launch instead of compounding.
+    """
+    x, y, w, h = geo
+    if w <= 0 or h <= 0:
+        return False
+    for sx, sy, sw, sh in screens:
+        if sx <= x < sx + sw and sy <= y < sy + sh and w <= sw and h <= sh:
+            return True
+    return False
+
+
+def centered_geometry(
+    screen: Rect, want_w: int = 1200, want_h: int = 800, frac: float = 0.8
+) -> Rect:
+    """Default placement on a floating window manager.
+
+    The wanted size clamped to *frac* of the screen's available area,
+    centered on it. Users on Windows, KDE, dwm and friends can snap or
+    maximize from there; a window that opens edge-to-edge or off-screen
+    gives them nothing to grab.
+    """
+    sx, sy, sw, sh = screen
+    w = min(want_w, int(sw * frac))
+    h = min(want_h, int(sh * frac))
+    return (sx + (sw - w) // 2, sy + (sh - h) // 2, w, h)
+
+
 def parse_splitter_sizes(s: str, expected: int) -> list[int] | None:
     """Parse ``"a,b,..."`` into a list of *expected* non-negative ints.
 
@@ -189,9 +227,14 @@ class WindowStateController:
         try:
             win = self.hyprctl_main_window()
             if win is None:
-                # Non-Hyprland fallback: just track Qt's frameGeometry as
+                # Non-Hyprland fallback: track Qt's CLIENT geometry as
                 # floating. There's no real tiled concept off-Hyprland.
-                g = self._app.frameGeometry()
+                # Must be geometry(), not frameGeometry(): restore uses
+                # setGeometry(), which positions the client area. Saving
+                # the frame rect and restoring it as a client rect walked
+                # the window up by one title-bar height per launch on
+                # Windows until the title bar was off the screen.
+                g = self._app.geometry()
                 self._app._db.set_setting(
                     "main_window_floating_geometry",
                     format_geometry(g.x(), g.y(), g.width(), g.height()),
@@ -241,9 +284,24 @@ class WindowStateController:
 
         floating_geo = self._app._db.get_setting("main_window_floating_geometry")
         was_floating = self._app._db.get_setting_bool("main_window_was_floating")
-        if not floating_geo:
+        geo = parse_geometry(floating_geo) if floating_geo else None
+
+        if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+            # Floating window managers (Windows, KDE, dwm, ...): the app
+            # owns placement, so validate before trusting a saved rect
+            # and fall back to centered-and-modest. Hyprland is handled
+            # below — the compositor places tiled windows itself.
+            screens = self._screen_rects()
+            if geo is not None and not geometry_fits_screens(geo, screens):
+                log.info(f"Discarding off-screen saved geometry {geo}")
+                geo = None
+            if geo is None:
+                if not screens:
+                    return
+                geo = centered_geometry(screens[0])
+            self._app.setGeometry(*geo)
             return
-        geo = parse_geometry(floating_geo)
+
         if geo is None:
             return
         x, y, w, h = geo
@@ -253,14 +311,30 @@ class WindowStateController:
         # mid-session float-toggle picks up the saved dimensions even when
         # the window opened tiled.
         self._app.setGeometry(x, y, w, h)
-        if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
-            return
         # Slight delay so the window is registered before we try to find
         # its address. The popout uses the same pattern.
         from PySide6.QtCore import QTimer
         QTimer.singleShot(
             50, lambda: self.hyprctl_apply_main_state(x, y, w, h, was_floating)
         )
+
+    def _screen_rects(self) -> list[Rect]:
+        """Available geometry of every screen, the window's own screen first.
+
+        Available (not full) geometry excludes taskbars and panels, so a
+        centered default never hides behind them.
+        """
+        from PySide6.QtWidgets import QApplication
+        own = self._app.screen()
+        screens = list(QApplication.screens())
+        if own is not None and own in screens:
+            screens.remove(own)
+            screens.insert(0, own)
+        out: list[Rect] = []
+        for s in screens:
+            r = s.availableGeometry()
+            out.append((r.x(), r.y(), r.width(), r.height()))
+        return out
 
     def hyprctl_apply_main_state(
         self, x: int, y: int, w: int, h: int, floating: bool

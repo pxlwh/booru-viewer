@@ -144,3 +144,57 @@ def test_correct_address_in_all_cmds():
     )
     for cmd in cmds:
         assert addr in cmd
+
+
+# ======================================================================
+# geometry_fits_screens / centered_geometry (floating-WM placement)
+# ======================================================================
+
+from booru_viewer.gui.window_state import centered_geometry, geometry_fits_screens
+
+SCREEN = (0, 0, 1920, 1040)          # 1080p minus a 40px taskbar
+SECOND = (1920, 0, 2560, 1440)
+
+
+def test_fits_when_inside_a_screen():
+    assert geometry_fits_screens((100, 100, 1200, 800), [SCREEN]) is True
+
+
+def test_title_bar_above_screen_is_rejected():
+    """The drift bug's end state: client rect at a negative y."""
+    assert geometry_fits_screens((100, -31, 1200, 800), [SCREEN]) is False
+
+
+def test_larger_than_screen_is_rejected():
+    """The drift bug's other symptom: the rect grew by a frame per launch."""
+    assert geometry_fits_screens((0, 0, 1920, 1100), [SCREEN]) is False
+
+
+def test_detached_monitor_is_rejected():
+    assert geometry_fits_screens((2000, 100, 1200, 800), [SCREEN]) is False
+
+
+def test_second_monitor_accepted():
+    assert geometry_fits_screens((2000, 100, 1200, 800), [SCREEN, SECOND]) is True
+
+
+def test_zero_size_rejected():
+    assert geometry_fits_screens((10, 10, 0, 0), [SCREEN]) is False
+
+
+def test_centered_default_keeps_wanted_size_on_a_big_screen():
+    x, y, w, h = centered_geometry(SCREEN)
+    assert (w, h) == (1200, 800)
+    assert (x, y) == ((1920 - 1200) // 2, (1040 - 800) // 2)
+
+
+def test_centered_default_clamps_to_80_percent_of_a_small_screen():
+    x, y, w, h = centered_geometry((0, 0, 1366, 728))
+    assert (w, h) == (int(1366 * 0.8), int(728 * 0.8))
+    assert x == (1366 - w) // 2 and y == (728 - h) // 2
+
+
+def test_centered_default_respects_screen_origin():
+    x, y, w, h = centered_geometry(SECOND)
+    assert x == 1920 + (2560 - 1200) // 2
+    assert y == (1440 - 800) // 2
