@@ -2,12 +2,10 @@
 
 ## [Unreleased]
 
-### Fixed
-- Clicking a slow-loading post (typically a large video) and then another post could end with the *first* post taking over the preview once its download finished, because `image_done` was applied regardless of which post was selected. Each activation now issues a load ticket; a download that lands after a newer click is dropped (its progress bar too) instead of replacing the preview. The download still completes into the cache, so returning to that post is instant
-
 ## v0.3.1
 
 ### Fixed
+- Clicking a slow-loading post (typically a large video) and then another post could end with the *first* post taking over the preview once its download finished, because `image_done` was applied regardless of which post was selected. Each activation now issues a load ticket; a download that lands after a newer click is dropped (its progress bar too) instead of replacing the preview. The download still completes into the cache, so returning to that post is instant
 - With a custom.qss loaded, the preview and popout toolbar glyphs (☆ ↓ ⊘ ⊗ ⧉) rendered clipped, most visibly the bookmark star losing its points, and the four buttons came out at different widths. The buttons are fixed at 24x24 and every bundled theme gives `QPushButton` 6px of horizontal padding plus a 1px border, leaving a 10px content box; the popout toolbar additionally styles them 15px bold under an ID selector. The buttons now carry an `iconBtn` property and the base stylesheet pins their padding, geometry, and font size with attribute selectors that outrank the theme rules, in both the preview pane and the popout
 - On Windows and other floating window managers the main window crept upward and grew by one title-bar height on every launch until the title bar was off the top of the screen and the window could no longer be dragged. The non-Hyprland path saved `frameGeometry()` (frame included) and restored it with `setGeometry()` (client area only), so each round trip shifted the client rect to where the frame used to be. Save and restore now use the same client rect, a saved rect that is off-screen or larger than the display is discarded, and with nothing valid saved the window opens centered at up to 80% of the screen. **Behavior change:** first launch and recovered installs start centered and modest instead of edge-to-edge
 
