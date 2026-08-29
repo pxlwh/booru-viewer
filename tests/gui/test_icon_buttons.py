@@ -13,7 +13,7 @@ import re
 
 
 def test_base_qss_zeroes_padding_for_icon_buttons():
-    from booru_viewer.gui.app_runtime import _BASE_POPOUT_OVERLAY_QSS as qss
+    from booru_viewer.gui.base_qss import _BASE_POPOUT_OVERLAY_QSS as qss
     m = re.search(r'QPushButton\[iconBtn="true"\][^{]*\{([^}]*)\}', qss)
     assert m, "no iconBtn rule in base QSS"
     body = m.group(1)
@@ -32,7 +32,7 @@ def test_icon_button_rule_outranks_theme_overlay_rules():
     """Themes use `QWidget#_slideshow_toolbar QPushButton` (1-0-1). The base
     rule must include an ID + attribute variant (1-1-1) for each overlay
     container or the popout keeps the theme's padding and clips."""
-    from booru_viewer.gui.app_runtime import _BASE_POPOUT_OVERLAY_QSS as qss
+    from booru_viewer.gui.base_qss import _BASE_POPOUT_OVERLAY_QSS as qss
     selector_block = re.search(r'((?:[^{}]*QPushButton\[iconBtn="true"\][^{}]*)+)\{', qss).group(1)
     for container in ("_slideshow_toolbar", "_slideshow_controls", "_preview_controls"):
         assert f'QWidget#{container} QPushButton[iconBtn="true"]' in selector_block, container
