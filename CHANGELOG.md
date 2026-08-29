@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## v0.3.1
+
 ### Fixed
 - On Windows and other floating window managers the main window crept upward and grew by one title-bar height on every launch until the title bar was off the top of the screen and the window could no longer be dragged. The non-Hyprland path saved `frameGeometry()` (frame included) and restored it with `setGeometry()` (client area only), so each round trip shifted the client rect to where the frame used to be. Save and restore now use the same client rect, a saved rect that is off-screen or larger than the display is discarded, and with nothing valid saved the window opens centered at up to 80% of the screen. **Behavior change:** first launch and recovered installs start centered and modest instead of edge-to-edge
 
