@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- Clicking a slow-loading post (typically a large video) and then another post could end with the *first* post taking over the preview once its download finished, because `image_done` was applied regardless of which post was selected. Each activation now issues a load ticket; a download that lands after a newer click is dropped (its progress bar too) instead of replacing the preview. The download still completes into the cache, so returning to that post is instant
+
 ## v0.3.1
 
 ### Fixed

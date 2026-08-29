@@ -19,6 +19,31 @@ log = logging.getLogger("booru")
 # -- Pure functions (tested in tests/gui/test_media_controller.py) --
 
 
+class LoadGeneration:
+    """Ticket for the preview load, one per post activation.
+
+    Async downloads finish in whatever order the network decides, not click
+    order. Without a ticket, clicking a slow video A and then post B ended
+    with A on screen once its bytes landed. `issue()` on every activation;
+    a result is applied only if `is_current(ticket)` still holds.
+
+    Stale loads are dropped, not cancelled: the download runs to the end so
+    the file still reaches the cache and going back to that post is instant.
+    Tested in tests/gui/test_load_generation.py.
+    """
+
+    def __init__(self) -> None:
+        self._gen = 0
+
+    def issue(self) -> int:
+        self._gen += 1
+        return self._gen
+
+    def is_current(self, ticket: int) -> bool:
+        return ticket == self._gen
+
+
+
 def compute_prefetch_order(
     index: int, total: int, columns: int, mode: str,
 ) -> list[int]:
@@ -75,12 +100,14 @@ class MediaController:
         self._prefetch_pause.set()  # not paused
         self._last_evict_check = 0.0  # monotonic timestamp
         self._prefetch_gen = 0  # incremented on each prefetch_adjacent call
+        self._load_gen = LoadGeneration()  # one ticket per on_post_activated
 
     # -- Post activation (media load) --
 
     def on_post_activated(self, index: int) -> None:
         if 0 <= index < len(self._app._posts):
             post = self._app._posts[index]
+            ticket = self._load_gen.issue()
             log.info(f"Preview: #{post.id} -> {post.file_url}")
             try:
                 if self._app._popout_ctrl.window:
@@ -110,6 +137,8 @@ class MediaController:
                 self._app._dl_progress.setRange(0, 0)
 
             def _progress(downloaded, total):
+                if not self._load_gen.is_current(ticket):
+                    return  # another post is selected; don't paint A's bar under B
                 self._app._signals.download_progress.emit(downloaded, total)
                 if preview_hidden and total > 0:
                     self._app._signals.prefetch_progress.emit(
@@ -135,8 +164,16 @@ class MediaController:
                 self._prefetch_pause.clear()
                 try:
                     path = await download_image(post.file_url, progress_callback=_progress)
+                    if not self._load_gen.is_current(ticket):
+                        # Landed after the user moved on. The file is in the
+                        # cache now; the preview belongs to the newer post.
+                        log.debug(f"Stale load dropped: #{post.id}")
+                        return
                     self._app._signals.image_done.emit(str(path), info)
                 except Exception as e:
+                    if not self._load_gen.is_current(ticket):
+                        log.debug(f"Stale load failed quietly: #{post.id}: {e}")
+                        return
                     log.error(f"Image download failed: {e}")
                     self._app._signals.image_error.emit(str(e))
                 finally:
