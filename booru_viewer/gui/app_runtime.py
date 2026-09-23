@@ -158,6 +158,26 @@ def _load_user_qss(path: Path) -> str:
     return re.sub(r'\$\{([a-zA-Z_][a-zA-Z0-9_]*)\}', replace, text)
 
 
+def _wants_system_style() -> bool:
+    import os
+    if os.environ.get("QT_STYLE_OVERRIDE") or any(
+        a == "-style" or a.startswith("-style=") for a in sys.argv[1:]
+    ):
+        return True
+    if sys.platform == "win32":
+        return False
+    try:
+        from ..core.db import Database
+        db = Database()
+        try:
+            return db.get_setting_bool("use_system_style")
+        finally:
+            db.close()
+    except Exception as e:
+        log.warning(f"use_system_style probe failed: {e}")
+        return False
+
+
 def run() -> None:
     from ..core.config import data_dir
 
@@ -244,8 +264,10 @@ def run() -> None:
         # No custom.qss — force Fusion widgets so distro pyside6 builds linked
         # against system Qt don't pick up Breeze (or whatever the platform
         # theme plugin supplies) and diverge from the bundled-Qt look that
-        # source-from-pip users get.
-        app.setStyle("Fusion")
+        # source-from-pip users get. Skip it when the user asked for a style
+        # (setting, QT_STYLE_OVERRIDE, -style) so Qt's own resolution wins.
+        if not _wants_system_style():
+            app.setStyle("Fusion")
         # If no system theme is detected, apply a dark Fusion palette so
         # fresh installs don't land on blinding white.  KDE/GNOME users
         # keep their palette (dark or light) — we only intervene when

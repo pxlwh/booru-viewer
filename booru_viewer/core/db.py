@@ -165,6 +165,7 @@ _DEFAULTS = {
     "library_filename_template": "",
     "unbookmark_on_save": "0",
     "search_history_enabled": "1",
+    "use_system_style": "0",
 }
 
 

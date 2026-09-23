@@ -239,6 +239,15 @@ class SettingsDialog(QDialog):
                 self._file_dialog_combo.setCurrentIndex(idx)
             form.addRow("File dialog (restart required):", self._file_dialog_combo)
 
+            # Widget style: Fusion by default so every Qt build looks the same
+            self._system_style = QCheckBox("Use system widget style (restart required)")
+            self._system_style.setToolTip(
+                "Use your desktop's Qt style (Breeze, Oxygen, ...) instead of Fusion. "
+                "Ignored when a custom.qss is present."
+            )
+            self._system_style.setChecked(self._db.get_setting_bool("use_system_style"))
+            form.addRow("", self._system_style)
+
         layout.addLayout(form)
         layout.addStretch()
         return w
@@ -850,6 +859,7 @@ class SettingsDialog(QDialog):
             self._db.add_blacklisted_tag(tag)
         if self._file_dialog_combo is not None:
             self._db.set_setting("file_dialog_platform", self._file_dialog_combo.currentText())
+            self._db.set_setting("use_system_style", "1" if self._system_style.isChecked() else "0")
             from .dialogs import reset_gtk_cache
             reset_gtk_cache()
         self.settings_changed.emit()
