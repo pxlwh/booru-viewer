@@ -7,8 +7,8 @@ import logging
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, Signal, QUrl, QEvent, QObject, QRect
-from PySide6.QtGui import QPixmap, QAction, QKeySequence, QDesktopServices, QShortcut, QPalette, QFontMetrics
+from PySide6.QtCore import Qt, QTimer, Signal, QUrl, QEvent, QObject, QRect, QMimeData
+from PySide6.QtGui import QPixmap, QAction, QKeySequence, QDesktopServices, QShortcut, QPalette, QFontMetrics, QDrag
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -46,6 +46,10 @@ from .settings import SettingsDialog
 from .log_handler import LogHandler
 from .async_signals import AsyncSignals
 from .info_panel import InfoPanel
+from .panel_layout import (
+    DEFAULT_HEIGHT, DEFAULT_WIDTH, PANEL_MIME, LayoutOverlay, column_key,
+    default_layout, format_layout, legacy_sizes, move_panel, parse_layout, parse_sizes,
+)
 from .window_state import WindowStateController
 from .privacy import PrivacyController
 from .search_controller import SearchController
@@ -451,11 +455,7 @@ class BooruApp(QMainWindow):
         self._library_view.files_deleted.connect(self._post_actions.on_library_files_deleted)
         self._stack.addWidget(self._library_view)
 
-        self._splitter.addWidget(self._stack)
-
-        # Right: preview + info (vertical split)
-        self._right_splitter = right = QSplitter(Qt.Orientation.Vertical)
-
+        # Preview + its download bar, moved as one panel
         self._preview = ImagePreview()
         self._preview.close_requested.connect(self._close_preview)
         self._preview.open_in_default.connect(self._open_preview_in_default)
@@ -481,82 +481,47 @@ class BooruApp(QMainWindow):
         # at their fixed widths plus spacing without clipping the rightmost
         # one or compressing the row visually.
         self._preview.setMinimumWidth(200)
-        right.addWidget(self._preview)
 
         self._dl_progress = QProgressBar()
         self._dl_progress.setMaximumHeight(6)
         self._dl_progress.setTextVisible(False)
         self._dl_progress.hide()
-        right.addWidget(self._dl_progress)
+
+        self._preview_panel = QWidget()
+        pv = QVBoxLayout(self._preview_panel)
+        pv.setContentsMargins(0, 0, 0, 0)
+        pv.setSpacing(0)
+        pv.addWidget(self._preview, stretch=1)
+        pv.addWidget(self._dl_progress)
 
         self._info_panel = InfoPanel()
         self._info_panel.site_name_for = self._site_name_for
         self._info_panel.tag_clicked.connect(self._on_tag_clicked)
         self._info_panel.tag_context_requested.connect(self._context.show_tag)
+        self._info_panel.move_requested.connect(lambda: self._drag_panel("info"))
         self._info_panel.setMinimumHeight(100)
         self._info_panel.hide()
-        right.addWidget(self._info_panel)
-
-        # Restore the right splitter sizes (preview / dl_progress / info)
-        # from the persisted state. Falls back to the historic default if
-        # nothing is saved or the saved string is malformed.
-        saved_right = self._db.get_setting("right_splitter_sizes")
-        right_applied = False
-        if saved_right:
-            try:
-                parts = [int(p) for p in saved_right.split(",")]
-                if len(parts) == 3 and all(p >= 0 for p in parts) and sum(parts) > 0:
-                    right.setSizes(parts)
-                    right_applied = True
-            except ValueError:
-                pass
-        if not right_applied:
-            right.setSizes([500, 0, 200])
-
-        # Restore info panel visibility from the persisted state.
         if self._db.get_setting_bool("info_panel_visible"):
             self._info_panel.show()
 
-        # Debounced saver for the right splitter (same pattern as main).
-        self._right_splitter_save_timer = QTimer(self)
-        self._right_splitter_save_timer.setSingleShot(True)
-        self._right_splitter_save_timer.setInterval(300)
-        self._right_splitter_save_timer.timeout.connect(self._window_state.save_right_splitter_sizes)
-        right.splitterMoved.connect(
-            lambda *_: self._right_splitter_save_timer.start()
-        )
-
-        self._splitter.addWidget(right)
-
-        # Flip layout: preview on the left, grid on the right
-        if self._db.get_setting_bool("flip_layout"):
-            self._splitter.insertWidget(0, right)
-
-        # Restore the persisted main-splitter sizes if present, otherwise
-        # fall back to the historic default. The sizes are saved as a
-        # comma-separated string in the settings table — same format as
-        # slideshow_geometry to keep things consistent.
-        saved_main_split = self._db.get_setting("main_splitter_sizes")
-        applied = False
-        if saved_main_split:
-            try:
-                parts = [int(p) for p in saved_main_split.split(",")]
-                if len(parts) == 2 and all(p >= 0 for p in parts) and sum(parts) > 0:
-                    self._splitter.setSizes(parts)
-                    applied = True
-            except ValueError:
-                pass
-        if not applied:
-            self._splitter.setSizes([600, 500])
-        # Debounced save on drag — splitterMoved fires hundreds of times
-        # per second, so we restart a 300ms one-shot and save when it stops.
+        # Panels live in per-column vertical splitters built from the stored
+        # layout (see panel_layout). Debounced size save on any drag --
+        # splitterMoved fires hundreds of times per second, so we restart a
+        # 300ms one-shot and save when it stops.
+        self._panel_widgets = {
+            "results": self._stack, "preview": self._preview_panel, "info": self._info_panel,
+        }
+        self._columns: list[QSplitter] = []
+        self._layout_overlay: LayoutOverlay | None = None
         self._main_splitter_save_timer = QTimer(self)
         self._main_splitter_save_timer.setSingleShot(True)
         self._main_splitter_save_timer.setInterval(300)
-        self._main_splitter_save_timer.timeout.connect(self._window_state.save_main_splitter_sizes)
+        self._main_splitter_save_timer.timeout.connect(self._window_state.save_layout_sizes)
         self._splitter.splitterMoved.connect(
             lambda *_: self._main_splitter_save_timer.start()
         )
+        self._apply_layout()
+        self._restore_sizes()
         layout.addWidget(self._splitter, stretch=1)
 
         # Bottom page nav (centered)
@@ -644,6 +609,12 @@ class BooruApp(QMainWindow):
         log_action.setShortcut(QKeySequence("Ctrl+L"))
         log_action.triggered.connect(self._toggle_log)
         view_menu.addAction(log_action)
+
+        self._edit_layout_action = QAction("Edit &Layout", self)
+        self._edit_layout_action.setShortcut(QKeySequence("Ctrl+E"))
+        self._edit_layout_action.setCheckable(True)
+        self._edit_layout_action.triggered.connect(lambda _=False: self._toggle_layout_edit())
+        view_menu.addAction(self._edit_layout_action)
 
         view_menu.addSeparator()
 
@@ -1246,9 +1217,103 @@ class BooruApp(QMainWindow):
     def _toggle_log(self) -> None:
         self._log_text.setVisible(not self._log_text.isVisible())
 
+    # -- Panel layout --
+
+    def _layout(self) -> list[list[str]]:
+        return parse_layout(self._db.get_setting("panel_layout")) or default_layout(
+            self._db.get_setting_bool("flip_layout")
+        )
+
+    def _apply_layout(self) -> None:
+        """Rebuild the columns from the stored layout.
+
+        Adding a panel to a new column splitter re-parents it out of the
+        old one, so the old splitters end up empty and are dropped.
+        """
+        old = self._columns
+        self._columns = []
+        for i, col in enumerate(self._layout()):
+            sp = QSplitter(Qt.Orientation.Vertical)
+            for name in col:
+                sp.addWidget(self._panel_widgets[name])
+            sp.splitterMoved.connect(lambda *_: self._main_splitter_save_timer.start())
+            self._splitter.insertWidget(i, sp)
+            self._columns.append(sp)
+        for sp in old:
+            sp.setParent(None)
+            sp.deleteLater()
+        self._sync_columns()
+
+    def _sync_columns(self) -> None:
+        # A column whose panels are all hidden would still hold its width.
+        for sp in self._columns:
+            sp.setVisible(any(not sp.widget(i).isHidden() for i in range(sp.count())))
+
+    def _saved_sizes(self) -> tuple[dict[str, int], dict[str, int]]:
+        widths = parse_sizes(self._db.get_setting("layout_widths"))
+        heights = parse_sizes(self._db.get_setting("layout_heights"))
+        if not widths and not heights:
+            return legacy_sizes(
+                self._db.get_setting_bool("flip_layout"),
+                self._db.get_setting("main_splitter_sizes"),
+                self._db.get_setting("right_splitter_sizes"),
+            )
+        return widths, heights
+
+    def _restore_sizes(self) -> None:
+        widths, heights = self._saved_sizes()
+        layout = self._layout()
+        self._splitter.setSizes([widths.get(column_key(c), DEFAULT_WIDTH[c[0]]) for c in layout])
+        for sp, col in zip(self._columns, layout):
+            if len(col) > 1:
+                sp.setSizes([heights.get(p, DEFAULT_HEIGHT[p]) for p in col])
+
+    def _drag_panel(self, name: str) -> None:
+        if self._popout_ctrl.is_active:
+            return
+        overlay = self._layout_overlay or LayoutOverlay(self._splitter, self._panel_widgets, edit=False)
+        overlay.dragging = name
+        overlay.dropped = None
+        overlay.update()
+        drag = QDrag(self)
+        mime = QMimeData()
+        mime.setData(PANEL_MIME, name.encode())
+        drag.setMimeData(mime)
+        pm = self._panel_widgets[name].grab()
+        drag.setPixmap(pm.scaled(160, 160, Qt.AspectRatioMode.KeepAspectRatio))
+        drag.exec(Qt.DropAction.MoveAction)
+        hit = overlay.dropped
+        overlay.dragging = None
+        if overlay is self._layout_overlay:
+            overlay.update()
+        else:
+            overlay.deleteLater()
+        if hit is None:
+            return
+        layout = self._layout()
+        new = move_panel(layout, name, *hit)
+        if new != layout:
+            self._window_state.save_layout_sizes()
+            self._db.set_setting("panel_layout", format_layout(new))
+            self._apply_layout()
+            self._restore_sizes()
+
+    def _toggle_layout_edit(self) -> None:
+        if self._layout_overlay is not None:
+            self._layout_overlay.deleteLater()
+            self._layout_overlay = None
+        elif not self._popout_ctrl.is_active:
+            self._layout_overlay = LayoutOverlay(self._splitter, self._panel_widgets, edit=True)
+            self._layout_overlay.drag_requested.connect(self._drag_panel)
+            self._layout_overlay.finished.connect(self._toggle_layout_edit)
+        self._edit_layout_action.setChecked(self._layout_overlay is not None)
+
     def _toggle_info(self) -> None:
+        self._window_state.save_layout_sizes()
         new_visible = not self._info_panel.isVisible()
         self._info_panel.setVisible(new_visible)
+        self._sync_columns()
+        self._restore_sizes()
         # Persist the user's intent so it survives the next launch.
         self._db.set_setting("info_panel_visible", "1" if new_visible else "0")
         if new_visible and 0 <= self._grid.selected_index < len(self._posts):
@@ -1305,13 +1370,6 @@ class BooruApp(QMainWindow):
                             )
                             thumb.update()
                 grid._flow._do_layout()
-        # Apply flip layout live
-        flip = self._db.get_setting_bool("flip_layout")
-        current_first = self._splitter.widget(0)
-        want_right_first = flip
-        right_is_first = current_first is self._right_splitter
-        if want_right_first != right_is_first:
-            self._splitter.insertWidget(0, self._right_splitter if flip else self._stack)
         self._status.showMessage("Settings applied")
 
     # -- Fullscreen & Privacy --
@@ -1415,10 +1473,7 @@ class BooruApp(QMainWindow):
             self._main_splitter_save_timer.stop()
         if self._main_window_save_timer.isActive():
             self._main_window_save_timer.stop()
-        if hasattr(self, '_right_splitter_save_timer') and self._right_splitter_save_timer.isActive():
-            self._right_splitter_save_timer.stop()
-        self._window_state.save_main_splitter_sizes()
-        self._window_state.save_right_splitter_sizes()
+        self._window_state.save_layout_sizes()
         self._window_state.save_main_window_state()
 
         # Cleanly shut the shared httpx pools down BEFORE stopping the loop

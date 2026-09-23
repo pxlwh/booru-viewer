@@ -9,13 +9,42 @@ from pathlib import Path
 from PySide6.QtCore import Qt, Property, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, QScrollArea, QPushButton, QSizePolicy,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QPushButton,
+    QSizePolicy, QApplication,
 )
 
 from ..core.api.base import Post
 from ._source_html import build_source_html
 
 log = logging.getLogger("booru")
+
+
+# -- Drag grip --
+
+class _DragGrip(QLabel):
+    """Header handle; emits drag_started once the press moves far enough."""
+
+    drag_started = Signal()
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__("\u2261", parent)
+        self.setToolTip("Drag to move the info panel")
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
+        self._press = None
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._press = event.position().toPoint()
+
+    def mouseMoveEvent(self, event) -> None:
+        if self._press is not None and (
+            event.position().toPoint() - self._press
+        ).manhattanLength() >= QApplication.startDragDistance():
+            self._press = None
+            self.drag_started.emit()
+
+    def mouseReleaseEvent(self, event) -> None:
+        self._press = None
 
 
 # -- Info Panel --
@@ -27,6 +56,8 @@ class InfoPanel(QWidget):
     # (tag, global QPoint) — right-click on a tag button. The menu itself
     # lives in ContextMenuHandler; the panel only reports where and what.
     tag_context_requested = Signal(str, object)
+    # Grip dragged; main_window runs the drag since it owns the layout.
+    move_requested = Signal()
 
     # Tag category colors. Defaults follow the booru convention (Danbooru,
     # Gelbooru, etc.) so the panel reads naturally to anyone coming from a
@@ -96,7 +127,13 @@ class InfoPanel(QWidget):
         self._title.setStyleSheet("font-weight: bold;")
         self._title.setMinimumWidth(0)
         self._title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        layout.addWidget(self._title)
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.addWidget(self._title, stretch=1)
+        self._grip = _DragGrip()
+        self._grip.drag_started.connect(self.move_requested)
+        header.addWidget(self._grip)
+        layout.addLayout(header)
 
         self._details = QLabel()
         self._details.setWordWrap(True)

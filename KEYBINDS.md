@@ -48,3 +48,4 @@
 | `S` | Toggle save to library (Unfiled) |
 | `Ctrl+P` | Privacy screen |
 | `F11` | Toggle fullscreen |
+| `Ctrl+E` | Edit layout (drag panels to rearrange) |

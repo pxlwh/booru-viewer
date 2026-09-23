@@ -11,7 +11,7 @@ booru-viewer has three tabs that map to three commitment levels: **Browse** for 
 
 **Browsing** — Danbooru, e621, Gelbooru, and Moebooru. Tag search with autocomplete, rating/score/media-type filters, blacklist with backfill, infinite scroll, page cache, keyboard grid navigation, multi-select with bulk actions, drag thumbnails out as files.
 
-**Preview** — Image zoom/pan, GIF/APNG/WebP animation, video via mpv (stream from CDN, seamless loop, seek, volume), ugoira auto-conversion, color-coded tag categories in info panel.
+**Preview** — Image zoom/pan, GIF/APNG/WebP animation, video via mpv (stream from CDN, seamless loop, seek, volume), ugoira auto-conversion, color-coded tag categories in info panel. Panels rearrange by drag and drop (View > Edit Layout).
 
 **Popout** — Dedicated viewer window. Arrow/vim keys navigate posts during video. Auto-hiding overlay UI. F11 fullscreen, Ctrl+H hide UI, Ctrl+P privacy screen. Syncs bidirectionally with main grid.
 
@@ -126,7 +126,7 @@ Six themes included, each in rounded and square variants. See [`themes/`](themes
 
 ## Settings
 
-- **General** — page size, thumbnail size (100-200px), default site, default rating/score, prefetch mode (Off / Nearby / Aggressive), infinite scroll, unbookmark on save, search history, flip layout, popout monitor, popout anchor (resize pivot), file dialog platform
+- **General** — page size, thumbnail size (100-200px), default site, default rating/score, prefetch mode (Off / Nearby / Aggressive), infinite scroll, unbookmark on save, search history, popout monitor, popout anchor (resize pivot), file dialog platform
 - **Cache** — max cache size, max thumbnail cache, auto-evict, clear cache on exit (session-only mode)
 - **Blacklist** — tag blacklist with toggle, post URL blacklist
 - **Paths** — data directory, cache, database, configurable library directory, library filename template

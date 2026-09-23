@@ -141,36 +141,29 @@ class WindowStateController:
 
     # -- Splitter persistence --
 
-    def save_main_splitter_sizes(self) -> None:
-        """Persist the main grid/preview splitter sizes (debounced).
+    def save_layout_sizes(self) -> None:
+        """Persist column widths and stacked heights by panel name (debounced).
 
-        Refuses to save when either side is collapsed (size 0). The user can
-        end up with a collapsed right panel transiently -- e.g. while the
-        popout is open and the right panel is empty -- and persisting that
-        state traps them next launch with no visible preview area until they
-        manually drag the splitter back.
+        Skipped while the popout is open -- it hides the preview and gives
+        its space to the others, and that transient layout must not become
+        the user's saved state. Hidden panels and columns read 0 and are
+        skipped too, so their last real size survives until they come back.
         """
-        sizes = self._app._splitter.sizes()
-        if len(sizes) >= 2 and all(s > 0 for s in sizes):
-            self._app._db.set_setting(
-                "main_splitter_sizes", ",".join(str(s) for s in sizes)
-            )
-
-    def save_right_splitter_sizes(self) -> None:
-        """Persist the right splitter sizes (preview / dl_progress / info).
-
-        Skipped while the popout is open -- the popout temporarily collapses
-        the preview pane and gives the info panel the full right column,
-        and we don't want that transient layout persisted as the user's
-        preferred state.
-        """
-        if self._app._popout_ctrl.is_active:
+        app = self._app
+        if app._popout_ctrl.is_active:
             return
-        sizes = self._app._right_splitter.sizes()
-        if len(sizes) == 3 and sum(sizes) > 0:
-            self._app._db.set_setting(
-                "right_splitter_sizes", ",".join(str(s) for s in sizes)
-            )
+        from .panel_layout import column_key, format_sizes
+        widths, heights = app._saved_sizes()
+        layout = app._layout()
+        for size, col, sp in zip(app._splitter.sizes(), layout, app._columns):
+            if not sp.isHidden() and size > 0:
+                widths[column_key(col)] = size
+            if len(col) > 1:
+                for name, h in zip(col, sp.sizes()):
+                    if not app._panel_widgets[name].isHidden() and h > 0:
+                        heights[name] = h
+        app._db.set_setting("layout_widths", format_sizes(widths))
+        app._db.set_setting("layout_heights", format_sizes(heights))
 
     # -- Hyprland IPC --
 

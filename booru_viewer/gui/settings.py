@@ -200,11 +200,6 @@ class SettingsDialog(QDialog):
         self._search_history.setChecked(self._db.get_setting_bool("search_history_enabled"))
         form.addRow("", self._search_history)
 
-        # Flip layout
-        self._flip_layout = QCheckBox("Preview on left")
-        self._flip_layout.setChecked(self._db.get_setting_bool("flip_layout"))
-        form.addRow("", self._flip_layout)
-
         # Slideshow monitor
         from PySide6.QtWidgets import QApplication
         self._monitor_combo = QComboBox()
@@ -839,7 +834,6 @@ class SettingsDialog(QDialog):
         self._db.set_setting("infinite_scroll", "1" if self._infinite_scroll.isChecked() else "0")
         self._db.set_setting("unbookmark_on_save", "1" if self._unbookmark_on_save.isChecked() else "0")
         self._db.set_setting("search_history_enabled", "1" if self._search_history.isChecked() else "0")
-        self._db.set_setting("flip_layout", "1" if self._flip_layout.isChecked() else "0")
         self._db.set_setting("slideshow_monitor", self._monitor_combo.currentText())
         _anchor_rmap = {"Center": "center", "Top-left": "tl", "Top-right": "tr", "Bottom-left": "bl", "Bottom-right": "br"}
         self._db.set_setting("popout_anchor", _anchor_rmap.get(self._popout_anchor.currentText(), "center"))

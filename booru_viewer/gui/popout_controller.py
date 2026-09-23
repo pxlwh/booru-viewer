@@ -42,7 +42,6 @@ class PopoutController:
         self._fullscreen_window = None
         self._popout_active = False
         self._info_was_visible = False
-        self._right_splitter_sizes: list[int] = []
 
     @property
     def window(self):
@@ -62,13 +61,17 @@ class PopoutController:
         video_pos = 0
         if self._app._preview._stack.currentIndex() == 1:
             video_pos = self._app._preview._video_player.get_position_ms()
+        if self._app._layout_overlay is not None:
+            self._app._toggle_layout_edit()
+        self._app._window_state.save_layout_sizes()
         self._popout_active = True
         self._info_was_visible = self._app._info_panel.isVisible()
-        self._right_splitter_sizes = self._app._right_splitter.sizes()
         self._app._preview.clear()
-        self._app._preview.hide()
+        # Hide the whole preview panel; the info panel takes its space
+        # (a column left empty is hidden by _sync_columns).
+        self._app._preview_panel.hide()
         self._app._info_panel.show()
-        self._app._right_splitter.setSizes([0, 0, 1000])
+        self._app._sync_columns()
         self._app._preview._current_path = path
         idx = self._app._grid.selected_index
         if 0 <= idx < len(self._app._posts):
@@ -144,12 +147,12 @@ class PopoutController:
             self._app._db.set_setting("slideshow_tiled", "1" if tiled else "0")
             if geo:
                 self._app._db.set_setting("slideshow_geometry", f"{geo.x()},{geo.y()},{geo.width()},{geo.height()}")
-        self._app._preview.show()
+        self._app._preview_panel.show()
         if not self._info_was_visible:
             self._app._info_panel.hide()
-        if self._right_splitter_sizes:
-            self._app._right_splitter.setSizes(self._right_splitter_sizes)
         self._popout_active = False
+        self._app._sync_columns()
+        self._app._restore_sizes()
         video_pos = 0
         if self._fullscreen_window:
             vstate = self._fullscreen_window.get_video_state()
