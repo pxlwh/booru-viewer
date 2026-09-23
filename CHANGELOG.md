@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Added
+- Settings > General > "Use system widget style (restart required)", Linux only, off by default. With no custom.qss the app forced Fusion so the system-Qt (AUR) and bundled-Qt (pip) builds looked the same, which also discarded the desktop's widget style (Breeze, Oxygen); the palette already came through. `QT_STYLE_OVERRIDE` and `-style` now skip the forced Fusion too, since an explicit `setStyle()` outranked both. A custom.qss still forces Fusion (#2). **Behavior change:** opt-in; Fusion stays the default
+
 ## v0.3.1
 
 ### Fixed
