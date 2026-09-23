@@ -499,7 +499,6 @@ class BooruApp(QMainWindow):
         self._info_panel.site_name_for = self._site_name_for
         self._info_panel.tag_clicked.connect(self._on_tag_clicked)
         self._info_panel.tag_context_requested.connect(self._context.show_tag)
-        self._info_panel.move_requested.connect(lambda: self._drag_panel("info"))
         self._info_panel.setMinimumHeight(100)
         self._info_panel.hide()
         if self._db.get_setting_bool("info_panel_visible"):
@@ -1270,9 +1269,10 @@ class BooruApp(QMainWindow):
                 sp.setSizes([heights.get(p, DEFAULT_HEIGHT[p]) for p in col])
 
     def _drag_panel(self, name: str) -> None:
-        if self._popout_ctrl.is_active:
+        # Started from an edit-mode grip; the edit overlay is the drop target.
+        overlay = self._layout_overlay
+        if overlay is None:
             return
-        overlay = self._layout_overlay or LayoutOverlay(self._splitter, self._panel_widgets, edit=False)
         overlay.dragging = name
         overlay.dropped = None
         overlay.update()
@@ -1285,10 +1285,7 @@ class BooruApp(QMainWindow):
         drag.exec(Qt.DropAction.MoveAction)
         hit = overlay.dropped
         overlay.dragging = None
-        if overlay is self._layout_overlay:
-            overlay.update()
-        else:
-            overlay.deleteLater()
+        overlay.update()
         if hit is None:
             return
         layout = self._layout()
