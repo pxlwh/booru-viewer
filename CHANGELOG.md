@@ -2,9 +2,14 @@
 
 ## [Unreleased]
 
+## v0.3.2
+
 ### Added
 - Settings > General > "Use system widget style (restart required)", Linux only, off by default. With no custom.qss the app forced Fusion so the system-Qt (AUR) and bundled-Qt (pip) builds looked the same, which also discarded the desktop's widget style (Breeze, Oxygen); the palette already came through. `QT_STYLE_OVERRIDE` and `-style` now skip the forced Fusion too, since an explicit `setStyle()` outranked both. A custom.qss still forces Fusion (#2). **Behavior change:** opt-in; Fusion stays the default
 - The results, preview and info panels can be rearranged by drag and drop: any panel can be its own column in any order or be stacked above or below another (discussion #1, e.g. info | preview | results). View > Edit Layout (Ctrl+E) shows a grip on every panel. Panels never leave the main window, so it behaves the same on Wayland, X11 and Windows. Sizes are saved by panel name under new keys; the old splitter keys are read once to seed them and never written, so an older build still restores its own layout. **Behavior change:** the "Preview on left" setting is gone; its value seeds the first layout, so nobody's arrangement changes on upgrade
+
+### Changed
+- Windows installer bundles the libmpv build of 2026-09-22 (c646756799), refreshed from 2026-08-28
 
 ## v0.3.1
 
