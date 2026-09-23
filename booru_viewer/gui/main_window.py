@@ -46,8 +46,9 @@ from .settings import SettingsDialog
 from .log_handler import LogHandler
 from .async_signals import AsyncSignals
 from .info_panel import InfoPanel
+from .layout_overlay import LayoutOverlay
 from .panel_layout import (
-    DEFAULT_HEIGHT, DEFAULT_WIDTH, PANEL_MIME, LayoutOverlay, column_key,
+    DEFAULT_HEIGHT, DEFAULT_WIDTH, PANEL_MIME, column_key,
     default_layout, format_layout, legacy_sizes, move_panel, parse_layout, parse_sizes,
 )
 from .window_state import WindowStateController
