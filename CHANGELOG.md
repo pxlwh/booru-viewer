@@ -2,11 +2,15 @@
 
 ## [Unreleased]
 
+## v0.3.3
+
 ### Changed
 - The preview and popout toolbar buttons are SVG icons instead of text glyphs (☆ ↓ ⊘ ⊗ ⧉). A glyph is drawn by whatever font the Qt style supplies, so its size changed with the theme: under AeroThemePlasma the blacklist glyphs came out large and the save arrow tiny. The icons keep one shape and size under every style and take their colour from the theme. Save is now a floppy disk, filled when the post is saved (like the filled star when bookmarked), and "blacklist this post" is an eye struck through. **Behavior change:** new toolbar icons
 - The top bar is one row. Browse, Bookmarks and Library were a second row of full width buttons; they are now equal width tabs at the left of the search row. Rating, media type and minimum score moved from three unlabelled controls (two of which both read "All") into a labelled Filters popup, and the Filters button shows how many are active. **Behavior change:** filters are one click deeper
 - Saving a search moved from a Save button beside Search, easy to take for a second submit button, into the dropdown at the right of the search field, where saved searches already live; it is greyed out while the field is empty. The dropdown arrow is an SVG instead of a text glyph
 - The rest of the text glyph icons are SVG too, so every icon keeps its size under any theme: the bookmarked star on grid thumbnails, the tick for selected sites in the Multi dropdown, the loop once button in the video controls, the grips in Edit Layout mode, the +/- Folder buttons in Bookmarks and the Settings steppers
+
+- Windows installer bundles the libmpv build of 2026-09-30 (3186d369f9), refreshed from 2026-09-22
 
 ### Removed
 - The Page box in the top bar. It was only ever reset to 1 and never read, so typing a page number there did nothing; paging is the Prev and Next bar under the results
