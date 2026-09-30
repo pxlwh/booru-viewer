@@ -223,7 +223,6 @@ class ThumbnailWidget(QWidget):
         # is fixed regardless of which indicators are visible, so the
         # rightmost slot stays in the same place whether the cell has
         # one indicator or two.
-        from PySide6.QtGui import QFont
         slot_size = 9
         slot_gap = 2
         slot_y = content.top() + 3
@@ -248,10 +247,11 @@ class ThumbnailWidget(QWidget):
                 # makes it look slightly less stamped-on at small sizes.
                 p.drawEllipse(slot.adjusted(1, 1, -1, -1))
             elif kind == 'star':
-                p.setPen(color)
-                p.setBrush(Qt.BrushStyle.NoBrush)
-                p.setFont(QFont(p.font().family(), 9))
-                p.drawText(slot, int(Qt.AlignmentFlag.AlignCenter), "\u2605")
+                # SVG star, not a "\u2605" glyph whose size came from the theme's font
+                from .icons import render
+                side = min(slot.width(), slot.height())
+                p.drawPixmap(slot.left() + (slot.width() - side) // 2, slot.top() + (slot.height() - side) // 2,
+                             render("star-filled", color, side, self.devicePixelRatioF()))
             x -= (slot_size + slot_gap)
 
         # Multi-select checkmark

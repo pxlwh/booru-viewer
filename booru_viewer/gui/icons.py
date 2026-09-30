@@ -46,6 +46,16 @@ SVG: dict[str, str] = {
     "eye-off": (f'<path d="M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12z" {_STROKE}/>'
                 f'<circle cx="12" cy="12" r="2.8" {_STROKE}/>'
                 f'<path d="M4.5 20 19.5 4" {_STROKE}/>'),
+    # small marks drawn into other widgets: selected site, grip, steppers, loop once
+    "check": f'<path d="M5 12.5l4.5 4.5L19 7.5" {_STROKE}/>',
+    "grip": f'<path d="M5 8h14M5 12h14M5 16h14" {_STROKE}/>',
+    "plus": f'<path d="M12 5v14M5 12h14" {_STROKE}/>',
+    "minus": f'<path d="M5 12h14" {_STROKE}/>',
+    # play through once, then stop: an arrow running into a bar
+    "play-once": (f'<path d="M4 12h11M11 7.5l4.5 4.5-4.5 4.5" {_STROKE}/>'
+                  f'<path d="M19.5 6v12" {_STROKE}/>'),
+    # the search field's history and saved searches dropdown
+    "chevron-down": f'<path d="M6 9.5l6 6 6-6" {_STROKE}/>',
     # a window with an arrow leaving it: open in the popout
     "popout": (f'<path d="M11 5H5a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1v-6" {_STROKE}/>'
                f'<path d="M14 4h6v6M20 4l-8.5 8.5" {_STROKE}/>'),
@@ -95,6 +105,25 @@ class IconButton(QPushButton):
     def _refresh(self) -> None:
         color = self.palette().color(QPalette.ColorRole.ButtonText)
         self.setIcon(QIcon(render(self._icon_name, color, ICON_PX, self.devicePixelRatioF())))
+
+    def changeEvent(self, event) -> None:
+        if event.type() in (QEvent.Type.PaletteChange, QEvent.Type.StyleChange):
+            self._refresh()
+        super().changeEvent(event)
+
+
+class LabelledIconButton(QPushButton):
+    """Text button with an SVG icon before the label, tinted like the label."""
+
+    def __init__(self, icon: str, text: str) -> None:
+        super().__init__(text)
+        self.setIconSize(QSize(ICON_PX - 2, ICON_PX - 2))
+        self._icon_name = icon
+        self._refresh()
+
+    def _refresh(self) -> None:
+        color = self.palette().color(QPalette.ColorRole.ButtonText)
+        self.setIcon(QIcon(render(self._icon_name, color, ICON_PX - 2, self.devicePixelRatioF())))
 
     def changeEvent(self, event) -> None:
         if event.type() in (QEvent.Type.PaletteChange, QEvent.Type.StyleChange):

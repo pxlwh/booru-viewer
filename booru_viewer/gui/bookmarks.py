@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QLineEdit,
-    QPushButton,
     QLabel,
     QComboBox,
     QMenu,
@@ -22,6 +21,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 
+from .icons import LabelledIconButton
 from ..core.db import Database, Bookmark
 from ..core.api.base import Post
 from ..core.cache import download_thumbnail
@@ -87,7 +87,7 @@ class BookmarksView(QWidget):
         self._folder_combo.currentTextChanged.connect(lambda _: self.refresh())
         top.addWidget(self._folder_combo)
 
-        manage_btn = QPushButton("+ Folder")
+        manage_btn = LabelledIconButton("plus", "Folder")
         manage_btn.setToolTip("New bookmark folder")
         manage_btn.setFixedWidth(75)
         manage_btn.setStyleSheet(_btn_style)
@@ -100,7 +100,7 @@ class BookmarksView(QWidget):
         # Unfiled (per remove_folder's UPDATE … SET folder = NULL). The
         # library filesystem is untouched: bookmark folders and library
         # folders are independent name spaces.
-        self._delete_folder_btn = QPushButton("− Folder")
+        self._delete_folder_btn = LabelledIconButton("minus", "Folder")
         self._delete_folder_btn.setToolTip("Delete the selected bookmark folder")
         self._delete_folder_btn.setFixedWidth(75)
         self._delete_folder_btn.setStyleSheet(_btn_style)

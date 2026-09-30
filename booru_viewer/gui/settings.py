@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
 )
 
+from .icons import IconButton
 from ..core.db import Database
 from ..core.cache import cache_size_bytes, cache_file_count, clear_cache, evict_oldest
 from ..core.config import (
@@ -102,20 +103,13 @@ class SettingsDialog(QDialog):
         h.setContentsMargins(0, 0, 0, 0)
         h.setSpacing(2)
         h.addWidget(spinbox, 1)
-        # Inline padding override matches the rest of the app's narrow
-        # toolbar buttons. The new bundled themes use `padding: 2px 8px`
-        # globally, but `2px 6px` here gives the +/- glyph a touch more
-        # room to breathe in a 25px-wide button.
-        _btn_style = "padding: 2px 6px;"
-        minus = QPushButton("-")
-        minus.setFixedWidth(25)
-        minus.setStyleSheet(_btn_style)
+        # SVG minus and plus (icons.IconButton): same size under every theme,
+        # which the old "-" and "+" text labels were not.
+        minus = IconButton("minus", "_step_minus", "Decrease")
         minus.clicked.connect(
             lambda: spinbox.setValue(spinbox.value() - spinbox.singleStep())
         )
-        plus = QPushButton("+")
-        plus.setFixedWidth(25)
-        plus.setStyleSheet(_btn_style)
+        plus = IconButton("plus", "_step_plus", "Increase")
         plus.clicked.connect(
             lambda: spinbox.setValue(spinbox.value() + spinbox.singleStep())
         )

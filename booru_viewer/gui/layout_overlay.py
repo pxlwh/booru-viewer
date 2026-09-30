@@ -11,6 +11,7 @@ from PySide6.QtCore import QEvent, QRect, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPalette
 from PySide6.QtWidgets import QApplication, QWidget
 
+from .icons import render
 from .panel_layout import PANEL_MIME, PANEL_TITLES, Rect, grip_rect, hit_zone, zone_rects
 
 
@@ -140,8 +141,15 @@ class LayoutOverlay(QWidget):
                 g = QRect(*grip_rect(rect))
                 painter.fillRect(g, pal.color(QPalette.ColorRole.Button))
                 painter.drawRect(g.adjusted(0, 0, -1, -1))
-                painter.setPen(pal.color(QPalette.ColorRole.ButtonText))
-                painter.drawText(g, Qt.AlignmentFlag.AlignCenter, f"≡ {PANEL_TITLES[name]}")
+                ink = pal.color(QPalette.ColorRole.ButtonText)
+                painter.setPen(ink)
+                # SVG grip plus the title, centred together (was a "≡" glyph)
+                title = PANEL_TITLES[name]
+                tw = painter.fontMetrics().horizontalAdvance(title)
+                x = g.center().x() - (14 + 6 + tw) // 2
+                painter.drawPixmap(x, g.center().y() - 7, render("grip", ink, 14, self.devicePixelRatioF()))
+                painter.drawText(QRect(x + 20, g.top(), tw + 2, g.height()),
+                                 Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, title)
                 painter.setPen(accent)
             painter.setPen(pal.color(QPalette.ColorRole.WindowText))
             painter.drawText(

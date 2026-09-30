@@ -6,7 +6,7 @@ import logging
 import time
 
 from PySide6.QtCore import Qt, QTimer, Signal, Property, QPoint
-from PySide6.QtGui import QColor, QIcon, QPixmap, QPainter, QPen, QPolygon, QPainterPath, QFont
+from PySide6.QtGui import QColor, QIcon, QPixmap, QPainter, QPen, QPolygon, QPainterPath
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSlider, QStyle,
 )
@@ -71,12 +71,8 @@ def _paint_icon(shape: str, color: QColor, size: int = 16) -> QIcon:
         ]))
 
     elif shape == "once":
-        p.setPen(QPen(color, 1))
-        f = QFont()
-        f.setPixelSize(s - 2)
-        f.setBold(True)
-        p.setFont(f)
-        p.drawText(pix.rect(), Qt.AlignmentFlag.AlignCenter, "1\u00D7")
+        from ..icons import render
+        p.drawPixmap(0, 0, render("play-once", color, s))
 
     elif shape == "next":
         p.drawPolygon(QPolygon([QPoint(2, 2), QPoint(2, s - 2), QPoint(s - 5, s // 2)]))
