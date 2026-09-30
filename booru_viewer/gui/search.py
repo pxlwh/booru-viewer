@@ -57,30 +57,20 @@ class SearchBar(QWidget):
         self._input.setPlaceholderText("Search tags...")
         self._input.returnPressed.connect(self._do_search)
 
-        # Dropdown arrow inside search bar
-        from PySide6.QtGui import QPixmap, QPainter, QFont
-        pixmap = QPixmap(16, 16)
-        pixmap.fill(Qt.GlobalColor.transparent)
-        painter = QPainter(pixmap)
-        painter.setPen(self._input.palette().color(self._input.palette().ColorRole.Text))
-        painter.setFont(QFont(self._input.font().family(), 8))
-        painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "\u25BC")
-        painter.end()
+        # Dropdown inside the search field: saving a search, saved searches and
+        # history. An SVG chevron, not a font glyph, so its size is the same
+        # under every Qt style (see icons.py).
+        from .icons import render
+        chevron = render("chevron-down", self._input.palette().color(self._input.palette().ColorRole.Text),
+                         dpr=self._input.devicePixelRatioF())
         self._history_action = self._input.addAction(
-            QIcon(pixmap),
+            QIcon(chevron),
             QLineEdit.ActionPosition.TrailingPosition,
         )
-        self._history_action.setToolTip("Search history & saved searches")
+        self._history_action.setToolTip("Save this search, saved searches and history")
         self._history_action.triggered.connect(self._show_history_menu)
 
         layout.addWidget(self._input, stretch=1)
-
-        # Save search button
-        self._save_btn = QPushButton("Save")
-        self._save_btn.setFixedWidth(60)
-        self._save_btn.setToolTip("Save current search")
-        self._save_btn.clicked.connect(self._save_current_search)
-        layout.addWidget(self._save_btn)
 
         self._btn = QPushButton("Search")
         self._btn.clicked.connect(self._do_search)
@@ -133,6 +123,12 @@ class SearchBar(QWidget):
         saved_actions = {}
         hist_actions = {}
 
+        # Saving lives here, beside the saved searches it adds to; it was a
+        # Save button next to Search, easy to take for a second submit button.
+        save_action = menu.addAction("Save this search...")
+        save_action.setEnabled(bool(self._input.text().strip()))
+        menu.addSeparator()
+
         # Saved searches
         saved = self._db.get_saved_searches()
         if saved:
@@ -168,6 +164,9 @@ class SearchBar(QWidget):
 
         action = menu.exec(self._input.mapToGlobal(self._input.rect().bottomLeft()))
         if not action:
+            return
+        if action == save_action:
+            self._save_current_search()
             return
 
         if clear_action and action == clear_action:

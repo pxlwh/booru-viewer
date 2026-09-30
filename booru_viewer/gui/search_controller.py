@@ -306,7 +306,6 @@ class SearchController:
 
     def on_search(self, tags: str) -> None:
         self._current_tags = tags
-        self._app._page_spin.setValue(1)
         self._current_page = 1
         self._search = SearchState()
         self._cached_names = None

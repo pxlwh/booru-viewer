@@ -7,9 +7,12 @@ import logging
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, Signal, QUrl, QEvent, QObject, QRect, QMimeData
+from PySide6.QtCore import Qt, QTimer, Signal, QUrl, QEvent, QObject, QRect, QMimeData, QPoint
 from PySide6.QtGui import QPixmap, QAction, QKeySequence, QDesktopServices, QShortcut, QPalette, QFontMetrics, QDrag
 from PySide6.QtWidgets import (
+    QFrame,
+    QToolButton,
+    QFormLayout,
     QApplication,
     QMainWindow,
     QWidget,
@@ -122,13 +125,11 @@ class _CheckRowDelegate(QStyledItemDelegate):
         painter.setPen(opt.palette.color(QPalette.ColorGroup.Normal, role))
         state = index.data(Qt.ItemDataRole.CheckStateRole)
         if state in (Qt.CheckState.Checked, Qt.CheckState.Checked.value):
-            f = painter.font()
-            f.setPixelSize(max(int(h * 0.85), 8))
-            painter.setFont(f)
-            painter.drawText(
-                QRect(opt.rect.left(), opt.rect.top(), h, h),
-                Qt.AlignmentFlag.AlignCenter, "✓",
-            )
+            from .icons import render
+            side = max(int(h * 0.7), 8)
+            dpr = opt.widget.devicePixelRatioF() if opt.widget else 1.0
+            painter.drawPixmap(opt.rect.left() + (h - side) // 2, opt.rect.top() + (h - side) // 2,
+                               render("check", painter.pen().color(), side, dpr))
         painter.setFont(option.font)
         text_rect = QRect(opt.rect.left() + h + 2, opt.rect.top(),
                           opt.rect.width() - h - 2, h)
@@ -335,12 +336,41 @@ class BooruApp(QMainWindow):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
 
-        # Top bar: site selector + rating + search
+        # Top bar, one row: view tabs | sites | search | filters. Browse,
+        # Bookmarks and Library used to be a second row of full width buttons;
+        # rating, media and score were three unlabelled controls in this row
+        # (two of them read "All"). They now live in a labelled Filters popup.
         _top_bar = QWidget()
         _top_bar.setObjectName("_top_bar")
         top = QHBoxLayout(_top_bar)
         top.setContentsMargins(0, 0, 0, 0)
         top.setSpacing(3)
+
+        self._browse_btn = QPushButton("Browse")
+        self._browse_btn.setCheckable(True)
+        self._browse_btn.setChecked(True)
+        self._browse_btn.clicked.connect(lambda: self._switch_view(0))
+        top.addWidget(self._browse_btn)
+
+        self._bookmark_btn = QPushButton("Bookmarks")
+        self._bookmark_btn.setCheckable(True)
+        self._bookmark_btn.clicked.connect(lambda: self._switch_view(1))
+        top.addWidget(self._bookmark_btn)
+
+        self._library_btn = QPushButton("Library")
+        self._library_btn.setCheckable(True)
+        self._library_btn.clicked.connect(lambda: self._switch_view(2))
+        top.addWidget(self._library_btn)
+        # One width for all three, the widest one's own size hint, so the tabs read as a
+        # set. Measured, not a constant: the font (and so the widest label) is the theme's.
+        _tab_w = max(b.sizeHint().width() for b in (self._browse_btn, self._bookmark_btn, self._library_btn))
+        for b in (self._browse_btn, self._bookmark_btn, self._library_btn):
+            b.setFixedWidth(_tab_w)
+
+        _sep = QFrame()
+        _sep.setFrameShape(QFrame.Shape.VLine)
+        _sep.setFrameShadow(QFrame.Shadow.Sunken)
+        top.addWidget(_sep)
 
         self._multi_filter: _MultiPopupFilter | None = None
         self._multi_delegate = None
@@ -356,72 +386,42 @@ class BooruApp(QMainWindow):
         self._site_combo.currentIndexChanged.connect(self._on_site_changed)
         top.addWidget(self._site_combo)
 
-        # Rating filter
-        self._rating_combo = QComboBox()
-        self._rating_combo.addItems(["All", "General", "Sensitive", "Questionable", "Explicit"])
-        self._rating_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
-        self._rating_combo.currentTextChanged.connect(self._on_rating_changed)
-        top.addWidget(self._rating_combo)
-
-        # Media type filter
-        self._media_filter = QComboBox()
-        self._media_filter.addItems(["All", "Animated", "Video", "GIF", "Audio"])
-        self._media_filter.setToolTip("Filter by media type")
-        self._media_filter.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
-        top.addWidget(self._media_filter)
-
-        # Score filter
-        score_label = QLabel("Score\u2265")
-        top.addWidget(score_label)
-        self._score_spin = QSpinBox()
-        self._score_spin.setRange(0, 99999)
-        self._score_spin.setValue(0)
-        self._score_spin.setFixedWidth(36)
-        self._score_spin.setFixedHeight(21)
-        self._score_spin.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
-        top.addWidget(self._score_spin)
-
-        page_label = QLabel("Page")
-        top.addWidget(page_label)
-        self._page_spin = QSpinBox()
-        self._page_spin.setRange(1, 99999)
-        self._page_spin.setValue(1)
-        self._page_spin.setFixedWidth(36)
-        self._page_spin.setFixedHeight(21)
-        self._page_spin.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
-        top.addWidget(self._page_spin)
-
         self._search_bar = SearchBar(db=self._db)
         self._search_bar.search_requested.connect(self._search_ctrl.on_search)
         self._search_bar.autocomplete_requested.connect(self._search_ctrl.request_autocomplete)
         top.addWidget(self._search_bar, stretch=1)
 
+        # Filters popup: a Qt.Popup frame, so it closes on any click outside it
+        # like a menu does, but can hold combo boxes (a QMenu cannot, cleanly).
+        self._filter_popup = QFrame(self, Qt.WindowType.Popup)
+        self._filter_popup.setFrameShape(QFrame.Shape.StyledPanel)
+        form = QFormLayout(self._filter_popup)
+        form.setContentsMargins(10, 10, 10, 10)
+
+        self._rating_combo = QComboBox()
+        self._rating_combo.addItems(["All", "General", "Sensitive", "Questionable", "Explicit"])
+        self._rating_combo.currentTextChanged.connect(self._on_rating_changed)
+        form.addRow("Rating", self._rating_combo)
+
+        self._media_filter = QComboBox()
+        self._media_filter.addItems(["All", "Animated", "Video", "GIF", "Audio"])
+        form.addRow("Media", self._media_filter)
+
+        self._score_spin = QSpinBox()
+        self._score_spin.setRange(0, 99999)
+        self._score_spin.setValue(0)
+        form.addRow("Score \u2265", self._score_spin)
+
+        self._filter_btn = QToolButton()
+        self._filter_btn.setToolTip("Rating, media type and minimum score")
+        self._filter_btn.clicked.connect(self._show_filter_popup)
+        top.addWidget(self._filter_btn)
+        for sig in (self._rating_combo.currentTextChanged, self._media_filter.currentTextChanged,
+                    self._score_spin.valueChanged):
+            sig.connect(lambda *_: self._update_filter_button())
+        self._update_filter_button()
+
         layout.addWidget(_top_bar)
-
-        # Nav bar
-        _nav_bar = QWidget()
-        _nav_bar.setObjectName("_nav_bar")
-        nav = QHBoxLayout(_nav_bar)
-        nav.setContentsMargins(0, 0, 0, 0)
-        nav.setSpacing(3)
-
-        self._browse_btn = QPushButton("Browse")
-        self._browse_btn.setCheckable(True)
-        self._browse_btn.setChecked(True)
-        self._browse_btn.clicked.connect(lambda: self._switch_view(0))
-        nav.addWidget(self._browse_btn)
-
-        self._bookmark_btn = QPushButton("Bookmarks")
-        self._bookmark_btn.setCheckable(True)
-        self._bookmark_btn.clicked.connect(lambda: self._switch_view(1))
-        nav.addWidget(self._bookmark_btn)
-
-        self._library_btn = QPushButton("Library")
-        self._library_btn.setCheckable(True)
-        self._library_btn.clicked.connect(lambda: self._switch_view(2))
-        nav.addWidget(self._library_btn)
-
-        layout.addWidget(_nav_bar)
 
         # Main content
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -749,7 +749,6 @@ class BooruApp(QMainWindow):
         self._status.showMessage(f"Connected to {site.name}")
         # Reset browse state for the new site — stale page numbers
         # and results from the previous site shouldn't carry over.
-        self._page_spin.setValue(1)
         self._posts.clear()
         self._grid.set_posts(0)
         self._preview.clear()
@@ -757,6 +756,19 @@ class BooruApp(QMainWindow):
 
     def _on_rating_changed(self, text: str) -> None:
         self._search_ctrl._current_rating = text.lower()
+
+    def _show_filter_popup(self) -> None:
+        pop, btn = self._filter_popup, self._filter_btn
+        pop.adjustSize()
+        # right edge under the button's right edge: the button sits at the far right
+        pop.move(btn.mapToGlobal(QPoint(btn.width() - pop.width(), btn.height())))
+        pop.show()
+
+    def _update_filter_button(self) -> None:
+        active = sum((self._rating_combo.currentText() != "All",
+                      self._media_filter.currentText() != "All",
+                      self._score_spin.value() > 0))
+        self._filter_btn.setText("Filters" if not active else f"Filters ({active})")
 
     def _switch_view(self, index: int) -> None:
         self._stack.setCurrentIndex(index)
