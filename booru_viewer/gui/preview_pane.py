@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QPushButton, QMenu, QInputDialog,
 )
 
+from .icons import IconButton
 from .media.constants import _is_video
 from .media.image_viewer import ImageViewer
 from .media.video_player import VideoPlayer
@@ -67,35 +68,29 @@ class ImagePreview(QWidget):
 
         _tb_sz = 24
 
-        def _icon_btn(text: str, name: str, tip: str) -> QPushButton:
-            btn = QPushButton(text)
-            btn.setObjectName(name)
-            btn.setFixedSize(_tb_sz, _tb_sz)
-            # Matches QPushButton[iconBtn="true"] in the base QSS: zero
-            # padding so the glyph isn't clipped by theme button padding.
-            btn.setProperty("iconBtn", True)
-            btn.setToolTip(tip)
-            return btn
+        def _icon_btn(icon: str, name: str, tip: str) -> IconButton:
+            # SVG, not a font glyph: same shape and size under every Qt style
+            return IconButton(icon, name, tip, _tb_sz)
 
-        self._bookmark_btn = _icon_btn("\u2606", "_tb_bookmark", "Bookmark (B)")
+        self._bookmark_btn = _icon_btn("star", "_tb_bookmark", "Bookmark (B)")
         self._bookmark_btn.clicked.connect(self._on_bookmark_clicked)
         tb.addWidget(self._bookmark_btn)
 
-        self._save_btn = _icon_btn("\u2193", "_tb_save", "Save to library (S)")
+        self._save_btn = _icon_btn("floppy", "_tb_save", "Save to library (S)")
         self._save_btn.clicked.connect(self._on_save_clicked)
         tb.addWidget(self._save_btn)
 
-        self._bl_tag_btn = _icon_btn("\u2298", "_tb_bl_tag", "Blacklist a tag")
+        self._bl_tag_btn = _icon_btn("tag-off", "_tb_bl_tag", "Blacklist a tag")
         self._bl_tag_btn.clicked.connect(self._show_bl_tag_menu)
         tb.addWidget(self._bl_tag_btn)
 
-        self._bl_post_btn = _icon_btn("\u2297", "_tb_bl_post", "Blacklist this post")
+        self._bl_post_btn = _icon_btn("eye-off", "_tb_bl_post", "Blacklist this post")
         self._bl_post_btn.clicked.connect(self.blacklist_post_requested)
         tb.addWidget(self._bl_post_btn)
 
         tb.addStretch()
 
-        self._popout_btn = _icon_btn("\u29c9", "_tb_popout", "Popout")
+        self._popout_btn = _icon_btn("popout", "_tb_popout", "Popout")
         self._popout_btn.clicked.connect(self.fullscreen_requested)
         tb.addWidget(self._popout_btn)
 
@@ -227,12 +222,12 @@ class ImagePreview(QWidget):
 
     def update_bookmark_state(self, bookmarked: bool) -> None:
         self._is_bookmarked = bookmarked
-        self._bookmark_btn.setText("\u2605" if bookmarked else "\u2606")  # ★ / ☆
+        self._bookmark_btn.set_icon("star-filled" if bookmarked else "star")
         self._bookmark_btn.setToolTip("Unbookmark (B)" if bookmarked else "Bookmark (B)")
 
     def update_save_state(self, saved: bool) -> None:
         self._is_saved = saved
-        self._save_btn.setText("\u2715" if saved else "\u2193")  # ✕ / ⤓
+        self._save_btn.set_icon("floppy-filled" if saved else "floppy")
         self._save_btn.setToolTip("Unsave from library" if saved else "Save to library (S)")
 
 

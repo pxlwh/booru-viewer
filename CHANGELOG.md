@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- The preview and popout toolbar buttons are SVG icons instead of text glyphs (☆ ↓ ⊘ ⊗ ⧉). A glyph is drawn by whatever font the Qt style supplies, so its size changed with the theme: under AeroThemePlasma the blacklist glyphs came out large and the save arrow tiny. The icons keep one shape and size under every style and take their colour from the theme. Save is now a floppy disk, filled when the post is saved (like the filled star when bookmarked), and "blacklist this post" is an eye struck through. **Behavior change:** new toolbar icons
+
 ## v0.3.2
 
 ### Added
