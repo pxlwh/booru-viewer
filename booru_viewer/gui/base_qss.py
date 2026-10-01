@@ -91,6 +91,12 @@ QWidget#_slideshow_controls QLabel {
     background: transparent;
     color: white;
 }
+/* Keep scroll bars inside the scroll area's frame. Some native styles
+   (Windows) frame only the contents, which pushes the grid's scroll bar
+   outside its border. This QSS property overrides that style hint. */
+QScrollArea {
+    scrollview-frame-around-contents: 0;
+}
 /* Hide the standard icon column on every QMessageBox (question mark,
  * warning triangle, info circle) so confirm dialogs are text-only. */
 QMessageBox QLabel#qt_msgboxex_icon_label {
