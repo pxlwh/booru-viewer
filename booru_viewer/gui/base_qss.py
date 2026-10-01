@@ -91,8 +91,8 @@ QWidget#_slideshow_controls QLabel {
     background: transparent;
     color: white;
 }
-/* Keep scroll bars inside the scroll area's frame. Some native styles
-   (Windows) frame only the contents, which pushes the grid's scroll bar
+/* Keep scroll bars inside the scroll area's frame. Some third party
+   styles frame only the contents, which pushes the grid's scroll bar
    outside its border. This QSS property overrides that style hint. */
 QScrollArea {
     scrollview-frame-around-contents: 0;
