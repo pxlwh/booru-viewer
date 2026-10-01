@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## v0.3.4
+
+### Fixed
+- Under native styles that frame only the contents (the Windows styles), the results grid's scroll bar sat outside the grid's border. The base stylesheet now sets `scrollview-frame-around-contents: 0` on scroll areas, so the scroll bar stays inside the frame under every style. **Behavior change:** scroll bar inside the browse area
+
 ## v0.3.3
 
 ### Changed
