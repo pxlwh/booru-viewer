@@ -10,6 +10,39 @@ from .base import BooruAuthError, BooruClient, Post, _parse_date
 
 log = logging.getLogger("booru")
 
+# Users type Danbooru's `~a ~b` for OR. Gelbooru-engine sites ignore that
+# and split into two dialects that each return 0 for the other's form:
+# Gelbooru proper wants `{a ~ b}`, Rule34 and Safebooru.org `( a ~ b )`.
+_OR_STYLES = ("{{{}}}", "( {} )")
+# base_url -> style that returned posts. Per process; re-probed next launch.
+_OR_STYLE: dict[str, str] = {}
+
+
+def translate_or(tags: str, style: str) -> str | None:
+    """Rewrite `~a ~b c` into *style*, or None when there are no OR tokens."""
+    tokens = tags.split()
+    alts = [t[1:] for t in tokens if t.startswith("~") and len(t) > 1]
+    if not alts:
+        return None
+    rest = [t for t in tokens if not (t.startswith("~") and len(t) > 1)]
+    group = alts[0] if len(alts) == 1 else style.format(" ~ ".join(alts))
+    return " ".join([group, *rest])
+
+
+# Danbooru-family `order:X` -> Gelbooru-engine `sort:`. Every engine site
+# tested agrees on this one form. Unknown values pass through untouched.
+_ORDER_TO_SORT = {
+    "order:score": "sort:score:desc",
+    "order:score_asc": "sort:score:asc",
+    "order:id": "sort:id:asc",
+    "order:id_desc": "sort:id:desc",
+    "order:random": "sort:random",
+}
+
+
+def translate_order(tags: str) -> str:
+    return " ".join(_ORDER_TO_SORT.get(t, t) for t in tags.split())
+
 
 class GelbooruClient(BooruClient):
     api_type = "gelbooru"
@@ -23,6 +56,20 @@ class GelbooruClient(BooruClient):
     async def search(
         self, tags: str = "", page: int = 1, limit: int = DEFAULT_PAGE_SIZE
     ) -> list[Post]:
+        tags = translate_order(tags)
+        known = _OR_STYLE.get(self.base_url)
+        posts: list[Post] = []
+        for style in (known,) if known else _OR_STYLES:
+            translated = translate_or(tags, style)
+            if translated is None:
+                return await self._search_once(tags, page, limit)
+            posts = await self._search_once(translated, page, limit)
+            if posts:
+                _OR_STYLE[self.base_url] = style
+                return posts
+        return posts
+
+    async def _search_once(self, tags: str, page: int, limit: int) -> list[Post]:
         # Gelbooru uses pid (0-indexed page) not page number
         params: dict = {
             "page": "dapi",

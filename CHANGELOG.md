@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+- `~a ~b` searches for posts with either tag on every site type. Danbooru, e621 and Moebooru already understood it; Gelbooru-engine sites ignored it and returned nothing. Those sites split into two dialects, `{a ~ b}` (Gelbooru) and `( a ~ b )` (Rule34, Safebooru.org), and each returns no posts for the other's form, so the first OR search on such a site tries both and remembers the one that returned posts for the rest of the session. **Behavior change:** OR searches work on Gelbooru-engine sites
+- `order:score`, `order:score_asc`, `order:id`, `order:id_desc` and `order:random` sort on every site type. Gelbooru-engine sites only understand `sort:` and returned nothing for `order:`, so the Gelbooru client rewrites them (`order:score` becomes `sort:score:desc`, and so on). Other `order:` values pass through unchanged. **Behavior change:** order: works on Gelbooru-engine sites
+
 ## v0.3.4
 
 ### Fixed
