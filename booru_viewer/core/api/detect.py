@@ -62,6 +62,9 @@ async def detect_site_type(
                         return "e621"
                 return "danbooru"
             elif isinstance(data, list) and data:
+                # e621 Post API v2: flat list, media grouped under "files"
+                if isinstance(data[0], dict) and isinstance(data[0].get("files"), dict):
+                    return "e621"
                 # Danbooru returns a flat list of post objects
                 if isinstance(data[0], dict) and any(
                     k in data[0] for k in ("tag_string", "image_width", "large_file_url")

@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- e621 and e926 search and post lookup work again. On 2026-11-19 e621 made its Post API v2 the default, which returns a bare list, groups media under `files`, moves scores under `stats` and flattens tags. The client read the old shape and dropped every post. It now reads v2 and requests `mode=extended` to keep tag categories, including the new Contributor category. Adding an e621 site also auto-detects again. **Behavior change:** e621 sites load posts again
+
 ## v0.3.5
 
 ### Added

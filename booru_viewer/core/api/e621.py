@@ -1,4 +1,8 @@
-"""e621 API client — Danbooru fork with different response structure."""
+"""e621 API client (Post API v2, default since 2026_11).
+
+v2 returns a bare list / bare object, groups media under ``files``, moves
+scores into ``stats`` and flattens tags unless ``mode=extended``.
+"""
 
 from __future__ import annotations
 
@@ -77,7 +81,8 @@ class E621Client(BooruClient):
     async def search(
         self, tags: str = "", page: int = 1, limit: int = DEFAULT_PAGE_SIZE
     ) -> list[Post]:
-        params: dict = {"tags": tags, "page": page, "limit": min(limit, 320)}
+        params: dict = {"tags": tags, "page": page, "limit": min(limit, 320),
+                        "mode": "extended"}
         if self.api_key and self.api_user:
             params["login"] = self.api_user
             params["api_key"] = self.api_key
@@ -97,10 +102,6 @@ class E621Client(BooruClient):
                         type(e).__name__, e, resp.text[:200])
             return []
 
-        # e621 wraps posts in {"posts": [...]}
-        if isinstance(data, dict):
-            data = data.get("posts", [])
-
         posts = []
         for item in data:
             file_url = self._get_file_url(item)
@@ -110,13 +111,13 @@ class E621Client(BooruClient):
                 Post(
                     id=item["id"],
                     file_url=file_url,
-                    preview_url=self._get_nested(item, "preview", "url"),
+                    preview_url=self._get_nested(item, "files", "preview", "jpg"),
                     tags=self._extract_tags(item),
                     score=self._get_score(item),
                     rating=item.get("rating"),
                     source=self._get_source(item),
-                    width=self._get_nested(item, "file", "width") or 0,
-                    height=self._get_nested(item, "file", "height") or 0,
+                    width=self._get_nested(item, "files", "original", "width") or 0,
+                    height=self._get_nested(item, "files", "original", "height") or 0,
                     created_at=_parse_date(item.get("created_at")),
                     tag_categories=self._extract_tag_categories(item),
                 )
@@ -124,7 +125,7 @@ class E621Client(BooruClient):
         return self._stamp(posts)
 
     async def get_post(self, post_id: int) -> Post | None:
-        params: dict = {}
+        params: dict = {"mode": "extended"}
         if self.api_key and self.api_user:
             params["login"] = self.api_user
             params["api_key"] = self.api_key
@@ -136,7 +137,7 @@ class E621Client(BooruClient):
             return None
         resp.raise_for_status()
         data = resp.json()
-        item = data.get("post", data) if isinstance(data, dict) else data
+        item = data
 
         file_url = self._get_file_url(item)
         if not file_url:
@@ -144,13 +145,13 @@ class E621Client(BooruClient):
         post = Post(
             id=item["id"],
             file_url=file_url,
-            preview_url=self._get_nested(item, "preview", "url"),
+            preview_url=self._get_nested(item, "files", "preview", "jpg"),
             tags=self._extract_tags(item),
             score=self._get_score(item),
             rating=item.get("rating"),
             source=self._get_source(item),
-            width=self._get_nested(item, "file", "width") or 0,
-            height=self._get_nested(item, "file", "height") or 0,
+            width=self._get_nested(item, "files", "original", "width") or 0,
+            height=self._get_nested(item, "files", "original", "height") or 0,
             created_at=_parse_date(item.get("created_at")),
             tag_categories=self._extract_tag_categories(item),
         )
@@ -177,13 +178,11 @@ class E621Client(BooruClient):
     @staticmethod
     def _get_file_url(item: dict) -> str:
         """Extract file URL from e621's nested structure."""
-        # e621: item["file"]["url"], fallback to item["sample"]["url"]
-        f = item.get("file")
-        if isinstance(f, dict) and f.get("url"):
-            return f["url"]
-        s = item.get("sample")
-        if isinstance(s, dict) and s.get("url"):
-            return s["url"]
+        # files.original.url, fallback to files.sample.jpg
+        url = (E621Client._get_nested(item, "files", "original", "url")
+               or E621Client._get_nested(item, "files", "sample", "jpg"))
+        if url:
+            return url
         # Some posts have null URLs (deleted/flagged)
         return ""
 
@@ -205,7 +204,7 @@ class E621Client(BooruClient):
         if isinstance(tags_obj, dict):
             all_tags = []
             for category in ("general", "artist", "copyright", "character",
-                             "species", "meta", "lore"):
+                             "species", "meta", "lore", "contributor"):
                 tag_list = tags_obj.get(category, [])
                 if isinstance(tag_list, list):
                     all_tags.extend(tag_list)
@@ -224,6 +223,7 @@ class E621Client(BooruClient):
             "artist": "Artist", "character": "Character",
             "copyright": "Copyright", "species": "Species",
             "general": "General", "meta": "Meta", "lore": "Lore",
+            "contributor": "Contributor",
         }
         for key, label in mapping.items():
             tag_list = tags_obj.get(key, [])
@@ -234,7 +234,7 @@ class E621Client(BooruClient):
     @staticmethod
     def _get_score(item: dict) -> int:
         """e621 score is a dict with up/down/total."""
-        score = item.get("score")
+        score = E621Client._get_nested(item, "stats", "score")
         if isinstance(score, dict):
             return score.get("total", 0)
         if isinstance(score, int):
