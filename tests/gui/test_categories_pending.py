@@ -14,8 +14,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from booru_viewer.core.api.base import Post
-from booru_viewer.gui.main_window import BooruApp
+# main_window imports Qt; CI installs no PySide6, so this runs locally only.
+pytest.importorskip("PySide6")
+
+from booru_viewer.core.api.base import Post  # noqa: E402
+from booru_viewer.gui.main_window import BooruApp  # noqa: E402
 
 
 @pytest.fixture
