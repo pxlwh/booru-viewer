@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## v0.3.8
+
 ### Added
 - Back navigation. Starting a new search (typing one, or clicking a tag in the info panel) keeps the one you left, and Back returns to it with the same results, page, selected post and scroll position, without fetching again. Back is a button beside the search bar, Alt+Left, or the mouse back button. It holds the last 20 searches and clears when the selected sites change, since the old results came from different sites. **Behavior change:** clicking a tag no longer loses your place
 - Settings > General > "Resize popout to fit each post". Turned off, the popout keeps the size and position you leave it at instead of resizing to every image, which suits a popout kept on a second monitor. On by default
