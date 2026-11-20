@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## v0.3.7
+
 ### Fixed
 - Rule34 shows categorized tags again, and Safebooru.org shows them without waiting on a page scrape. Both sites return each tag's category inline when asked with `fields=tag_info`, so the Gelbooru client now requests it on every search and post lookup. Rule34's other two category sources had stopped working: its batch tag API ignores the requested names, and its post page on `api.rule34.xxx` comes back empty. gelbooru.com ignores the parameter and keeps using its batch tag API. **Behavior change:** Rule34 and Safebooru.org tags are categorized inline
 - The info panel no longer shows an empty tag list when a category fetch fails or finds nothing. The panel hides the plain tag list while a fetch is pending, and only a successful fetch cleared that state, so a failed one left the tags blank until the next post. Failed fetches now fall back to the plain list
