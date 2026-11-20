@@ -6,7 +6,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
-from .search_state import SearchState
+from .search_state import SearchHistory, SearchSnapshot, SearchState
 from .site_selection import effective_site_id
 
 if TYPE_CHECKING:
@@ -273,6 +273,7 @@ class SearchController:
         self._min_score = 0
         self._loading = False
         self._search = SearchState()
+        self.history = SearchHistory()
         self._last_scroll_page = 0
         self._infinite_scroll = app._db.get_setting_bool("infinite_scroll")
         # Cached lookup sets — rebuilt once per search, reused in
@@ -284,6 +285,10 @@ class SearchController:
 
     def reset(self) -> None:
         """Reset search state for a site change."""
+        # Old results came from the old site selection; going back to
+        # them would mix sites into the next infinite-scroll fetch.
+        self.history.clear()
+        self._update_back_button()
         self._search.shown_post_ids.clear()
         self._search.page_cache.clear()
         self._cached_names = None
@@ -305,6 +310,17 @@ class SearchController:
     # -- Search entry points --
 
     def on_search(self, tags: str) -> None:
+        if self._app._posts and tags != self._current_tags:
+            grid = self._app._grid
+            self.history.push(SearchSnapshot(
+                tags=self._current_tags,
+                page=self._current_page,
+                search=self._search,
+                posts=list(self._app._posts),
+                selected=grid.selected_index,
+                scroll=grid.verticalScrollBar().value(),
+            ))
+            self._update_back_button()
         self._current_tags = tags
         self._current_page = 1
         self._search = SearchState()
@@ -316,6 +332,44 @@ class SearchController:
         self._app._next_page_btn.setVisible(True)
         self._app._prev_page_btn.setVisible(False)
         self.do_search()
+
+    def go_back(self) -> None:
+        """Put the previous search back on screen, no network.
+
+        Ignored while a search is in flight: its result would land on
+        top of the restored page.
+        """
+        if self._loading:
+            return
+        snap = self.history.pop()
+        self._update_back_button()
+        if snap is None:
+            return
+        self._current_tags = snap.tags
+        self._current_page = snap.page
+        self._search = snap.search
+        self._app._search_bar.set_text(snap.tags)
+        self._app._preview.clear()
+        self.on_search_done(snap.posts, [])
+
+        def _restore_position():
+            from PySide6.QtWidgets import QApplication
+            grid = self._app._grid
+            grid.widget().updateGeometry()
+            QApplication.processEvents()
+            # Select first: it scrolls the post into view, which the
+            # exact offset below then overrides.
+            if snap.selected >= 0:
+                grid._select(snap.selected)
+            grid.verticalScrollBar().setValue(snap.scroll)
+
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, _restore_position)
+
+    def _update_back_button(self) -> None:
+        btn = getattr(self._app, "_back_btn", None)
+        if btn is not None:
+            btn.setEnabled(len(self.history) > 0)
 
     def on_search_error(self, e: str) -> None:
         self._loading = False

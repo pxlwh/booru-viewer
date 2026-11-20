@@ -731,7 +731,6 @@ class ThumbnailGrid(QScrollArea):
             self._thumbs[i].set_multi_selected(True)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
-        cols = self._flow.columns
         idx = self._selected_index
 
         key = event.key()
@@ -747,24 +746,9 @@ class ThumbnailGrid(QScrollArea):
         elif key in (Qt.Key.Key_Left, Qt.Key.Key_H):
             self._nav_horizontal(-1)
         elif key in (Qt.Key.Key_Down, Qt.Key.Key_J):
-            target = idx + cols
-            if target >= len(self._thumbs):
-                # If there are posts ahead in the last row, go to the last one
-                if idx < len(self._thumbs) - 1:
-                    self._select(len(self._thumbs) - 1)
-                else:
-                    self.nav_past_end.emit()
-            else:
-                self._select(target)
+            self.nav_vertical(1)
         elif key in (Qt.Key.Key_Up, Qt.Key.Key_K):
-            target = idx - cols
-            if target < 0:
-                if idx > 0:
-                    self._select(0)
-                else:
-                    self.nav_before_start.emit()
-            else:
-                self._select(target)
+            self.nav_vertical(-1)
         elif key == Qt.Key.Key_Return or key == Qt.Key.Key_Enter:
             if 0 <= idx < len(self._thumbs):
                 self.post_activated.emit(idx)
@@ -843,6 +827,29 @@ class ThumbnailGrid(QScrollArea):
                 # Outside keep zone — release
                 if thumb._pixmap is not None:
                     thumb._pixmap = None
+
+    def nav_vertical(self, direction: int) -> None:
+        """One row down (+1) or up (-1). Public: the main window's Up/Down
+        shortcuts call it so the keys work wherever focus is."""
+        idx = self._selected_index
+        target = idx + direction * self._flow.columns
+        if direction > 0:
+            if target >= len(self._thumbs):
+                # If there are posts ahead in the last row, go to the last one
+                if idx < len(self._thumbs) - 1:
+                    self._select(len(self._thumbs) - 1)
+                else:
+                    self.nav_past_end.emit()
+            else:
+                self._select(target)
+        else:
+            if target < 0:
+                if idx > 0:
+                    self._select(0)
+                else:
+                    self.nav_before_start.emit()
+            else:
+                self._select(target)
 
     def _nav_horizontal(self, direction: int) -> None:
         """Move selection one cell left (-1) or right (+1); emit edge signals at boundaries."""

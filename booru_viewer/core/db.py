@@ -166,6 +166,9 @@ _DEFAULTS = {
     "unbookmark_on_save": "0",
     "search_history_enabled": "1",
     "use_system_style": "0",
+    "video_volume": "50",
+    "video_mute": "0",
+    "popout_auto_fit": "1",
 }
 
 

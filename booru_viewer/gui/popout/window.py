@@ -121,11 +121,15 @@ class FullscreenPreview(QMainWindow):
     privacy_requested = Signal()
     closed = Signal()
 
-    def __init__(self, grid_cols: int = 3, show_actions: bool = True, monitor: str = "", anchor: str = "center", parent=None) -> None:
+    def __init__(self, grid_cols: int = 3, show_actions: bool = True, monitor: str = "", anchor: str = "center", auto_fit: bool = True, parent=None) -> None:
         super().__init__(parent, Qt.WindowType.Window)
         self.setWindowTitle("booru-viewer — Popout")
         self._grid_cols = grid_cols
         self._anchor = anchor
+        # Off: the window keeps the size and position it opened with
+        # (the last one the user left it at) instead of resizing to
+        # each post. Every fit path funnels through _fit_to_content.
+        self._auto_fit = auto_fit
 
         # Central widget — media fills the entire window
         central = QWidget()
@@ -1298,7 +1302,7 @@ class FullscreenPreview(QMainWindow):
         See the plan at ~/.claude/plans/ancient-growing-lantern.md
         for the full derivation.
         """
-        if self.isFullScreen() or content_w <= 0 or content_h <= 0:
+        if not self._auto_fit or self.isFullScreen() or content_w <= 0 or content_h <= 0:
             return
         import os
         on_hypr = bool(os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"))

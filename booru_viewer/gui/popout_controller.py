@@ -31,6 +31,14 @@ def build_video_sync_dict(
     }
 
 
+def parse_saved_volume(raw: str) -> int:
+    """Saved volume setting -> 0..100, falling back to 50 on junk."""
+    try:
+        return max(0, min(100, int(raw)))
+    except (TypeError, ValueError):
+        return 50
+
+
 # -- Controller --
 
 
@@ -98,7 +106,8 @@ class PopoutController:
         show_actions = self._app._stack.currentIndex() != 2
         monitor = self._app._db.get_setting("slideshow_monitor")
         anchor = self._app._db.get_setting("popout_anchor") or "center"
-        self._fullscreen_window = FullscreenPreview(grid_cols=cols, show_actions=show_actions, monitor=monitor, anchor=anchor, parent=self._app)
+        auto_fit = self._app._db.get_setting_bool("popout_auto_fit")
+        self._fullscreen_window = FullscreenPreview(grid_cols=cols, show_actions=show_actions, monitor=monitor, anchor=anchor, auto_fit=auto_fit, parent=self._app)
         self._fullscreen_window.navigate.connect(self.navigate)
         self._fullscreen_window.play_next_requested.connect(self._app._on_video_end_next)
         from ..core.config import library_folders
@@ -134,6 +143,15 @@ class PopoutController:
         pre_h = post.height if post else 0
         self._fullscreen_window.set_media(path, info, width=pre_w, height=pre_h)
         self.update_state()
+
+    def live_video_state(self) -> tuple[int, bool]:
+        """(volume, mute) of whichever player is live: the popout while
+        it is open (it owns the state then), else the embedded preview."""
+        if self._fullscreen_window:
+            s = self._fullscreen_window.get_video_state()
+            return s["volume"], s["mute"]
+        pv = self._app._preview._video_player
+        return pv.volume, pv.is_muted
 
     # -- Close --
 

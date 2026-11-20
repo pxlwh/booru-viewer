@@ -58,7 +58,7 @@ from .window_state import WindowStateController
 from .privacy import PrivacyController
 from .search_controller import SearchController
 from .media_controller import MediaController
-from .popout_controller import PopoutController
+from .popout_controller import PopoutController, parse_saved_volume
 from .post_actions import PostActionsController
 from .context_menus import ContextMenuHandler
 from .site_selection import parse_multi_site_ids, serialize_site_ids, summarize_selection
@@ -394,6 +394,12 @@ class BooruApp(QMainWindow):
         self._site_combo.currentIndexChanged.connect(self._on_site_changed)
         top.addWidget(self._site_combo)
 
+        self._back_btn = QPushButton("Back")
+        self._back_btn.setToolTip("Previous search (Alt+Left, mouse back)")
+        self._back_btn.setEnabled(False)
+        self._back_btn.clicked.connect(self._search_ctrl.go_back)
+        top.addWidget(self._back_btn)
+
         self._search_bar = SearchBar(db=self._db)
         self._search_bar.search_requested.connect(self._search_ctrl.on_search)
         self._search_bar.autocomplete_requested.connect(self._search_ctrl.request_autocomplete)
@@ -466,6 +472,10 @@ class BooruApp(QMainWindow):
 
         # Preview + its download bar, moved as one panel
         self._preview = ImagePreview()
+        # Volume and mute survive restarts; the popout copies them from here.
+        pv = self._preview._video_player
+        pv.volume = parse_saved_volume(self._db.get_setting("video_volume"))
+        pv.is_muted = self._db.get_setting_bool("video_mute")
         self._preview.close_requested.connect(self._close_preview)
         self._preview.open_in_default.connect(self._open_preview_in_default)
         self._preview.open_in_browser.connect(self._open_preview_in_browser)
@@ -578,7 +588,15 @@ class BooruApp(QMainWindow):
         # Global shortcuts for preview navigation
         QShortcut(QKeySequence("Left"), self, lambda: self._navigate_preview(-1))
         QShortcut(QKeySequence("Right"), self, lambda: self._navigate_preview(1))
+        # Up/Down used to live only in the grid's keyPressEvent, so they died
+        # whenever focus left the grid; Left/Right never did.
+        QShortcut(QKeySequence("Up"), self, lambda: self._active_grid().nav_vertical(-1))
+        QShortcut(QKeySequence("Down"), self, lambda: self._active_grid().nav_vertical(1))
         QShortcut(QKeySequence("Ctrl+C"), self, self._copy_file_to_clipboard)
+        QShortcut(QKeySequence("Alt+Left"), self, self._search_ctrl.go_back)
+        # The mouse back button lands on whichever child is under the
+        # cursor, so catch it app-wide and keep it to this window.
+        QApplication.instance().installEventFilter(self)
 
     def _setup_menu(self) -> None:
         menu = self.menuBar()
@@ -1107,6 +1125,12 @@ class BooruApp(QMainWindow):
             if 0 <= idx < len(self._posts):
                 self._open_in_browser(self._posts[idx])
 
+    def _active_grid(self):
+        """The grid of the tab on screen (search, bookmarks, library)."""
+        return {1: self._bookmarks_view._grid, 2: self._library_view._grid}.get(
+            self._stack.currentIndex(), self._grid
+        )
+
     def _navigate_preview(self, direction: int, wrap: bool = False) -> None:
         """Navigate to prev/next post in the preview. direction: -1 or +1.
 
@@ -1363,6 +1387,9 @@ class BooruApp(QMainWindow):
         # Apply infinite scroll toggle live
         self._search_ctrl._infinite_scroll = self._db.get_setting_bool("infinite_scroll")
         self._bottom_nav.setVisible(not self._search_ctrl._infinite_scroll)
+        # Apply popout auto-fit live to an open popout (new ones read it at open)
+        if self._popout_ctrl._fullscreen_window:
+            self._popout_ctrl._fullscreen_window._auto_fit = self._db.get_setting_bool("popout_auto_fit")
         # Apply library dir
         lib_dir = self._db.get_setting("library_dir")
         if lib_dir:
@@ -1482,6 +1509,17 @@ class BooruApp(QMainWindow):
 
     # -- Bookmarks --
 
+    def eventFilter(self, obj, event) -> bool:
+        if (
+            event.type() == QEvent.Type.MouseButtonPress
+            and event.button() == Qt.MouseButton.BackButton
+            and isinstance(obj, QWidget)
+            and obj.window() is self
+        ):
+            self._search_ctrl.go_back()
+            return True
+        return super().eventFilter(obj, event)
+
     def closeEvent(self, event) -> None:
         # Flush any pending splitter / window-state saves (debounce timers
         # may still be running if the user moved/resized within the last
@@ -1493,6 +1531,9 @@ class BooruApp(QMainWindow):
             self._main_window_save_timer.stop()
         self._window_state.save_layout_sizes()
         self._window_state.save_main_window_state()
+        volume, mute = self._popout_ctrl.live_video_state()
+        self._db.set_setting("video_volume", str(volume))
+        self._db.set_setting("video_mute", "1" if mute else "0")
 
         # Cleanly shut the shared httpx pools down BEFORE stopping the loop
         # so the connection pool / keepalive sockets / TLS state get released

@@ -217,6 +217,13 @@ class SettingsDialog(QDialog):
             self._popout_anchor.setCurrentIndex(idx)
         form.addRow("Popout anchor:", self._popout_anchor)
 
+        self._popout_auto_fit = QCheckBox("Resize popout to fit each post")
+        self._popout_auto_fit.setToolTip(
+            "Off: the popout keeps the size and position you leave it at"
+        )
+        self._popout_auto_fit.setChecked(self._db.get_setting_bool("popout_auto_fit"))
+        form.addRow("", self._popout_auto_fit)
+
         # File dialog platform (Linux only)
         self._file_dialog_combo = None
         if not IS_WINDOWS:
@@ -831,6 +838,7 @@ class SettingsDialog(QDialog):
         self._db.set_setting("slideshow_monitor", self._monitor_combo.currentText())
         _anchor_rmap = {"Center": "center", "Top-left": "tl", "Top-right": "tr", "Bottom-left": "bl", "Bottom-right": "br"}
         self._db.set_setting("popout_anchor", _anchor_rmap.get(self._popout_anchor.currentText(), "center"))
+        self._db.set_setting("popout_auto_fit", "1" if self._popout_auto_fit.isChecked() else "0")
         self._db.set_setting("library_dir", self._library_dir.text().strip())
         self._db.set_setting("library_filename_template", self._library_filename_template.text().strip())
         self._db.set_setting("max_cache_mb", str(self._max_cache.value()))
