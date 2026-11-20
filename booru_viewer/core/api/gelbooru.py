@@ -7,6 +7,7 @@ import logging
 from ..config import DEFAULT_PAGE_SIZE
 from ._safety import redact_params
 from .base import BooruAuthError, BooruClient, Post, _parse_date
+from .category_fetcher import _canonical_order
 
 log = logging.getLogger("booru")
 
@@ -44,6 +45,14 @@ def translate_order(tags: str) -> str:
     return " ".join(_ORDER_TO_SORT.get(t, t) for t in tags.split())
 
 
+# fields=tag_info type -> label. Rule34 and Safebooru.org return
+# tag_info inline; gelbooru.com ignores the param (live-checked 2026_11_19).
+_TAG_INFO_LABELS = {
+    "tag": "General", "artist": "Artist", "character": "Character",
+    "copyright": "Copyright", "metadata": "Meta",
+}
+
+
 class GelbooruClient(BooruClient):
     api_type = "gelbooru"
 
@@ -76,6 +85,7 @@ class GelbooruClient(BooruClient):
             "s": "post",
             "q": "index",
             "json": "1",
+            "fields": "tag_info",
             "tags": tags,
             "limit": limit,
             "pid": page - 1,
@@ -124,6 +134,7 @@ class GelbooruClient(BooruClient):
                     width=item.get("width", 0),
                     height=item.get("height", 0),
                     created_at=_parse_date(item.get("created_at")),
+                    tag_categories=self._tag_categories(item),
                 )
             )
         # Background prefetch ONLY when the batch tag API is known to
@@ -162,6 +173,22 @@ class GelbooruClient(BooruClient):
             return []
         return data
 
+    @classmethod
+    def _tag_categories(cls, item: dict) -> dict[str, list[str]]:
+        """Categories from inline ``tag_info``, or {} when the site omits it."""
+        info = item.get("tag_info")
+        if not isinstance(info, list):
+            return {}
+        cats: dict[str, list[str]] = {}
+        for entry in info:
+            if not isinstance(entry, dict):
+                continue
+            label = _TAG_INFO_LABELS.get(entry.get("type"))
+            name = entry.get("tag")
+            if label and name:
+                cats.setdefault(label, []).append(cls._decode_tags(name))
+        return _canonical_order(cats)
+
     @staticmethod
     def _decode_tags(tags: str) -> str:
         from html import unescape
@@ -173,6 +200,7 @@ class GelbooruClient(BooruClient):
             "s": "post",
             "q": "index",
             "json": "1",
+            "fields": "tag_info",
             "id": post_id,
         }
         if self.api_key and self.api_user:
@@ -201,6 +229,7 @@ class GelbooruClient(BooruClient):
             width=item.get("width", 0),
             height=item.get("height", 0),
             created_at=_parse_date(item.get("created_at")),
+            tag_categories=self._tag_categories(item),
         )
         post.site_id = self.site_id
         if self.category_fetcher is not None:

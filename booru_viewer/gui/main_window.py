@@ -281,7 +281,14 @@ class BooruApp(QMainWindow):
         re-layout hitch). The flag clears when categories arrive.
         """
         client = self._make_client()
-        if client is None or client.category_fetcher is None:
+        categorized = {t for tags in post.tag_categories.values() for t in tags}
+        if (
+            client is None
+            or client.category_fetcher is None
+            or (post.tag_categories and set(post.tag_list) <= categorized)
+        ):
+            # Nothing to fetch, or the site already categorized every tag
+            # inline (fields=tag_info); a fetch would only redo the work.
             self._info_panel._categories_pending = False
             return
         self._info_panel._categories_pending = True
@@ -291,10 +298,11 @@ class BooruApp(QMainWindow):
         async def _do():
             try:
                 await fetcher.ensure_categories(post)
-                if post.tag_categories:
-                    signals.categories_updated.emit(post)
             except Exception as e:
                 log.debug(f"ensure_categories failed: {e}")
+            # Emit even on failure: it is what clears _categories_pending,
+            # and a pending flag left set hides the flat tag fallback.
+            signals.categories_updated.emit(post)
 
         asyncio.run_coroutine_threadsafe(_do(), self._async_loop)
 
@@ -307,7 +315,7 @@ class BooruApp(QMainWindow):
         set_post / set_post_tags again to pick up the new dict.
         """
         self._info_panel._categories_pending = False
-        if not post or not post.tag_categories:
+        if not post:
             return
         idx = self._grid.selected_index
         if 0 <= idx < len(self._posts) and self._posts[idx].id == post.id:
