@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## v0.3.9
+
+### Added
+- Portable Linux AppImage with bundled mpv and Qt.
+- `--version` on Linux
+
 ## v0.3.8
 
 ### Added
