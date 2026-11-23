@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=booru-viewer
+Exec=booru-viewer
+Icon=booru-viewer
+StartupWMClass=booru-viewer
+Categories=Graphics;Viewer;
+Terminal=false

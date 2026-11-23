@@ -45,6 +45,8 @@ The AUR package tracks the gitea `main` branch, so `yay -Syu` pulls the latest c
 
 AUR: [/packages/booru-viewer-git](https://aur.archlinux.org/packages/booru-viewer-git)
 
+- **Portable Linux AppImage** — download from Releases; no system mpv or Qt needed.
+
 **Other distros** — build from source. Requires Python 3.11+ and Qt6 system libraries.
 
 Ubuntu / Debian (24.04+):

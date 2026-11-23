@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 import sys
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_submodules, copy_metadata
 
 block_cipher = None
 
@@ -27,11 +27,11 @@ a = Analysis(
     ['booru_viewer/main_gui.py'],
     pathex=[],
     binaries=[('libmpv-2.dll', '.')] if sys.platform == 'win32' else [],
-    datas=[('icon.png', '.')],
+    datas=[('icon.png', '.')] + (copy_metadata('booru-viewer') if sys.platform == 'linux' else []),
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=['packaging/rthook_mpv.py'] if sys.platform == 'linux' else [],
     excludes=['textual', 'tkinter', 'unittest'],
     noarchive=True,
     optimize=2,

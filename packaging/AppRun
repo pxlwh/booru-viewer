@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+APPDIR=${APPDIR:-$(dirname -- "$(readlink -f -- "$0")")}
+if [ -n "${WAYLAND_DISPLAY:-}" ] || [ "${XDG_SESSION_TYPE:-}" = wayland ]; then
+    : "${QT_QPA_PLATFORM:=wayland;xcb}"
+else
+    : "${QT_QPA_PLATFORM:=xcb}"
+fi
+export QT_QPA_PLATFORM
+export RESOURCE_NAME=booru-viewer
+export XDG_DATA_DIRS="$APPDIR/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+export PATH="$APPDIR/usr/bin:$PATH"
+exec "$APPDIR/usr/lib/booru-viewer/booru-viewer" "$@"

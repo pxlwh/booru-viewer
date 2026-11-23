@@ -3,17 +3,17 @@ booru-viewer - third-party notices
 
 booru-viewer itself is MIT licensed; see LICENSE.
 
-This installer additionally ships one third-party binary:
+The Windows installer additionally ships one third-party binary:
 
   libmpv-2.dll
     Project   mpv (libmpv), https://mpv.io
     License   GNU Lesser General Public License, version 2.1 or later
     Text      LGPL-2.1.txt, in this directory
-    Build     mpv-dev-lgpl-x86_64-20261119-git-b7339522cd
+    Build     mpv-dev-lgpl-x86_64-20261122-git-c2a42f414f
     Source    https://github.com/zhongfly/mpv-winbuild
-              release 2026-11-19-b7339522cd
+              release 2026-11-22-c2a42f414f
     SHA-256 of that release archive
-              c48d6d4c689669de054a8c1be9b795d951aa14e45cb0330b1c9146e541ced5e8
+              47540e48af9918f044688cb178d9e89d348f4c11868ad67bced3bc074abff8a9
 
 This is an LGPL build of mpv, produced without any GPL-only components.
 It statically includes FFmpeg (https://ffmpeg.org), likewise under the
@@ -22,29 +22,29 @@ codec libraries including dav1d and libvpx. Their own notices ship in
 the upstream archive linked above.
 
 
-Replacing the library
----------------------
+Replacing the library (Windows)
+--------------------------------
+booru-viewer loads libmpv-2.dll dynamically. Replace
+<install directory>\libmpv-2.dll with a binary-compatible libmpv 2
+and restart; no relinking or rebuilding is needed (LGPL 2.1 section 6).
 
-booru-viewer loads libmpv-2.dll dynamically at run time. It is not
-statically linked into booru-viewer.exe. To run booru-viewer against a
-different build of libmpv, replace
+Windows sources:
+  mpv       https://github.com/mpv-player/mpv
+  FFmpeg    https://git.ffmpeg.org/ffmpeg.git
+Build scripts: https://github.com/zhongfly/mpv-winbuild
 
-    <install directory>\libmpv-2.dll
+Linux AppImage (Ubuntu 24.04)
+-----------------------------
 
-with any binary-compatible libmpv 2 and restart the application.
-Nothing needs to be relinked or rebuilt. This is what satisfies
-section 6 of the LGPL version 2.1.
-
-
-Obtaining the source
---------------------
-
-Complete corresponding source for the LGPL components is published by
-the upstream projects:
-
-    mpv       https://github.com/mpv-player/mpv
-    FFmpeg    https://git.ffmpeg.org/ffmpeg.git
-
-The build scripts that produced the shipped binary from that source:
-
-    https://github.com/zhongfly/mpv-winbuild
+  libmpv2_0.37.0-1ubuntu4_amd64.deb
+    SHA-256 12ea9d67e291a90cea5b7497f3f9d196643bf2e85ad17cb683e9c7ad18981c00
+  mpv_0.37.0-1ubuntu4_amd64.deb
+    SHA-256 26b9273c3cc4c69b55ad908d168c624b95fd6785ea96625143e344b53e786e94
+Both: https://archive.ubuntu.com/ubuntu/pool/universe/m/mpv/
+Ubuntu mpv and FFmpeg are not the LGPL-only Windows policy; these builds
+include GPL components. Ubuntu copyright notices and licence texts ship in
+usr/share/doc/booru-viewer inside the AppImage. Sources:
+  mpv     https://launchpad.net/ubuntu/+source/mpv/0.37.0-1ubuntu4
+          https://github.com/mpv-player/mpv
+  FFmpeg  https://launchpad.net/ubuntu/noble/+source/ffmpeg
+          https://ffmpeg.org/download.html

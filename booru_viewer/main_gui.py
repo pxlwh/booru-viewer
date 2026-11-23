@@ -5,6 +5,11 @@ import sys
 
 
 def main() -> None:
+    if sys.platform == "linux" and sys.argv[1:] == ["--version"]:
+        from importlib.metadata import version
+        print(f"booru-viewer {version('booru-viewer')}")
+        return
+
     # Windows: set App User Model ID so taskbar pinning works
     if sys.platform == "win32":
         try:
