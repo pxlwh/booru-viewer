@@ -9,11 +9,11 @@ The Windows installer additionally ships one third-party binary:
     Project   mpv (libmpv), https://mpv.io
     License   GNU Lesser General Public License, version 2.1 or later
     Text      LGPL-2.1.txt, in this directory
-    Build     mpv-dev-lgpl-x86_64-20261122-git-c2a42f414f
+    Build     mpv-dev-lgpl-x86_64-20261128-git-1eab28e7b5
     Source    https://github.com/zhongfly/mpv-winbuild
-              release 2026-11-22-c2a42f414f
+              release 2026-11-28-1eab28e7b5
     SHA-256 of that release archive
-              47540e48af9918f044688cb178d9e89d348f4c11868ad67bced3bc074abff8a9
+              dea8e927e319983f6fb1d509e58816db64857addc3d4cfe8014e11d06ff3960b
 
 This is an LGPL build of mpv, produced without any GPL-only components.
 It statically includes FFmpeg (https://ffmpeg.org), likewise under the

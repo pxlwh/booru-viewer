@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## v0.3.10
+
+### Changed
+- New application icon: a transparent PNG at 1024 and a six-frame Windows icon that carries the same
+  artwork. The old one was replaced everywhere the app loads it, including the AppImage stage.
+
 ## v0.3.9
 
 ### Added
