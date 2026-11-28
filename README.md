@@ -1,5 +1,27 @@
-# booru-viewer
-A Qt6 booru client for people who keep what they save and rice what they run. Browse, search, and archive Danbooru, e621, Gelbooru, and Moebooru on Linux and Windows. Fully themeable.
+<p align="center">
+  <img src="assets/icon-256.png" alt="booru-viewer" width="160">
+</p>
+
+<h1 align="center">booru-viewer</h1>
+
+<p align="center"><strong>A Qt6 booru client for people who keep what they save and rice what they run.</strong></p>
+
+<p align="center">
+  <a href="https://github.com/pxlwh/booru-viewer/releases"><img alt="release" src="https://img.shields.io/github/v/release/pxlwh/booru-viewer?color=00ff00&label=release"></a>
+  <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-00ff00"></a>
+  <img alt="platform" src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows-00ff00">
+  <a href="https://github.com/pxlwh/booru-viewer/actions/workflows/tests.yml"><img alt="tests" src="https://img.shields.io/github/actions/workflow/status/pxlwh/booru-viewer/tests.yml?branch=main&label=tests"></a>
+</p>
+
+<p align="center">
+  <a href="#install">Quick start</a> ·
+  <a href="#features">Features</a> ·
+  <a href="#keybinds">Keybinds</a> ·
+  <a href="#theming">Theming</a> ·
+  <a href="#support">Support</a>
+</p>
+
+<p align="center">Browse, search and archive Danbooru, e621, Gelbooru and Moebooru on Linux and Windows. Fully themeable.</p>
 
 <img src="screenshots/linux.png" alt="booru-viewer on Linux with a custom green on black theme: thumbnail grid, preview and tag panel" width="700">
 
